@@ -54,7 +54,7 @@ architecture=${architecture:-$(uname -m)}
 case "$architecture" in
     arm64) cmake_arch=arm64; deployment=${deployment:-11.0} ;;
     x86_64) cmake_arch=x86_64; deployment=${deployment:-10.15} ;;
-    universal) cmake_arch='arm64;x86_64'; deployment=${deployment:-11.0} ;;
+    universal) cmake_arch='arm64;x86_64'; deployment=${deployment:-10.15} ;;
     *) printf 'Unsupported architecture: %s\n' "$architecture" >&2; exit 2 ;;
 esac
 if [[ ! $parallel =~ ^[1-9][0-9]*$ || ! $deployment =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
