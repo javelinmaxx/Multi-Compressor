@@ -1,0 +1,11 @@
+{
+  "generator_sha256": "158bad4d50b9bdeeb323b54c0c192cd96a9548deac1fe95e2b74133bf97a22ad",
+  "input_sha256": {
+    "interpolation-probes.csv": "2c622aec26d6e4a9f96259de7eba54be857e49287a748e666942b60a76bc9341",
+    "manifest.csv": "e7189ec0a0d83a2a67d01a278d67cf991d1317746c178e87ae1067a49553a4d5",
+    "phase-targets.csv": "cf57db63176244b0d4df99d7fb29df26b8609db0dde292fbf06d5d902e62e5c8",
+    "phase.csv": "f44deb668883c748e7588c305d9e56e960b45eb1e279a86c95f18143efff3d79",
+    "response.csv": "cf08b33227ed123486a39f35bae89eb7bbd2f615d8968d511744a39ff484496d"
+  },
+  "matplotlib_version": "3.10.8"
+}

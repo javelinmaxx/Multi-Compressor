@@ -8,6 +8,14 @@ Implementation references:
 - [Feature measurement report](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/KuoStereo/Measurements/Report/REPORT.md)
 - [Feature measurement generator](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/KuoStereo/Measurements/FeatureMeasurements.cpp)
 
+## Implemented synthetic experiment suite
+
+The first ablation suite is implemented in [`Tests/AblationTests.cpp`](Tests/AblationTests.cpp),
+with reproducible [results and limitations](Tests/Reports/Academic/README.md).
+See the [cross-project review](../ACADEMIC_TEST_REVIEW.md) for what remains.
+The checklist below retains broader research requirements: synthetic completion
+must not be mistaken for real-audio or perceptual validation.
+
 ## Current research framing
 
 Evaluate a content-adaptive signed Haas-delay selection method that trades off weighted mid-channel spectral-magnitude deviation against a target side/mid RMS ratio, with score averaging, a switching margin, bounded delay slew, and transient-specific delay reduction.
@@ -16,8 +24,8 @@ Be precise: the score penalizes mid-spectrum magnitude deviation; it does not gu
 
 ## Priority 1 — Strengthen the adaptive objective
 
-- [ ] Document the scoring function mathematically, including spectral weighting, log-magnitude floor, side/mid target ratio, and all constants.
-- [ ] Run an ablation study: mid-spectrum error only; side-energy reward only; combined score; combined score without temporal averaging; and combined score without the switching margin.
+- [x] Document the scoring function mathematically, including spectral weighting, log-magnitude floor, side/mid target ratio, and all constants.
+- [x] Run a deterministic synthetic ablation study: mid-spectrum error only; side-energy reward only; combined score; combined score without temporal averaging; and combined score without the switching margin.
 - [ ] Perform sensitivity analysis for the side/mid target ratio (currently 0.20), penalty coefficient (currently 0.35), score averaging time (currently 250 ms), switching margin (currently 2%), and candidate delay step (currently 0.2 ms).
 - [ ] Measure how often the selected target changes and whether those changes improve the objective consistently rather than tracking noise or chord transients.
 - [ ] Test tie behavior and sign selection. For an exactly mono input, positive and negative delay candidates can have identical mid and side energy magnitudes, so the current objective cannot infer the preferred delay sign from mono content alone.

@@ -1,0 +1,8 @@
+{
+  "generator_sha256": "158bad4d50b9bdeeb323b54c0c192cd96a9548deac1fe95e2b74133bf97a22ad",
+  "input_sha256": {
+    "haas.csv": "5fb02ff62a6ed7110ffa5cc8b055d9231d6041f1fa52dcfee92771e2fc7b5b49",
+    "manifest.csv": "0a04d219223e241d4bc747dcd8f434d72d89eae12675a8569f790e2d25b72210"
+  },
+  "matplotlib_version": "3.10.8"
+}

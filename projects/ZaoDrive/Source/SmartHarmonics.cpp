@@ -1,6 +1,7 @@
 #include "SmartHarmonics.h"
 #include <cmath>
 #include <cstring>
+#include "../../AcademicAblations.h"
 namespace zao
 {
 SmartAnalyser::SmartAnalyser()
@@ -88,7 +89,10 @@ SmartAnalyser::Result SmartAnalyser::analyse (const Frame& frame)
         {
             const auto frequency = peaks[static_cast<size_t> (i)].frequency*order;
             if (frequency > frame.sampleRate*.43) break;
-            const auto bandwidth = std::max (binHz*1.5, frequency*.018);
+            auto bandwidth = std::max (binHz*1.5, frequency*.018);
+#if defined(J_SONIC_ABLATION_TESTS)
+            bandwidth *= academic::smart.bandwidthScale;
+#endif
             bool protectedInput = false;
             double weighted = 0, weight = 0;
             for (int j = 0; j < peakCount; ++j)
@@ -98,11 +102,20 @@ SmartAnalyser::Result SmartAnalyser::analyse (const Frame& frame)
                 const auto w = std::sqrt (peak.power);
                 weighted += w*intervalDissonance (frequency, peak.frequency); weight += w;
             }
+#if defined(J_SONIC_ABLATION_TESTS)
+            if (protectedInput && academic::smart.protection) continue;
+#else
             if (protectedInput) continue;
+#endif
             const auto bin = static_cast<size_t> (std::clamp (juce::roundToInt (frequency/binHz), 1, fftSize/2-1));
             const auto harmonicPower = wetPower[bin-1]+wetPower[bin]+wetPower[bin+1];
+#if defined(J_SONIC_ABLATION_TESTS)
+            if (academic::smart.wetThreshold && harmonicPower < wetMaximum*.0001) continue;
+            const auto cost = academic::smart.dissonance ? weighted/std::max (weight, 1e-30) : 1.0;
+#else
             if (harmonicPower < wetMaximum*.0001) continue;
             const auto cost = weighted/std::max (weight, 1e-30);
+#endif
             if (cost < .035) continue;
             const auto gainDb = -std::min (6.0, cost*18.0);
             Candidate candidate { { static_cast<float> (frequency), static_cast<float> (bandwidth), static_cast<float> (gainDb), order }, harmonicPower, cost,
@@ -203,6 +216,9 @@ void SmartHarmonics::updateFilters() noexcept
 }
 void SmartHarmonics::process (const std::array<float, 2>& input, std::array<float, 2>& wet) noexcept
 {
+#if defined(J_SONIC_ABLATION_TESTS)
+    if (academic::smartTap != nullptr) academic::smartTap (input, wet);
+#endif
     if (enabled)
     {
         const auto p = static_cast<size_t> (position);

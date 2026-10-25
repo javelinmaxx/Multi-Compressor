@@ -8,6 +8,14 @@ Implementation references:
 - [Onset detection report](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/XuanPhase/Tests/Reports/onset-detection.md)
 - [Automatic alignment report](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/XuanPhase/Tests/Reports/AUTO_ALIGNMENT.md)
 
+## Implemented synthetic experiment suite
+
+The first ablation suite is implemented in [`Tests/AblationTests.cpp`](Tests/AblationTests.cpp),
+with reproducible [results and limitations](Tests/Reports/Academic/README.md).
+See the [cross-project review](../ACADEMIC_TEST_REVIEW.md) for what remains.
+The checklist below retains broader research requirements: synthetic completion
+must not be mistaken for real-audio or perceptual validation.
+
 ## Current research framing
 
 Investigate transient-guided adaptive phase rotation using spectral-residual anchoring, local phase-slope timing estimates, frequency-spanning peak selection, smooth target interpolation, and finite-FIR phase-response synthesis.
@@ -27,7 +35,7 @@ The current implementation is a finite, tapered FIR approximation to a phase-onl
 - [ ] Compare bypass, a fixed/manual phase rotator, a fixed phase-response profile, and the current transient-guided method at matched output level.
 - [ ] Include a commercially available phase-dispersion effect as a black-box reference if licensing and reproducibility permit; document exact settings and avoid claims about its internal algorithm.
 - [ ] Implement a simple transient detector with a preselected phase profile to test whether the spectral-residual anchor and local phase-slope estimate add value.
-- [ ] Run ablations that remove spectral-residual anchoring, remove phase-slope timing estimates, reduce the number of spectral peaks, disable phase unwrapping, and replace smooth interpolation with simpler interpolation.
+- [x] Run deterministic synthetic ablations that remove spectral-residual anchoring, remove phase-slope timing estimates, reduce the number of spectral peaks, disable phase unwrapping, and replace smooth interpolation with simpler interpolation.
 - [ ] Compare the current approach with an explicit group-delay optimization only if that alternative is implemented as a separate algorithm.
 
 ## Priority 3 — Quantify signal behavior

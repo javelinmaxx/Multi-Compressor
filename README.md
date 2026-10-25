@@ -174,6 +174,13 @@ transient tests, adaptive Haas measurements, and reproducible audio examples.
 The models are developed for creative audio processing. Individual project
 documents describe their equations, assumptions, and measurement conditions.
 
+## Academic experiments
+
+The `academic` branch adds deterministic ablations for Kuo Stereo, Zao Drive and
+Xuan Phase, including machine-readable results and reproducible figures. See the
+[test review](projects/ACADEMIC_TEST_REVIEW.md) for implemented experiments,
+measured limitations and the remaining research requirements.
+
 ## Build and install
 
 Use **CMake 3.22+**, a **C++17 compiler**, and the platform's JUCE dependencies.

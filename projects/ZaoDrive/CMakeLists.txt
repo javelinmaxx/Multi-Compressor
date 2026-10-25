@@ -27,6 +27,8 @@ target_link_libraries(ZaoDrive PRIVATE juce::juce_audio_utils juce::juce_dsp
 option(ZAO_DRIVE_BUILD_TESTS "Build Zao Drive tests" ON)
 if(ZAO_DRIVE_BUILD_TESTS)
     enable_testing()
+    include("${CMAKE_CURRENT_LIST_DIR}/../AcademicTests.cmake")
+    j_sonic_add_ablation_tests(ZaoDrive Source/SmartHarmonics.cpp)
     add_executable(ZaoDriveTests Tests/ProcessorTests.cpp)
     target_include_directories(ZaoDriveTests PRIVATE "${JUCE_SOURCE_DIR}/modules")
     target_compile_definitions(ZaoDriveTests PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)

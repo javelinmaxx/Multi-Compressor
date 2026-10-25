@@ -1,0 +1,10 @@
+{
+  "generator_sha256": "158bad4d50b9bdeeb323b54c0c192cd96a9548deac1fe95e2b74133bf97a22ad",
+  "input_sha256": {
+    "manifest.csv": "78f72a946a5704bc80159e4d4f8a72c7ca7dab9b6e9fce831186b6c1341f34d8",
+    "partials.csv": "3c95b9c2199071b0cd01f3933a6aec5f823a697419b1809faeda895f354e09ce",
+    "smart.csv": "5beaf02d0d68e3cc17ec67e54a604d7bb01af9425b8eb747199672066f2f7c80",
+    "targets.csv": "ddf8340f00cbf0186541fe457c7974faacf7cfeb6423102d1352b021b44e9ac2"
+  },
+  "matplotlib_version": "3.10.8"
+}

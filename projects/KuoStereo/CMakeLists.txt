@@ -34,6 +34,8 @@ target_link_libraries(KuoStereo PRIVATE juce::juce_audio_utils juce::juce_dsp
 option(KUO_STEREO_BUILD_TESTS "Build Kuo Stereo tests" ON)
 if(KUO_STEREO_BUILD_TESTS)
     enable_testing()
+    include("${CMAKE_CURRENT_LIST_DIR}/../AcademicTests.cmake")
+    j_sonic_add_ablation_tests(KuoStereo Source/PluginProcessor.cpp)
     add_executable(KuoStereoTests Tests/ProcessorTests.cpp)
     target_include_directories(KuoStereoTests PRIVATE "${JUCE_SOURCE_DIR}/modules")
     target_compile_definitions(KuoStereoTests PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)

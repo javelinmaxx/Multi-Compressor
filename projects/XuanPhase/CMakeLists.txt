@@ -27,6 +27,8 @@ target_link_libraries(XuanPhase PRIVATE juce::juce_audio_utils juce::juce_dsp
 option(XUAN_PHASE_BUILD_TESTS "Build Xuan Phase tests" ON)
 if(XUAN_PHASE_BUILD_TESTS)
     enable_testing()
+    include("${CMAKE_CURRENT_LIST_DIR}/../AcademicTests.cmake")
+    j_sonic_add_ablation_tests(XuanPhase Source/PhaseEngine.cpp)
     add_executable(XuanPhaseTests Tests/ProcessorTests.cpp)
     target_include_directories(XuanPhaseTests PRIVATE "${JUCE_SOURCE_DIR}/modules")
     target_compile_definitions(XuanPhaseTests PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)

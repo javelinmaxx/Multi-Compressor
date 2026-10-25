@@ -9,6 +9,14 @@ Implementation references:
 - [Measured Smart report](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/ZaoDrive/Tests/Reports/smart-report.md)
 - [Circuit specification](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/ZaoDrive/CIRCUITS.md)
 
+## Implemented synthetic experiment suite
+
+The first ablation suite is implemented in [`Tests/AblationTests.cpp`](Tests/AblationTests.cpp),
+with reproducible [results and limitations](Tests/Reports/Academic/README.md).
+See the [cross-project review](../ACADEMIC_TEST_REVIEW.md) for what remains.
+The checklist below retains broader research requirements: synthetic completion
+must not be mistaken for real-audio or perceptual validation.
+
 ## Current research framing
 
 Smart does not change the nonlinear circuit transfer function or prevent the circuit from generating harmonics. It analyzes the input and measured wet residual, scores candidate harmonic products against existing input partials using a continuous approximation of a 12-TET dissonance curve, then attenuates selected frequency bands in the wet residual.
@@ -28,8 +36,8 @@ The wet residual is not a perfect harmonic separator: circuit gain, phase, compr
 
 - [ ] Compare Smart Off, current Smart, fixed/manual peaking-EQ cuts, energy-only harmonic attenuation, and candidate selection without dissonance weighting.
 - [ ] Compare against an adaptive transfer-function or drive-scaling baseline informed by prior work such as De Man and Reiss (AES 2014), “Adaptive Control of Amplitude Distortion Effects.”
-- [ ] Remove input-peak protection in an ablation to quantify its effect on desired partial retention.
-- [ ] Remove the wet-energy threshold and vary candidate bandwidth to measure false suppression and collateral attenuation.
+- [x] Remove input-peak protection in a deterministic synthetic ablation to quantify its effect on desired partial retention.
+- [x] Remove the wet-energy threshold and vary candidate bandwidth on synthetic inputs to measure false suppression and collateral attenuation.
 - [ ] Compare current residual-based processing with a model-derived or independently measured reference where feasible.
 - [ ] Compare the four circuit models at matched input level and output loudness; document whether the same objective behaves consistently across models.
 

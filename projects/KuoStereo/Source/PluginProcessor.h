@@ -39,6 +39,7 @@ public:
     juce::AudioProcessorValueTreeState parameters;
 
 private:
+    friend struct HaasAblationAccess;
     class HaasSearchWorker final : public juce::Thread
     {
     public:
@@ -64,6 +65,7 @@ private:
         { return targetDelayMs.load (std::memory_order_relaxed); }
 
     private:
+        friend struct HaasAblationAccess;
         void process (const SearchJob&) noexcept;
         void resetSearch() noexcept;
         juce::dsp::FFT fft { 11 };

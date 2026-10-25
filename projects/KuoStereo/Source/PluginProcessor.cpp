@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <cmath>
+#include "../../AcademicAblations.h"
 
 juce::AudioProcessorValueTreeState::ParameterLayout KuoStereoProcessor::layout()
 {
@@ -280,15 +281,35 @@ void KuoStereoProcessor::HaasSearchWorker::process (const SearchJob& input) noex
             weightSum += weight;
         }
         score /= std::max (weightSum, 1.0f);
-        constexpr float targetSideRatio = 0.20f;
+        auto targetSideRatio = 0.20f;
+#if defined(J_SONIC_ABLATION_TESTS)
+        targetSideRatio = academic::haas.targetRatio;
+#endif
         const auto sideRatio = std::sqrt (sideEnergy / std::max (midEnergy, 0.000001f));
-        score += 0.35f * std::max (0.0f, 1.0f - sideRatio / targetSideRatio);
+        auto sidePenalty = 0.35f * std::max (0.0f, 1.0f - sideRatio / targetSideRatio);
+#if defined(J_SONIC_ABLATION_TESTS)
+        // Always evaluate reported quality with the original combined objective,
+        // including when a sensitivity run changes the optimization objective.
+        academic::haasMetrics[static_cast<size_t> (candidate)] = { score, sideRatio,
+            score+.35f*std::max (0.f,1.f-sideRatio/.20f) };
+        sidePenalty = academic::haas.sidePenalty * std::max (0.f,1.f-sideRatio/targetSideRatio);
+        score = (academic::haas.spectrum ? score : 0.f) + (academic::haas.side ? sidePenalty : 0.f);
+#else
+        score += sidePenalty;
+#endif
         auto& initialized = candidateScoreInitialized[static_cast<size_t> (candidate)];
         const auto elapsedFrames = scoreFrame
             - candidateLastScoreFrame[static_cast<size_t> (candidate)];
+        auto averagingSeconds = 0.25f;
+#if defined(J_SONIC_ABLATION_TESTS)
+        averagingSeconds = academic::haas.averagingSeconds;
+#endif
         const auto scoreAlpha = 1.0f - std::exp (-static_cast<float> (elapsedFrames * analysisHop)
-                                                 / (0.25f * sampleRate));
+                                                 / (averagingSeconds * sampleRate));
         average = initialized ? average + scoreAlpha * (score - average) : score;
+#if defined(J_SONIC_ABLATION_TESTS)
+        if (! academic::haas.averaging) average = score;
+#endif
         initialized = true;
         candidateLastScoreFrame[static_cast<size_t> (candidate)] = scoreFrame;
         return average;
@@ -342,7 +363,14 @@ void KuoStereoProcessor::HaasSearchWorker::process (const SearchJob& input) noex
              candidate <= std::min (candidateCount - 1, coarseBest + 1); ++candidate)
             consider (candidate);
     }
-    if (bestScore < switchMargin * smoothedCandidateScores[static_cast<size_t> (selectedCandidate)])
+    auto requiredMargin = switchMargin;
+#if defined(J_SONIC_ABLATION_TESTS)
+    requiredMargin = academic::haas.switchMargin;
+    if (academic::haas.exhaustive)
+        for (int candidate = 0; candidate < candidateCount; ++candidate) consider (candidate);
+    if (! academic::haas.margin) requiredMargin = 1.f;
+#endif
+    if (bestScore < requiredMargin * smoothedCandidateScores[static_cast<size_t> (selectedCandidate)])
         selectedCandidate = bestCandidate;
     if (input.generation == generation.load (std::memory_order_acquire)
         && input.sequence == latestSequence.load (std::memory_order_acquire))

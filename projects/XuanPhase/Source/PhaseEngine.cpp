@@ -1,4 +1,5 @@
 #include "PhaseEngine.h"
+#include "../../AcademicAblations.h"
 
 namespace xuan
 {
@@ -58,6 +59,9 @@ double PhaseEngine::bandValue (double frequency, const Analysis& a, bool timing)
     {
         ++left;
         angle += std::remainder (a.targets[static_cast<size_t> (left)].angle-angle, 2*pi);
+#if defined(J_SONIC_ABLATION_TESTS)
+        if (! academic::phase.unwrap) angle = a.targets[static_cast<size_t> (left)].angle;
+#endif
     }
     const auto& lo = a.targets[static_cast<size_t> (left)];
     const auto local = [&] (const Target& t, double unwrapped)
@@ -72,9 +76,15 @@ double PhaseEngine::bandValue (double frequency, const Analysis& a, bool timing)
         return local (lo, angle)*std::exp (-.5*distance*distance);
     }
     const auto& hi = a.targets[static_cast<size_t> (left+1)];
-    const auto next = angle+std::remainder (hi.angle-angle, 2*pi);
+    auto next = angle+std::remainder (hi.angle-angle, 2*pi);
+#if defined(J_SONIC_ABLATION_TESTS)
+    if (! academic::phase.unwrap) next = hi.angle;
+#endif
     const auto t = std::clamp ((frequency-lo.frequency)/std::max (1.0, static_cast<double> (hi.frequency-lo.frequency)), 0.0, 1.0);
-    const auto blend = t*t*(3-2*t);
+    auto blend = t*t*(3-2*t);
+#if defined(J_SONIC_ABLATION_TESTS)
+    if (! academic::phase.smooth) blend = t;
+#endif
     return (1-blend)*local (lo, angle)+blend*local (hi, next);
 }
 namespace
@@ -303,7 +313,11 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
                 state.eventNovelty[i] = std::max (state.eventNovelty[i],novel[i]);
                 novel[i] = state.eventNovelty[i];
             }
-        if (onset)
+        bool residualAnchor = onset;
+#if defined(J_SONIC_ABLATION_TESTS)
+        residualAnchor = residualAnchor && academic::phase.residualAnchor;
+#endif
+        if (residualAnchor)
         {
             // Locate the new attack in the positive spectral residual, rather
             // than anchoring to an older, louder peak in the same FFT window.
@@ -346,7 +360,10 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
         // Remove the anchor's time origin before unwrapping the local slope;
         // otherwise a late transient aliases its group delay by half a frame.
         const auto slope = std::remainder (std::arg (spectrum[static_cast<size_t> (k+1)])-std::arg (spectrum[static_cast<size_t> (k-1)])+4*pi*anchor/n, 2*pi);
-        const auto relativeTime = -slope/(4*pi*rate/n);
+        auto relativeTime = -slope/(4*pi*rate/n);
+#if defined(J_SONIC_ABLATION_TESTS)
+        if (! academic::phase.slope) relativeTime = 0;
+#endif
         candidates.push_back ({ {
             static_cast<float> (frequency), static_cast<float> (std::max (rate/n, frequency*.025)),
             static_cast<float> (angle), static_cast<float> (std::clamp (relativeTime, -.025, .025)) }, m });
@@ -373,6 +390,20 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
     int index = 0;
     for (const auto& candidate : candidates)
         if (candidate.selected) result.targets[static_cast<size_t> (index++)] = candidate.target;
+#if defined(J_SONIC_ABLATION_TESTS)
+    // Keep the strongest N peaks, then restore the frequency ordering required
+    // by bandValue. This changes the budget without changing the estimator.
+    if (academic::phase.peaks < result.count)
+    {
+        std::vector<Candidate> selected;
+        for (const auto& c : candidates) if (c.selected) selected.push_back (c);
+        std::stable_sort (selected.begin(), selected.end(), [] (const auto& a, const auto& b) { return a.magnitude > b.magnitude; });
+        selected.resize (static_cast<size_t> (std::max (1, academic::phase.peaks)));
+        std::sort (selected.begin(), selected.end(), [] (const auto& a, const auto& b) { return a.target.frequency < b.target.frequency; });
+        result.count = static_cast<int> (selected.size()); result.targets = {};
+        for (int i = 0; i < result.count; ++i) result.targets[static_cast<size_t> (i)] = selected[static_cast<size_t> (i)].target;
+    }
+#endif
     return result;
 }
 void PhaseEngine::Kernel::build (const std::vector<float>& ir, int count)
