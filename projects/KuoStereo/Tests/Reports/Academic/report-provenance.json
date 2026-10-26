@@ -1,8 +1,12 @@
 {
-  "generator_sha256": "158bad4d50b9bdeeb323b54c0c192cd96a9548deac1fe95e2b74133bf97a22ad",
+  "generator_sha256": "796fdc843b7233f18dc4b692f8cc8a6b73f865a5bad4657f003940d21fbd9534",
+  "audio_generator_sha256": "f231f02f73de88df2cd3c5a9b361c2dc453cceb56016fa276df48a5b21132d50",
   "input_sha256": {
-    "haas.csv": "5fb02ff62a6ed7110ffa5cc8b055d9231d6041f1fa52dcfee92771e2fc7b5b49",
+    "audio-neutral.csv": "bb767fd976c6aa0606baf3faa8b371c27f4f916dacd6208625965a9603c0eb23",
+    "audio-wide.csv": "d4d01abab0801ce69b672ea34a1dfeb8844c5c1d86a34e9eb61e01a427d9d132",
+    "haas.csv": "256dbc7f09b80ff98fbe521595eca8930e2b2eed60fdf2a48bc05840950849ca",
     "manifest.csv": "0a04d219223e241d4bc747dcd8f434d72d89eae12675a8569f790e2d25b72210"
   },
-  "matplotlib_version": "3.10.8"
+  "matplotlib_version": "3.10.8",
+  "numpy_version": "2.3.5"
 }

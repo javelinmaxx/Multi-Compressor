@@ -125,6 +125,47 @@ int main (int argc, char** argv)
         // ratio with a zero denominator. No metrics from this path are reported.
         for (size_t i = 0; i < job.leftAgo.size(); ++i) job.rightAgo[i] = -job.leftAgo[i];
         Access::process (tie,job); check (juce::exactlyEqual(tie.getSelectedDelayMs(),0.f),"anti-phase mid-silence fallback selects center");
+        // Full audio path with fixed Haas: no search-thread scheduling enters
+        // this separate render. The snapshot experiments above cover search.
+        haas = {};
+        for (int variant = 0; variant < 2; ++variant)
+        {
+            KuoStereoProcessor processor;
+            const auto set = [&] (const char* id, float value)
+            {
+                auto* p = processor.parameters.getParameter(id);
+                p->setValueNotifyingHost(p->convertTo0to1(value));
+            };
+            set("haasCenter", variant == 0 ? 0.f : 12.f); set("haasRange",0);
+            set("width",variant == 0 ? 0.f : 100.f);
+            set("haasKeepTransient",0); set("transientProtect",80);
+            processor.prepareToPlay(48000,128);
+            const int n = 6*48000, count = n+4800;
+            std::vector<float> input(size_t(n),0), left(size_t(count),0), right(size_t(count),0);
+            for (int i = 0; i < n; ++i) input[size_t(i)] = signal(i,48000,3,0);
+            juce::MidiBuffer midi;
+            for (int at = 0; at < count; at += 128)
+            {
+                juce::AudioBuffer<float> block(2,std::min(128,count-at)); block.clear();
+                for (int i = 0; i < block.getNumSamples(); ++i)
+                    if (at+i < n) for (int ch = 0; ch < 2; ++ch) block.setSample(ch,i,input[size_t(at+i)]);
+                processor.processBlock(block,midi);
+                for (int i = 0; i < block.getNumSamples(); ++i)
+                { left[size_t(at+i)] = block.getSample(0,i); right[size_t(at+i)] = block.getSample(1,i); }
+            }
+            double side = 0, error = 0;
+            for (int i = 0; i < n; ++i)
+            {
+                const auto at = size_t(i+processor.getLatencySamples());
+                side += std::pow(.5*(left[at]-right[at]),2);
+                error = std::max(error,std::abs(double(left[at]-input[size_t(i)])));
+            }
+            check(variant == 0 ? side < 1e-16 && error < 1e-5 : side > .01,
+                  "neutral render preserves mono; widening generates measured side energy");
+            audioCapture(directory,variant == 0 ? "audio-neutral.csv" : "audio-wide.csv",
+                         input,input,left,right,48000,processor.getLatencySamples());
+            processor.releaseResources();
+        }
         std::cout << checks << " Haas ablation checks passed\n";
     }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

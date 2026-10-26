@@ -1,5 +1,5 @@
 {
-  "source_revision": "7c8147f8c29724e17273dc311d4eacba110d7734",
+  "source_revision": "62d4db7de975605cfd5f85b33e9904c8a7810c1c",
   "source_dirty": true,
   "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
   "python": "3.12.14",
@@ -19,10 +19,10 @@
   },
   "source_sha256": {
     "projects/AcademicAblations.h": "440fffb57652f7fc805f53bb353951952ed0799f7b7e7c533615bb365113b12d",
-    "projects/AcademicTestUtils.h": "2c8c25af2e012e722aa250093b0ca182beabad92b8fee73e666a9e9f0a241e6e",
+    "projects/AcademicTestUtils.h": "94ea4d51a82359229e6281f17db90f7eb61476630d99e53f084f9ab0c53c6566",
     "projects/AcademicTests.cmake": "aeda21354622398c6af28ccf115941fce8b66e74ebc66a4f5a47d722c5700672",
-    "projects/run_academic_tests.py": "6f842328efd1d8ef296728e6e7e4e514c350bbc91cc090817aff166e476ea378",
-    "projects/generate_academic_reports.py": "c58289d5f90e29a6d5958eece35f0ccaa74ba21bbbb6084eff068e5cfa67c06b",
+    "projects/run_academic_tests.py": "ff855a8218dd6e1dbd3daba940230161c34bbdc06e1ae732c883c0c40c7f2f7b",
+    "projects/generate_academic_reports.py": "8de21e8dbae125b8b5d1623921abcf37b7d3c50136a8cf0ec2a8c7fc42de9d57",
     "projects/KuoStereo/Measurements/SynthPad.h": "8213e2048aa964cb85ab98a93d7c4024d385be52272e455396f5b87fb2703ddf",
     "projects/XuanPhase/Source/PhaseEngine.cpp": "42c8e89fc3fec0298e09f078f1072f28023a0fde7457ab143b8997cc4902cdfb",
     "projects/XuanPhase/Source/PhaseEngine.h": "53e21af895e4ea8110c5142de12de4c4ed43cdeb57429c1a224d2b4ae331ed25",
@@ -32,7 +32,7 @@
     "projects/XuanPhase/Source/PluginEditor.h": "9964c366bf147b27186071c434a027bc96e8efddab09b237d8a287a108fe7c39",
     "projects/XuanPhase/Source/PluginProcessor.cpp": "89a14bbe9b3057cf641285c8b296f00d6b6ca5e81d3be7d348434213045b2f59",
     "projects/XuanPhase/Source/PluginProcessor.h": "8420ec737d7c9e965d2fed4b4e269b8178805fc0758a1060e11754f2d59f0f6f",
-    "projects/XuanPhase/Tests/AblationTests.cpp": "1b045bc12e8d18e1b044bc748eabb6c0fbb0b915cb70cc4983811d3d2520880c",
+    "projects/XuanPhase/Tests/AblationTests.cpp": "2b0069d0df4ed6d63647e796dbb00a3d832b2089f191fde483c96cb83d3c8c1e",
     "projects/YinyangCompressor/Source/CompressorDSP.h": "b62dc5b418a36ad5a2dfe95ac29394153f61c4e35571d7ea987b0e99e9154f34",
     "projects/YinyangCompressor/Source/GainReductionHistory.h": "4349edb4e5273e2d30c2e8b20a42a90f3904be080f69499d463f930335ace6ed",
     "projects/YinyangCompressor/Source/HighTilt.h": "10641c8d8b732fd63c9096eae60d9d1e758ee20af1648ecf57cdf4bcdc0045a8",
@@ -48,6 +48,6 @@
     "projects/KuoStereo/Source/PluginProcessor.h": "7813d1f93c19bec3d64c2d34d7a08a7f7bb61f8da7038c0027241469c8087dd9",
     "projects/KuoStereo/Source/VelvetStage.h": "2a5893beb56729019e783b75ede4c6c128d6179d02ea0f6ccea05d9825ddbcfe"
   },
-  "cmake_cache_sha256": "a6cfcbbc2e5659020eed3fce068329df734a90340ddca336f29d786fb8151e63",
+  "cmake_cache_sha256": "71fca7589de4258e116d3cc1c30704cd17770e088eaa9ae8e5b2192efd223568",
   "build_config": "Release"
 }

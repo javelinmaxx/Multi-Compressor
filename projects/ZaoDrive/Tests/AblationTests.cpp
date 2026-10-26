@@ -93,6 +93,35 @@ int main (int argc, char** argv)
                         check (bands.count == again.count && juce::exactlyEqual(bands.baselineCost,again.baselineCost),"repeated frame gives identical Smart selection");
                         check (bands.count >= 0 && bands.count <= Analyser::maxBands,"Smart band count bounded");
                         const auto after = filter (bands,rate,frame); const auto afterPower = powers (after);
+                        if (rate == 48000 && model == 1 && (corpus == 1 || corpus == 2) && v == 1)
+                        {
+                            // Continue the actual production bank over a periodic,
+                            // post-circuit wet capture; no predicted gain is rendered.
+                            zao::SmartHarmonics bank; bank.prepare(rate,false); bank.setPreview(bands);
+                            auto audio = csv(directory,(std::string("audio-")+names[size_t(corpus)]+".csv").c_str(),
+                                             "sample,rate,input,wet_off,wet_on,total_off,total_on");
+                            for (int pass = 0; pass < 20; ++pass)
+                                for (size_t i = 0; i < before.size(); ++i)
+                                {
+                                    std::array<float,2> wet {frame.wetLeft[i],frame.wetRight[i]};
+                                    bank.process({frame.left[i],frame.right[i]},wet);
+                                    check(std::isfinite(wet[0]),"Smart spectrogram render remains finite");
+                                    if (pass >= 4) audio << (pass-4)*before.size()+i << ',' << rate << ','
+                                        << frame.left[i] << ',' << before[i] << ',' << wet[0] << ','
+                                        << frame.left[i]+before[i] << ',' << frame.left[i]+wet[0] << '\n';
+                                }
+                            check(bands.count > 0,"spectrogram fixture exercises Smart cuts");
+                            auto weights = csv(directory,(std::string("clash-")+names[size_t(corpus)]+".csv").c_str(),
+                                               "frequency_hz,weight,target");
+                            for (int k = 0; k <= 2048; ++k)
+                            {
+                                const auto hz = k*rate/4096; double weight = 0; bool target = false;
+                                for (int bin : bins) weight += Analyser::intervalDissonance(hz,bin*rate/4096)/bins.size();
+                                for (int b = 0; b < bands.count; ++b)
+                                    target |= std::abs(hz-bands.bands[size_t(b)].frequency) <= bands.bands[size_t(b)].bandwidth;
+                                weights << hz << ',' << weight << ',' << target << '\n';
+                            }
+                        }
                         std::vector<float> totalAfter (before.size());
                         for (size_t i = 0; i < before.size(); ++i) totalAfter[i] = frame.left[i]+after[i];
                         double selectedBefore = 0, selectedAfter = 0; int weak = 0, protectedCount = 0;

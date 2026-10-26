@@ -13,6 +13,8 @@ import statistics
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
+from generate_audio_spectrograms import report as audio_report
 
 ROOT = Path(__file__).resolve().parent
 
@@ -134,7 +136,7 @@ With spectral-error weight fixed at 1, λ spans **0, 0.05, 0.10, 0.175, 0.35, 0.
 
 ## Limits
 
-This isolates target selection. It does **not** render delay slew, the Dynamic transient envelope, Velvet, the 1.5 ms lookahead, or final mono fold-down. An exact zero delay can remain suitable for already-stereo input with enough side energy. Magnitude deviation is not waveform or phase preservation. `switching.csv` measures target changes; it does not call those changes perceptually useful. `search_us` is a single synchronous wall-clock observation including FFT work and research instrumentation, not an audio-thread CPU benchmark or a portable timing threshold. No loudness normalization is applied.
+The snapshot ablations above isolate target selection. Their score metrics do **not** render delay slew, the Dynamic transient envelope, Velvet, the 1.5 ms lookahead, or final mono fold-down. The separate audio experiment below renders fixed Haas and Velvet through the full path; adaptive delay slew remains outside that experiment. An exact zero delay can remain suitable for already-stereo input with enough side energy. Magnitude deviation is not waveform or phase preservation. `switching.csv` measures target changes; it does not call those changes perceptually useful. `search_us` is a single synchronous wall-clock observation including FFT work and research instrumentation, not an audio-thread CPU benchmark or a portable timing threshold. No loudness normalization is applied.
 """
 
 
@@ -227,11 +229,13 @@ def main():
         destination = ROOT/project/"Tests/Reports/Academic" if args.publish else source/"report"
         destination.mkdir(parents=True, exist_ok=True)
         archive(source, destination)
-        (destination/"README.md").write_text(generate(source, destination)+"\n## Reproduce\n\nFrom the repository root, run:\n\n```sh\npython3 projects/run_academic_tests.py --output build/academic-results\npython3 projects/generate_academic_reports.py build/academic-results --publish\n```\n\nCMake 3.22+, a C++17 compiler and the normal JUCE system dependencies are required. Plot generation additionally needs Python `matplotlib`. Native tests and CTest do not require Python plotting packages. Detailed CSV files are gzip-compressed alongside this report; `provenance.json` records source hashes and build information when run through the launcher. Timing values are machine-dependent.\n")
+        (destination/"README.md").write_text(generate(source, destination)+audio_report(project, source, destination)+"\n## Reproduce\n\nFrom the repository root, run:\n\n```sh\npython3 projects/run_academic_tests.py --output build/academic-results\npython3 projects/generate_academic_reports.py build/academic-results --publish\n```\n\nCMake 3.22+, a C++17 compiler and the normal JUCE system dependencies are required. Plot generation additionally needs Python `numpy` and `matplotlib`. Native tests and CTest do not require Python plotting packages. Detailed CSV files are gzip-compressed alongside this report; `provenance.json` records source hashes and build information when run through the launcher. Timing values are machine-dependent.\n")
         (destination/"report-provenance.json").write_text(json.dumps({
             "generator_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "audio_generator_sha256": hashlib.sha256((ROOT/"generate_audio_spectrograms.py").read_bytes()).hexdigest(),
             "input_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(source.glob("*.csv"))},
             "matplotlib_version": matplotlib.__version__,
+            "numpy_version": np.__version__,
         }, indent=2)+"\n")
         print(destination/"README.md")
 

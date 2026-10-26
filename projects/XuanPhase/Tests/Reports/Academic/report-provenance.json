@@ -1,11 +1,19 @@
 {
-  "generator_sha256": "158bad4d50b9bdeeb323b54c0c192cd96a9548deac1fe95e2b74133bf97a22ad",
+  "generator_sha256": "796fdc843b7233f18dc4b692f8cc8a6b73f865a5bad4657f003940d21fbd9534",
+  "audio_generator_sha256": "f231f02f73de88df2cd3c5a9b361c2dc453cceb56016fa276df48a5b21132d50",
   "input_sha256": {
+    "audio-attack_over_sustain-bypass.csv": "90a59b000467cc77729d84b4d7c3ae4248a6ad16b8bb3e6b422ca4099fa64cb7",
+    "audio-attack_over_sustain-current.csv": "f9c6ed68de3852794287f10d4582bbb05cfab51506135adb0215732b19b2867d",
+    "audio-broadband_attack-bypass.csv": "59d5d77755d73041dce2c150f2e1b2e72174c5b9bd6052f89ec07bfa35bf1d71",
+    "audio-broadband_attack-current.csv": "31fe438a789468ce2d2d0e801090197da1f5f61bea8ce7f9813a95a3bf250210",
+    "audio-dispersed_packets-bypass.csv": "266fb6f2b1c98086a1abc9139a71d996ff6cdbfdc345a5b1dd43aa324127eaf3",
+    "audio-dispersed_packets-current.csv": "d80d95ade28b5ab0a1369bc63c5d5c478a6ea10610f81ce186c4b92351c5b273",
     "interpolation-probes.csv": "2c622aec26d6e4a9f96259de7eba54be857e49287a748e666942b60a76bc9341",
     "manifest.csv": "e7189ec0a0d83a2a67d01a278d67cf991d1317746c178e87ae1067a49553a4d5",
     "phase-targets.csv": "cf57db63176244b0d4df99d7fb29df26b8609db0dde292fbf06d5d902e62e5c8",
     "phase.csv": "f44deb668883c748e7588c305d9e56e960b45eb1e279a86c95f18143efff3d79",
     "response.csv": "cf08b33227ed123486a39f35bae89eb7bbd2f615d8968d511744a39ff484496d"
   },
-  "matplotlib_version": "3.10.8"
+  "matplotlib_version": "3.10.8",
+  "numpy_version": "2.3.5"
 }

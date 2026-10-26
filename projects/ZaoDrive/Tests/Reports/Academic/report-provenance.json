@@ -1,10 +1,16 @@
 {
-  "generator_sha256": "158bad4d50b9bdeeb323b54c0c192cd96a9548deac1fe95e2b74133bf97a22ad",
+  "generator_sha256": "796fdc843b7233f18dc4b692f8cc8a6b73f865a5bad4657f003940d21fbd9534",
+  "audio_generator_sha256": "f231f02f73de88df2cd3c5a9b361c2dc453cceb56016fa276df48a5b21132d50",
   "input_sha256": {
+    "audio-C_chord.csv": "66d5bd509462a842463eebc2f72ae87c900a727cffb53e34b274f66aca5e6e00",
+    "audio-harmonic_collision.csv": "e388b516e5d015c58ce4f155fd0685d4134addfc19a6fd60f491543091cc955a",
+    "clash-C_chord.csv": "c2f84b6d2e541848b705ea67bd0da0e92e38ca87d3fbc49e617c2a619dca0de4",
+    "clash-harmonic_collision.csv": "9d43ec7abd172814ab1808c9203f66deae2abb2cf8c0df89020bba962e758b15",
     "manifest.csv": "78f72a946a5704bc80159e4d4f8a72c7ca7dab9b6e9fce831186b6c1341f34d8",
     "partials.csv": "3c95b9c2199071b0cd01f3933a6aec5f823a697419b1809faeda895f354e09ce",
     "smart.csv": "5beaf02d0d68e3cc17ec67e54a604d7bb01af9425b8eb747199672066f2f7c80",
     "targets.csv": "ddf8340f00cbf0186541fe457c7974faacf7cfeb6423102d1352b021b44e9ac2"
   },
-  "matplotlib_version": "3.10.8"
+  "matplotlib_version": "3.10.8",
+  "numpy_version": "2.3.5"
 }

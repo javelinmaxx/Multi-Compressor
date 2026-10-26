@@ -121,6 +121,15 @@ int main (int argc, char** argv)
                     if (variant.baseline == 1) analysis = {};
                     phase = variant.options;
                     const auto audio = render(input,rate,settings,analysis);
+                    if (rate == 48000 && (v == 0 || v == 2))
+                    {
+                        const auto latency = 2*juce::roundToInt(rate*.025);
+                        if (v == 0) for (size_t i = 0; i < input.size(); ++i)
+                            check(std::abs(audio[i+size_t(latency)]-input[i]) < 1e-5,
+                                  "phase reference matches input after declared latency removal");
+                        audioCapture(directory,std::string("audio-")+names[size_t(corpus)]+"-"+variant.name+".csv",
+                                     input,input,audio,audio,rate,latency);
+                    }
                     const auto ir = xuan::PhaseEngine::impulse(rate,settings,analysis);
                     double error = 0;
                     for (int k = 0; k < reference.count; ++k)

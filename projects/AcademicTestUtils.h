@@ -45,3 +45,26 @@ inline void manifest (const std::filesystem::path& directory, const char* projec
     file << project << ',' << JucePlugin_VersionString << ",deterministic_offline,none\n";
 }
 }
+
+namespace academic
+{
+// Store real samples on the input timeline; compensate only declared integer
+// host latency, preserving algorithmic delay/phase and the rendered tail.
+inline void audioCapture (const std::filesystem::path& directory, const std::string& name,
+                          const std::vector<float>& inputLeft, const std::vector<float>& inputRight,
+                          const std::vector<float>& outputLeft, const std::vector<float>& outputRight,
+                          double rate, int latency)
+{
+    check (latency >= 0 && outputLeft.size() == outputRight.size()
+           && outputLeft.size() > size_t(latency), "audio capture has a complete stereo output");
+    auto out = csv (directory, name.c_str(), "sample,rate,removed_latency_samples,input_left,input_right,output_left,output_right");
+    for (size_t i = 0; i+size_t(latency) < outputLeft.size(); ++i)
+    {
+        const auto l = outputLeft[i+size_t(latency)], r = outputRight[i+size_t(latency)];
+        check (std::isfinite(l) && std::isfinite(r), "spectrogram audio is finite");
+        out << i << ',' << rate << ',' << latency << ','
+            << (i < inputLeft.size() ? inputLeft[i] : 0) << ','
+            << (i < inputRight.size() ? inputRight[i] : 0) << ',' << l << ',' << r << '\n';
+    }
+}
+}

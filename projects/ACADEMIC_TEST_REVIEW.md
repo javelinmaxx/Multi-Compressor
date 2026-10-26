@@ -81,3 +81,28 @@ corpus: mean mid log-magnitude error rose from 0.1328 at side weight zero to
 These pooled synthetic means do not identify a perceptually optimal setting.
 The Xuan ablations exposed an interaction between connected angle unwrapping
 and the final phase cap; its report preserves the unfavorable measurements.
+
+## Sample-derived audio spectrogram tests
+
+The native ablation executables now export real audio samples at 48 kHz for
+Kuo's neutral and fixed-Haas/Velvet renders, Zao's paired Smart Off/On wet and
+total outputs, and Xuan's three transient fixtures before/after automatic phase
+processing. `generate_academic_reports.py` validates and publishes the resulting
+spectrograms alongside each existing report. Kuo shows **mid and side energy**;
+Zao shows **on-minus-off power and measured dissonance-weighted wet energy**;
+Xuan shows **waveforms, transient window energy, magnitude and masked phase**.
+
+The audio protocols and limitations are in each report's `audio-spectrograms.md`.
+Native tests check finite samples, neutral reference identity, and exercised
+processing. Report generation checks nonzero side energy, identical paired
+inputs, masked valid phase, and >0.1 dB attenuation of actual weighted Smart
+target-bin energy on both documented fixtures. These sample-derived measures
+are separate from the analyser's predicted cost; the dissonance weighting is
+still the plugin's own heuristic, not listener evidence.
+
+Run `python3 projects/test_audio_spectrograms.py` to calibrate STFT power against
+Parseval's identity, a known −6.0206 dB gain, a known +π/2 phase shift, mid/side
+energy conservation, and silence masking. Python figures/tests require NumPy
+and Matplotlib; native ablations still need neither. The usual two-command
+reproduction workflow above includes all three sets of figures. CSV sample
+captures and frequency weights are archived with deterministic gzip headers.
