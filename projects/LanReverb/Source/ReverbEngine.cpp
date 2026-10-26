@@ -18,7 +18,11 @@ float interpolate (const std::vector<float>& buffer, size_t position, float dela
     return buffer[a]+fraction*(buffer[b]-buffer[a]);
 }
 }
-void ResonanceAnalyser::reset() { ages = {}; held = {}; }
+void ResonanceAnalyser::reset (bool preserveSource)
+{
+    ages = {}; held = {};
+    if (!preserveSource) { sourceHolds = {}; previousSample = 0; }
+}
 Analysis ResonanceAnalyser::analyse (const Frame& frame)
 {
     input.fill(0); feedback.fill(0);
@@ -50,6 +54,42 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
     std::array<Candidate,maxBands> selected {};
     const auto previousAges = ages; ages.fill(0);
     const auto inputMaximum = *std::max_element(input.begin(),input.end());
+    // Protect source peaks before evaluating the feedback, including peaks
+    // belonging to a note which has stopped but is still in the delay network.
+    const auto elapsed = previousSample > 0 && frame.sampleEnd > previousSample
+        ? float((frame.sampleEnd-previousSample)/frame.rate) : .1f;
+    previousSample = frame.sampleEnd;
+    for (auto& hold : sourceHolds) hold = std::max(0.f,hold-elapsed);
+    for (int k = 1; k < analysisSize/2-14; ++k)
+    {
+        const auto index = size_t(k);
+        if (input[index] < std::max(1e-10,inputMaximum*.000001)
+            || input[index] <= input[index-1] || input[index] < input[index+1]) continue;
+        std::array<double,18> neighbours {}; int at = 0;
+        for (int distance = 4; distance <= 12; ++distance)
+        { neighbours[size_t(at++)] = input[size_t(k+distance)]; neighbours[size_t(at++)] = input[size_t(std::max(1,k-distance))]; }
+        // A loud neighbouring note must not mask a quieter musical partial.
+        std::nth_element(neighbours.begin(),neighbours.begin()+9,neighbours.end());
+        const auto prominence = 10*std::log10(input[index]/std::max(1e-12,neighbours[9]));
+        if (prominence >= 6)
+            sourceHolds[index] = std::max(sourceHolds[index],prominence >= 12
+                ? std::clamp(frame.sourceHoldSeconds,.3f,45.f) : .25f);
+    }
+    std::array<bool,analysisSize/2+1> protectedBins {};
+    for (int k = 1; k < analysisSize/2; ++k)
+        if (sourceHolds[size_t(k)] > 0)
+        {
+            const auto radius = std::max(2,int(std::ceil(k*.02)));
+            for (int bin = std::max(1,k-radius); bin <= std::min(analysisSize/2,k+radius); ++bin)
+                protectedBins[size_t(bin)] = true;
+        }
+    const auto overlapsSource = [&] (double frequency, double bandwidth)
+    {
+        const auto firstBin = std::clamp(int(std::floor((frequency-bandwidth)/binHz)),1,analysisSize/2);
+        const auto lastBin = std::clamp(int(std::ceil((frequency+bandwidth)/binHz)),firstBin,analysisSize/2);
+        for (int bin = firstBin; bin <= lastBin; ++bin) if (protectedBins[size_t(bin)]) return true;
+        return false;
+    };
     for (int k = 2; k < analysisSize/2-14; ++k)
     {
         const auto hz = k*binHz; const auto index = size_t(k);
@@ -66,13 +106,13 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
         const auto inputPeak = std::max({input[index-1],input[index],input[index+1]});
         const auto protection = inputPeak > std::max(1e-9,inputMaximum*.0001)
             ? std::clamp(10*std::log10(inputPeak/std::max(1e-12,inputLocal)),0.,60.) : 0.;
+        const auto bandwidth = float(std::max(binHz*2.5,hz/14));
         const auto excess = prominence-protection;
-        if (excess < 8) continue;
+        if (excess < 8 || overlapsSource(hz,bandwidth)) continue;
         ages[index] = std::min(2.f,.1f+std::max({previousAges[index-1],previousAges[index],previousAges[index+1]}));
         if (ages[index] < .25f) continue;
         // Three separated, attenuation-only bands; FFT resolution limits their
         // minimum width. Preserve original input peaks while the source plays.
-        const auto bandwidth = float(std::max(binHz*2.5,hz/14));
         Candidate candidate {{float(hz),bandwidth,-float(std::min(9.,(excess-6)*.6))},excess*std::sqrt(feedback[index])};
         bool duplicate = false;
         for (const auto& existing : selected)
@@ -87,7 +127,9 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
     // A slow release prevents the notch from disappearing as soon as it works.
     for (int i = 0; i < held.count; ++i)
     {
-        auto band = held.bands[size_t(i)]; bool found = false;
+        auto band = held.bands[size_t(i)];
+        if (overlapsSource(band.frequency,band.width)) continue; // revoke stale cuts on a new note
+        bool found = false;
         for (int j = 0; j < result.count; ++j)
             if (std::abs(result.bands[size_t(j)].frequency-band.frequency) < band.width)
             { result.bands[size_t(j)].gainDb = std::min(result.bands[size_t(j)].gainDb,band.gainDb*.961f); found = true; }
@@ -103,7 +145,7 @@ void AnalysisService::release() { stopThread(-1); }
 void AnalysisService::prepare (double rate, bool worker)
 {
     release(); ring = {}; job = {}; ring.rate = job.rate = rate;
-    position = filled = sinceJob = 0; interval = std::max(1,juce::roundToInt(rate*.1));
+    position = filled = sinceJob = 0; sampleCounter = 0; interval = std::max(1,juce::roundToInt(rate*.1));
     enabled = false; offline = !worker; analysedGeneration = 0; analyser.reset();
     // Keep publication versions monotonic across host re-prepares so an open
     // editor cannot mistake a new frame for the previous stream's revision.
@@ -113,13 +155,15 @@ void AnalysisService::prepare (double rate, bool worker)
     version.fetch_add(1);
     if (worker) startThread(juce::Thread::Priority::low);
 }
-void AnalysisService::setActive (bool active)
+void AnalysisService::setActive (bool active, float sourceHoldSeconds)
 {
+    ring.sourceHoldSeconds = sourceHoldSeconds;
     if (enabled == active) return;
     enabled = active; generation.fetch_add(1); filled = sinceJob = position = 0;
 }
 void AnalysisService::push (float left, float right, float wetLeft, float wetRight) noexcept
 {
+    ++sampleCounter;
     if (!enabled) return;
     const auto p = size_t(position);
     ring.audio[0][p] = left; ring.audio[1][p] = right; ring.audio[2][p] = wetLeft; ring.audio[3][p] = wetRight;
@@ -129,14 +173,14 @@ void AnalysisService::push (float left, float right, float wetLeft, float wetRig
     if (!jobState.compare_exchange_strong(expected,1,std::memory_order_acquire)) return;
     for (size_t ch = 0; ch < 4; ++ch)
         for (int i = 0; i < analysisSize; ++i) job.audio[ch][size_t(i)] = ring.audio[ch][size_t((position+i)%analysisSize)];
-    job.generation = generation.load(); job.rate = ring.rate;
+    job.generation = generation.load(); job.rate = ring.rate; job.sourceHoldSeconds = ring.sourceHoldSeconds; job.sampleEnd = sampleCounter;
     sinceJob = 0; submitted.fetch_add(1); jobState.store(2,std::memory_order_release);
 }
 void AnalysisService::compute()
 {
     int expected = 2;
     if (!jobState.compare_exchange_strong(expected,3,std::memory_order_acquire)) return;
-    if (analysedGeneration != job.generation) { analyser.reset(); analysedGeneration = job.generation; }
+    if (analysedGeneration != job.generation) { analyser.reset(true); analysedGeneration = job.generation; }
     publish(analyser.analyse(job)); jobState.store(0,std::memory_order_release);
 }
 void AnalysisService::finishBlock() { if (offline) compute(); }
@@ -227,7 +271,8 @@ void ReverbEngine::prepare (double rate, bool worker)
         line.delay.assign(size_t(std::ceil(sampleRate*.99))+4,0);
         line.phaseMemory.assign(size_t(std::max(1,juce::roundToInt(sampleRate*(.0017+i*.00083)))),0);
         line.tap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
-        feedbackGain[i].reset(sampleRate,.05);
+        line.wetTap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
+        feedbackGain[i].reset(sampleRate,.05); injectionGain[i].reset(sampleRate,.05);
     }
     for (size_t ch = 0; ch < 2; ++ch)
     { predelay[ch].assign(size_t(std::ceil(sampleRate*.25))+4,0); predelayTap[ch].prepare(sampleRate,float(sampleRate*.02)); }
@@ -241,7 +286,7 @@ void ReverbEngine::prepare (double rate, bool worker)
 void ReverbEngine::update (const Settings& s)
 {
     const auto active = s.automatic && (s.tame > .001f || s.phase*s.scatter > .001f);
-    analysis.setActive(active);
+    analysis.setActive(active,std::clamp(s.decaySeconds,.3f,40.f)+1.25f);
     Analysis next;
     if (active && analysis.read(next)) latest = next;
     if (!active) latest = {};
@@ -256,12 +301,17 @@ void ReverbEngine::update (const Settings& s)
     {
         auto& line = lines[i];
         const auto autoSpread = active ? latest.strength*s.phase*.09f*std::sin(latest.frequency*.017f+float(i)*2.399963f) : 0.f;
-        const auto seconds = std::clamp(s.timeMs,20.f,500.f)*.001f*(1+s.scatter*(ratios[i]-1))
+        const auto wetSeconds = std::clamp(s.timeMs,20.f,500.f)*.001f*(1+s.scatter*(ratios[i]-1));
+        const auto seconds = wetSeconds
             *(1+std::clamp(s.tap,-1.f,1.f)*.3f*(1+s.scatter*(tapPattern[i]-1))+s.scatter*autoSpread);
+        if (first) line.wetTap.prepare(sampleRate,float(sampleRate)*wetSeconds);
+        else line.wetTap.target(float(sampleRate)*wetSeconds);
         const auto delaySamples = float(sampleRate)*seconds;
         if (first) line.tap.prepare(sampleRate,delaySamples); else line.tap.target(delaySamples);
         // Conservative per-line RT60 gains, always strictly below unity.
         set(feedbackGain[i],std::min(.9995f,float(std::pow(10.,-3*(seconds+s.scatter*line.phaseMemory.size()/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f)))));
+        const auto sourceGain = std::pow(10.,-3*(wetSeconds+s.scatter*line.phaseMemory.size()/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f));
+        set(injectionGain[i],.35355339f*float(std::sqrt(std::max(0.,1-sourceGain*sourceGain))));
         if (first || !juce::exactlyEqual(lastPhaseFrequency,latest.frequency))
             line.phaseTarget = latest.frequency > 0 && active
                 ? phaseCoefficient(latest.frequency,line.phaseMemory.size(),sampleRate,i) : tapPattern[i]*.45f;
@@ -328,7 +378,9 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
         const auto transition = smooth(bankFade);
         for (size_t line = 0; line < 8; ++line)
         {
-            auto& memory = lines[line]; const auto x = memory.tap.read(memory.delay,memory.position);
+            auto& memory = lines[line];
+            const auto wetSample = memory.wetTap.read(memory.delay,memory.position);
+            const auto x = memory.tap.read(memory.delay,memory.position);
             raw[line] = x;
             auto value = banks[size_t(activeBank)].process(x,line);
             if (bankFade < 1 || warm > 0)
@@ -348,8 +400,8 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
             const auto signRight = (line&4u) != 0 ? -1.f : 1.f;
             const auto pickupLeft = projectionCos+projectionSin*signLeft;
             const auto pickupRight = projectionCos*((line&1u) != 0 ? -1.f : 1.f)+projectionSin*signRight;
-            wetLeft += .35355339f*nodes[line]*pickupLeft;
-            wetRight += .35355339f*nodes[line]*pickupRight;
+            wetLeft += .35355339f*wetSample*pickupLeft;
+            wetRight += .35355339f*wetSample*pickupRight;
             probeLeft += .35355339f*raw[line]*pickupLeft; probeRight += .35355339f*raw[line]*pickupRight;
         }
         if (warm > 0) --warm;
@@ -372,7 +424,9 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
         {
             const auto feedback = scattered[line];
             const auto gain = feedbackGain[line].getNextValue();
-            const auto injection = .35355339f*std::sqrt(std::max(0.f,1-gain*gain))
+            // The source feed is independent of automatic feedback tap/gain
+            // changes; only recirculated audio receives EQ and phase processing.
+            const auto injection = injectionGain[line].getNextValue()
                 *(inputLeft+((line&1u) != 0 ? -inputRight : inputRight));
             auto value = gain*feedback+injection;
             // Last-resort smooth bounded feedback write, idle at normal levels.

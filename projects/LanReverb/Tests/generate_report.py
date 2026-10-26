@@ -26,6 +26,18 @@ def main():
     source = args.results
     destination = Path(__file__).resolve().parent/"Reports" if args.publish else source/"report"
     destination.mkdir(parents=True, exist_ok=True)
+    protection = load(source,"input-protection.csv"); routing = load(source,"feedback-routing.csv")
+    fig,axes = plt.subplots(2,1,figsize=(10,7),constrained_layout=True)
+    measured = protection[protection["rate"] == 48000]
+    axes[0].step(measured["time_s"],measured["protected_targets"],where="post",label="Targets overlapping source notes",color="#777777")
+    axes[0].step(measured["time_s"],measured["other_targets"],where="post",label="Unrelated feedback targets",color="#b58a42")
+    axes[0].set(xlabel="Time after source stops (s)",ylabel="Selected bands",ylim=(-.1,3.1)); axes[0].legend(); axes[0].grid(alpha=.25)
+    measured = routing[routing["rate"] == 48000]
+    axes[1].plot(measured["sample"]/48,measured["reference"],label="No correction",color="#777777",lw=2)
+    axes[1].plot(measured["sample"]/48,measured["corrected"],label="Forced feedback EQ + phase/tap correction",color="#b58a42",lw=.8)
+    axes[1].axvspan(0,65,color="#aaaaaa",alpha=.12,label="First arrivals: must match")
+    axes[1].set(xlabel="Time after impulse (ms)",ylabel="Wet amplitude"); axes[1].legend(fontsize=8); axes[1].grid(alpha=.25)
+    fig.savefig(destination/"input-protection.png",dpi=160); plt.close(fig)
     scatter = load(source,"scatter.csv"); scatter_summary = load(source,"scatter-summary.csv")
     fig,axes = plt.subplots(3,1,figsize=(10,7),constrained_layout=True,sharex=True)
     for ax, amount in zip(axes,[0.,.5,1.]):
@@ -84,6 +96,16 @@ def main():
 
 Version 0.5.0. These are reproducible synthetic engineering tests, not listening results or a claim that every resonance can be removed.
 
+## Source protection and feedback-only correction
+
+![Source-note protection and wet routing](input-protection.png)
+
+Three-rate spectral tests (44.1/48/96 kHz) use a 220/329.7/997.3 Hz chord with a quiet 997.3 Hz partial, added noise, and anti-phase stereo. The corresponding feedback partial is louder and offset by 0.6 FFT bins. Source peaks must not become EQ or automatic phase/tap targets, even when the feedback spectrum is much more tonal. After the source stops, its peaks remain protected while an unrelated 1,800 Hz feedback component is detected. A separate test makes previously ringing frequencies appear in the input and requires their held targets to be revoked. Service-level tests also verify that observed-note protection survives Auto Off/On and expires correctly with elapsed stream time.
+
+Strong source peaks use a median neighborhood to avoid loud neighboring notes masking a quiet partial. Protection lasts for nominal Decay plus 1.25 s after observation (three seconds in the direct spectral fixture); weaker peaks receive a short guard. Filter-band overlap is vetoed as well as exact-bin matches. The report's protection trace shows selected targets, not output gain. Protection depends on observed source frames and deliberately leaves ringing overlapping a protected note untreated.
+
+For routing, a test-only friend preloads an actual −9 dB feedback filter at 1,100 Hz and forces a phase/automatic-tap target before rendering an impulse. The ordinary reference has no correction. At Time 80 ms, Scatter 100%, Pre-delay 0 and Width 100%, the first arrivals before 65 ms must agree within 2e−7 at all three sample rates; later returns must differ. This verifies that the correction is active **inside the feedback return**, rather than proving equality with an accidentally bypassed processor. Separate wet and feedback read heads, plus independent source injection gain, prevent automatic tap/gain changes from altering the first arrivals. Recirculated audio naturally carries the corrections on subsequent repeats; there is no EQ or phase insert on the wet output.
+
 ## Scatter: delay to reverb
 
 ![Scatter impulse responses](scatter.png)
@@ -110,13 +132,13 @@ A stereo-linked 0.8-amplitude impulse feeds the real eight-line engine at 48 kHz
 
 ![Tail and spectral comparison](resonance.png)
 
-The input contains 220 Hz and 997 Hz tones at amplitudes 0.14 and 0.10 for one second, followed by nine seconds of silence. Time is 90 ms, Decay 30 s, Diffusion 10%, Pre-delay 20 ms, Width 125%, Mix 100%, and Output 0 dB. Conditions are Auto Off with Phase 0; Auto On with Tame 100% / Phase 0; Auto On with Tame 0 / Phase 100%; and Auto On with the default Tame 75% / Phase 60%. These compare isolated EQ, isolated phase/tap processing, and their combined result. Phase zero retains the phase stage's pure delay.
+The source contains 220 Hz and 997 Hz tones at amplitudes 0.14 and 0.10 for one second, followed by nine seconds of silence. At one second, a test-only helper adds a 0.08-amplitude 1,800 Hz sinusoid to the eight delay-line histories, signed with the left wet pickup pattern. This controlled in-loop disturbance is absent from the source and can be corrected without treating its intended tones as faults. It is a seeded-state engineering fixture, not a recording or naturally generated resonance claim. Time is 90 ms, Decay 30 s, Diffusion 10%, Pre-delay 20 ms, Width 125%, Mix 100%, and Output 0 dB. Conditions are Auto Off with Phase 0; Auto On with Tame 100% / Phase 0; Auto On with Tame 0 / Phase 100%; and Auto On with the default Tame 75% / Phase 60%. These compare isolated EQ, isolated phase/tap processing, and their combined result. Phase zero retains the phase stage's pure delay in the feedback branch only.
 
 | Condition | Mean late-tail power, 3–8 s | Change from Off |
 |---|---:|---:|
 {rows}
 
-The deepest requested single-band cut was **{maximum:.2f} dB**. Tests require a genuine correction request and at least 10% less late energy with EQ and with the combined controls on this deliberately tonal fixture. The spectrum uses overlapping 4,096-sample Hann windows with 2,048-sample hops over 3–8 s, averaging both channel powers. No output matching conceals attenuation. Phase/tap processing redistributes loop modes and may move energy between frequencies; its result is reported independently rather than required to beat EQ or reduce total energy.
+The deepest requested single-band cut was **{maximum:.2f} dB**. Tests require a genuine correction request and at least 10% less 1,600–2,050 Hz late-tail energy with feedback EQ. They do not require the legitimate source-note tail to be attenuated. The table shows total late energy separately, including protected notes. The spectrum uses overlapping 4,096-sample Hann windows with 2,048-sample hops over 3–8 s, averaging both channel powers. No output matching conceals attenuation. Phase/tap processing redistributes loop modes and may move energy between frequencies; its result is reported independently rather than required to beat EQ or reduce total energy.
 
 The analyser and feedback filters are production code. Tests run the analyser synchronously at callback boundaries for deterministic results; the shipped plugin runs it in a background worker, whose scheduling can delay or drop updates. The plotted 100 ms RMS windows are independent of the internal FFT windows. The CSV's `max_cut_db` column is the maximum over the entire render, not a time-varying reduction trace.
 
@@ -126,7 +148,7 @@ The analyser and feedback filters are production code. Tests run the analyser sy
 
 ![Tap shift redistributes existing ringing](tap-shift.png)
 
-The same tone excitation and settings as the Auto Off condition are rendered again, but Tap Shift changes from 0 to +70% at 2 s, after the source has stopped. Other controls stay fixed. The plot compares 3–8 s tail spectra. A normalized spectral dot-product check requires the shifted result to differ from the unchanged network. This directly exercises existing ringing rather than merely changing the settings before excitation. Energy can move into other frequencies; a tap change alone is not an attenuation guarantee.
+The same source tones, seeded feedback disturbance and settings as the Auto Off condition are rendered again, but Tap Shift changes from 0 to +70% at 2 s, after the source has stopped. Other controls stay fixed. The plot compares 3–8 s tail spectra. A normalized spectral dot-product check requires the shifted result to differ from the unchanged network. This directly exercises existing ringing rather than merely changing the settings before excitation. Energy can move into other frequencies; a tap change alone is not an attenuation guarantee.
 
 ## Width from mono
 

@@ -3,15 +3,48 @@
 #include <filesystem>
 #include <random>
 using namespace stageTests;
+namespace lan
+{
+struct ReverbEngineTestAccess
+{
+    static void forceCorrection (ReverbEngine& engine)
+    {
+        engine.latest = {}; engine.latest.count = 1; engine.latest.frequency = 1100; engine.latest.strength = 1; engine.latest.revision = 2;
+        engine.latest.bands[0] = {1100,80,-9};
+        for (auto& bank : engine.banks)
+        {
+            bank.count = 1;
+            for (auto& line : bank.filters) line[0].configure(engine.latest.bands[0],engine.sampleRate,1);
+        }
+        engine.appliedRevision = 2; engine.appliedAuto = true; engine.previousTame = 1;
+        engine.warm = 0; engine.bankFade = 1;
+    }
+    static void seedFeedback (ReverbEngine& engine)
+    {
+        // A controlled in-loop disturbance, absent from the source spectrum.
+        for (size_t line = 0; line < engine.lines.size(); ++line)
+        {
+            auto& memory = engine.lines[line];
+            const auto sign = (line&2u) != 0 ? -1.f : 1.f;
+            for (size_t i = 0; i < memory.delay.size(); ++i)
+            {
+                const auto ago = (memory.position+memory.delay.size()-i)%memory.delay.size();
+                memory.delay[i] += sign*float(.08*std::sin(-2*juce::MathConstants<double>::pi*1800*ago/engine.sampleRate));
+            }
+        }
+    }
+};
+}
 namespace
 {
 constexpr double pi = juce::MathConstants<double>::pi;
 struct Audio { std::vector<float> left, right; float maxReduction = 0; uint32_t jobs = 0; };
-Audio render (lan::Settings settings, double seconds, double rate, int signal, int blockSize = 128, bool automate = false, bool tapSwitch = false)
+Audio render (lan::Settings settings, double seconds, double rate, int signal, int blockSize = 128, bool automate = false, bool tapSwitch = false, bool rogueFeedback = false)
 {
     lan::ReverbEngine engine; engine.prepare(rate,false);
     Audio out; const auto count = juce::roundToInt(seconds*rate); out.left.reserve(size_t(count)); out.right.reserve(size_t(count));
     std::mt19937 rng(72463); std::uniform_real_distribution<float> noise(-.25f,.25f);
+    bool seeded = false;
     for (int at = 0; at < count; at += blockSize)
     {
         const auto n = std::min(blockSize,count-at); juce::AudioBuffer<float> b(2,n);
@@ -32,6 +65,7 @@ Audio render (lan::Settings settings, double seconds, double rate, int signal, i
             settings.phase = step%2 == 0 ? 0.f : 1.f; settings.diffusion = float(step%5)*.25f;
             settings.mix = 1; settings.decaySeconds = 40;
         }
+        if (rogueFeedback && !seeded && at >= rate) { lan::ReverbEngineTestAccess::seedFeedback(engine); seeded = true; }
         engine.process(b,settings);
         out.maxReduction = std::max(out.maxReduction,engine.reductionDb());
         for (int i = 0; i < n; ++i)
@@ -101,6 +135,103 @@ void analyserTests (const juce::File& directory)
         { frame->audio[0][size_t(i)] = frame->audio[1][size_t(i)] = 0; frame->audio[2][size_t(i)] = noise(rng); frame->audio[3][size_t(i)] = noise(rng); }
         result = analyser.analyse(*frame);
         check(result.count == 0,"broadband noise does not create persistent spectral cuts");
+    }
+}
+void inputProtectionTests (const juce::File& directory)
+{
+    std::ofstream results(directory.getChildFile("input-protection.csv").getFullPathName().toStdString());
+    results << "rate,stage,time_s,protected_targets,other_targets\n";
+    for (double rate : {44100.,48000.,96000.})
+    {
+        auto frame = std::make_unique<lan::Frame>(); frame->rate = rate; frame->sourceHoldSeconds = 3;
+        lan::ResonanceAnalyser analyser;
+        std::mt19937 rng(6302); std::uniform_real_distribution<float> noise(-.001f,.001f);
+        const auto fill = [&] (bool source, bool rogue)
+        {
+            for (int i = 0; i < lan::analysisSize; ++i)
+            {
+                const auto t = i/rate;
+                const auto input = float(.2*std::sin(2*pi*220*t)+.003*std::sin(2*pi*997.3*t)+.04*std::sin(2*pi*329.7*t))+noise(rng);
+                frame->audio[0][size_t(i)] = source ? input : 0;
+                frame->audio[1][size_t(i)] = source ? -input : 0;
+                const auto feedback = float(.25*std::sin(2*pi*(997.3+rate/lan::analysisSize*.6)*t)+.1*std::sin(2*pi*329.7*t)+.05*std::sin(2*pi*220*t)
+                    +(rogue ? .12*std::sin(2*pi*1800*t) : 0));
+                frame->audio[2][size_t(i)] = feedback; frame->audio[3][size_t(i)] = -feedback;
+            }
+        };
+        for (int step = 0; step < 12; ++step)
+        {
+            fill(true,false); const auto a = analyser.analyse(*frame);
+            check(a.count == 0,"a weak detuned source partial over a chord is protected even when feedback is much more tonal");
+        }
+        for (int step = 0; step < 20; ++step)
+        {
+            fill(false,true); const auto a = analyser.analyse(*frame); int protectedTargets = 0, other = 0;
+            for (int band = 0; band < a.count; ++band)
+                if (std::abs(a.bands[size_t(band)].frequency-997.3) < 160 || std::abs(a.bands[size_t(band)].frequency-329.7) < 80 || std::abs(a.bands[size_t(band)].frequency-220) < 80) ++protectedTargets; else ++other;
+            check(protectedTargets == 0,"source-note memory protects decaying input peaks after the source stops");
+            if (step > 5) check(other > 0 && std::abs(a.frequency-1800) < 120,"unrelated persistent feedback peaks still guide EQ and automatic phase");
+            results << rate << ",source_tail," << step*.1 << ',' << protectedTargets << ',' << other << '\n';
+        }
+        // An existing cut must be revoked when that frequency becomes a source note.
+        analyser.reset(); fill(false,true);
+        for (int step = 0; step < 5; ++step) analyser.analyse(*frame);
+        for (int i = 0; i < lan::analysisSize; ++i)
+            frame->audio[0][size_t(i)] = frame->audio[1][size_t(i)] = frame->audio[2][size_t(i)];
+        check(analyser.analyse(*frame).count == 0,"new source notes revoke overlapping held EQ and phase targets");
+    }
+    lan::AnalysisService service; service.prepare(48000,false); uint64_t sample = 0;
+    const auto advance = [&] (int count, bool source, bool additional)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            const auto tone = float(.2*std::sin(2*pi*(85.*48000/lan::analysisSize)*sample/48000));
+            const auto other = additional ? float(.12*std::sin(2*pi*1800*sample/48000)) : 0.f;
+            service.push(source ? tone : 0,source ? -tone : 0,tone+other,-tone-other); ++sample;
+        }
+        service.finishBlock();
+    };
+    service.setActive(true,3); advance(4800,true,false);
+    service.setActive(false,3); advance(12000,false,false);
+    service.setActive(true,3);
+    for (int i = 0; i < 5; ++i) advance(4800,false,true);
+    lan::Analysis remembered; check(service.read(remembered),"resumed worker publishes a valid protected frame");
+    for (int i = 0; i < remembered.count; ++i)
+        check(std::abs(remembered.bands[size_t(i)].frequency-996.09375) > 120,"observed source-note protection survives an Auto Off/On cycle");
+    service.setActive(false,3); advance(4*48000,false,false); service.setActive(true,3);
+    for (int i = 0; i < 5; ++i) advance(4800,false,true);
+    bool expired = false; lan::Analysis after; check(service.read(after),"worker resumes after a long inactive interval");
+    for (int i = 0; i < after.count; ++i) expired |= std::abs(after.bands[size_t(i)].frequency-996.09375) < 120;
+    check(expired,"source protection expires by stream time even while Auto is off");
+}
+void feedbackRoutingTests (const juce::File& directory)
+{
+    std::ofstream report(directory.getChildFile("feedback-routing.csv").getFullPathName().toStdString());
+    report << "rate,sample,reference,corrected\n";
+    for (double rate : {44100.,48000.,96000.})
+    {
+        lan::Settings normal; normal.automatic = false; normal.predelayMs = 0; normal.timeMs = 80; normal.mix = 1; normal.width = 1; normal.phase = 0;
+        auto corrected = normal; corrected.automatic = true; corrected.phase = 1; corrected.tame = 1;
+        lan::ReverbEngine reference, processing; reference.prepare(rate,false); processing.prepare(rate,false);
+        lan::ReverbEngineTestAccess::forceCorrection(processing);
+        const auto count = juce::roundToInt(rate*.5); double earlyError = 0, laterDifference = 0; float earlyPeak = 0;
+        for (int at = 0; at < count; at += 128)
+        {
+            const auto n = std::min(128,count-at); juce::AudioBuffer<float> a(2,n), b(2,n); a.clear();
+            if (at == 0) { a.setSample(0,0,.8f); a.setSample(1,0,.8f); }
+            b.makeCopyOf(a);
+            reference.process(a,normal); processing.process(b,corrected);
+            for (int i = 0; i < n; ++i)
+            {
+                const auto x = a.getSample(0,i), y = b.getSample(0,i); const auto t = (at+i)/rate;
+                if (t < .065) { earlyError = std::max(earlyError,double(std::abs(x-y))); earlyPeak = std::max(earlyPeak,std::abs(x)); }
+                if (t > .1) laterDifference += (x-y)*(x-y);
+                if (at+i < rate*.12) report << rate << ',' << at+i << ',' << x << ',' << y << '\n';
+            }
+        }
+        check(earlyPeak > .01,"first-arrival routing comparison contains actual wet signal");
+        check(earlyError < 2e-7,"active EQ, phase and automatic tap steering do not alter the first wet arrivals");
+        check(laterDifference > 1e-5,"the same correction affects later recirculated feedback instead of being bypassed");
     }
 }
 void tapTests()
@@ -269,7 +400,7 @@ void measurements (const juce::File& directory)
     {
         lan::Settings settings; settings.mix = 1; settings.decaySeconds = 30; settings.diffusion = .1f; settings.phase = mode == 2 ? 1.f : mode == 3 ? .6f : 0.f;
         settings.tame = mode == 1 ? 1.f : mode == 3 ? .75f : 0.f; settings.automatic = mode != 0;
-        const auto out = render(settings,10,48000,1);
+        const auto out = render(settings,10,48000,1,128,false,false,true);
         spectra[size_t(mode)] = spectrum(out);
         late[size_t(mode)] = energy(out,3,8,48000); if (mode == 1) correction = out.maxReduction;
         for (int i = 0; i < 100; ++i) resonances << mode << ',' << i*.1 << ',' << std::sqrt(energy(out,i*.1,(i+1)*.1,48000)) << ',' << out.maxReduction << '\n';
@@ -279,10 +410,14 @@ void measurements (const juce::File& directory)
     for (size_t k = 1; k < spectra[0].size(); ++k) spectral << k*48000./4096 << ',' << spectra[0][k] << ',' << spectra[1][k] << ',' << spectra[2][k] << ',' << spectra[3][k] << '\n';
     std::cout << "Tail control: off=" << late[0] << " EQ=" << late[1] << " phase=" << late[2] << " cut=" << correction << " dB\n";
     check(correction > 1,"actual feedback ringing triggers automatic EQ");
-    check(late[1] < late[0]*.9,"automatic EQ reduces actual late ringing energy");
-    check(late[3] < late[0]*.9,"combined phase and EQ controls reduce actual late ringing energy");
+    double rogueBefore = 0, rogueAfter = 0;
+    for (size_t k = 1; k < spectra[0].size(); ++k)
+        if (k*48000./4096 >= 1600 && k*48000./4096 <= 2050)
+        { rogueBefore += spectra[0][k]; rogueAfter += spectra[1][k]; }
+    std::cout << "Unrelated feedback-band power ratio=" << rogueAfter/std::max(1e-30,rogueBefore) << '\n';
+    check(rogueAfter < rogueBefore*.9,"feedback EQ reduces the added ringing band without requiring source-tail attenuation");
     lan::Settings shifted; shifted.mix = 1; shifted.decaySeconds = 30; shifted.diffusion = .1f; shifted.phase = 0; shifted.automatic = false;
-    const auto shiftedAudio = render(shifted,10,48000,1,128,false,true);
+    const auto shiftedAudio = render(shifted,10,48000,1,128,false,true,true);
     const auto shiftedSpectrum = spectrum(shiftedAudio);
     double dot = 0, beforeNorm = 0, afterNorm = 0;
     std::ofstream tapReport(directory.getChildFile("tap-shift.csv").getFullPathName().toStdString()); tapReport << "frequency_hz,fixed_power,shifted_power\n";
@@ -364,7 +499,7 @@ int main (int argc, char** argv)
             : juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("lan-reverb-report");
         directory.createDirectory();
         if (argc > 2 && juce::String(argv[1]) == "--editor") editorTests(juce::File(argv[2]));
-        else { analyserTests(directory); tapTests(); processorTests(); scatterTests(directory); measurements(directory); }
+        else { analyserTests(directory); inputProtectionTests(directory); feedbackRoutingTests(directory); tapTests(); processorTests(); scatterTests(directory); measurements(directory); }
         std::cout << checks << " Lan Reverb checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

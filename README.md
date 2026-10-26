@@ -157,8 +157,8 @@ bands red, with white left-channel and gold right-channel traces for applied pha
 Create long, wide tails at high wet settings with an eight-line stereo feedback
 network. **Scatter** moves from regular delay repeats at zero to dense stereo reverb at full;
 **Time**, **Decay**, and **Diffusion** shape the result; **Tap Shift** crossfades feedback read positions while audio is ringing.
-**Auto** tracks persistent spectral peaks, applies attenuation-only feedback EQ,
-and guides phase and tap scattering. **Tame** and **Phase** set their strengths.
+**Auto** protects input-note peaks while tracking persistent ringing, applies EQ
+and phase correction only to feedback taps, and leaves the wet pickup unfiltered. **Tame** and **Phase** set their strengths.
 The dry path has zero added latency, and Mix reaches 100% wet for sends.
 
 The feedback design and safeguards limit runaway behavior, while the analyser

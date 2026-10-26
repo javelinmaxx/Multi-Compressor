@@ -26,7 +26,9 @@ struct Frame
 {
     std::array<std::array<float, analysisSize>, 4> audio {}; // input L/R, feedback L/R
     double rate = 48000;
+    float sourceHoldSeconds = 12;
     uint32_t generation = 0;
+    uint64_t sampleEnd = 0;
 };
 // Input-aware peak prominence and persistence detect narrow, sustained loop
 // coloration. Only attenuation is requested; this is not a feedback canceller.
@@ -34,13 +36,14 @@ class ResonanceAnalyser
 {
 public:
     Analysis analyse (const Frame&);
-    void reset();
+    void reset (bool preserveSource = false);
 private:
     juce::dsp::FFT fft { 12 };
     std::array<float, 2*analysisSize> fftData {};
     std::array<double, analysisSize/2+1> input {}, feedback {};
-    std::array<float, analysisSize/2+1> ages {};
+    std::array<float, analysisSize/2+1> ages {}, sourceHolds {};
     Analysis held;
+    uint64_t previousSample = 0;
 };
 class AnalysisService final : private juce::Thread
 {
@@ -50,7 +53,7 @@ public:
     ~AnalysisService() override;
     void prepare (double rate, bool worker);
     void release();
-    void setActive (bool);
+    void setActive (bool, float sourceHoldSeconds = 12);
     void push (float left, float right, float wetLeft, float wetRight) noexcept;
     void finishBlock(); // synchronous only in explicit offline test rendering
     bool read (Analysis&) const noexcept;
@@ -69,6 +72,7 @@ private:
     int position = 0, filled = 0, sinceJob = 0, interval = 4800;
     bool enabled = false, offline = false;
     uint32_t analysedGeneration = 0;
+    uint64_t sampleCounter = 0;
 };
 
 // A convex dual-tap fade avoids read-head jumps. Targets arriving mid-fade
@@ -94,6 +98,7 @@ public:
     uint32_t analysisJobs() const noexcept { return analysis.jobs(); }
     float peakLevel() const noexcept { return displayedPeak.load(); }
 private:
+    friend struct ReverbEngineTestAccess;
     struct Filter
     {
         double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
@@ -110,7 +115,7 @@ private:
     {
         std::vector<float> delay, phaseMemory;
         size_t position = 0, phasePosition = 0;
-        MovingTap tap;
+        MovingTap tap, wetTap;
         float phaseCoefficient = 0, phaseTarget = 0, low = 0, dc = 0;
         float phaseProcess (float) noexcept;
     };
@@ -131,7 +136,7 @@ private:
     float lowCoefficient = 0, dcCoefficient = 0, phaseSmoothing = 0;
     float matrixCos = 1, matrixSin = 0, lastDiffusion = -1, lastPhaseFrequency = -1;
     float lastScatter = -1, projectionCos = 0, projectionSin = 1;
-    std::array<juce::SmoothedValue<float>, 8> feedbackGain;
+    std::array<juce::SmoothedValue<float>, 8> feedbackGain, injectionGain;
     juce::SmoothedValue<float> mix, outputGain, width, diffusion, phaseMix, bypass, scatterMix;
     std::atomic<float> displayedReduction { 0 }, displayedPeak { 0 };
 };

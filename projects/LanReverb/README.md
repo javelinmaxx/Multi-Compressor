@@ -48,7 +48,19 @@ loss from the phase-path blend, so Decay remains a nominal control.
 
 ## Signal path
 
-`input → optional wet pre-delay → 8 delay lines → feedback EQ → phase dispersion → damping → orthogonal mixing → per-line feedback gains → delay-line writes`
+`input → wet pre-delay → input injection → delay-line writes`
+
+`delay-line wet taps → stereo pickups → Width → dry/wet mix → Output`
+
+`separate feedback taps → EQ → phase dispersion → damping → orthogonal mixing → feedback gains → delay-line writes`
+
+The wet return is read **before** EQ, phase processing and loop damping. Those
+stages process only the recirculated signal, which is added to the independent
+input injection at the next delay-line write. They can change later repeats,
+but never act as inserts on the wet output or dry signal. Manual Tap Shift and
+automatic phase-guided tap steering move the feedback read heads only; the wet
+read heads retain the Time/Scatter spacing. Automatic feedback gain adjustments
+also do not change the source injection gain.
 
 Two different projections of the network form the wet stereo output. Width is
 applied **outside** the feedback loop, then mixed with the immediate dry path.
@@ -57,7 +69,7 @@ Stereo input is retained, and matched mono input/output is also supported.
 Three stages of Givens rotations mix the feedback lines orthogonally at every
 Diffusion setting. This avoids the loss of tail energy caused by interpolating
 between identity and a fixed matrix. Per-line gains use
-`min(0.9995, 10^(−3 × nominal_loop_seconds / Decay))`, including the Scatter-scaled phase-delay
+`min(0.9995, 10^(−3 × nominal_loop_seconds / Decay))`, including the Scatter-scaled feedback phase-delay
 buffer length. This describes a nominal RT60, not an exact broadband decay:
 18 Hz DC/bass damping, a high-frequency low-pass, fractional delay interpolation,
 EQ, and time variation change the measured result.
@@ -81,20 +93,35 @@ produce audible coloration or modulation.
 
 A background worker transforms a 4,096-sample Hann-windowed frame at up to
 10 updates/s. It sums channel powers rather than cancelling anti-phase stereo.
-A local spectral peak must exceed its neighborhood by at least 8 dB beyond the
-corresponding input prominence and persist for approximately 300 ms before it
-becomes a target. Up to three separated bands receive cuts capped at 9 dB before
+Input peaks are protected before feedback candidates are scored. A robust
+neighboring-bin median preserves quieter notes beside loud partials; peaks
+within 60 dB of the strongest input bin and above the absolute noise floor are
+eligible. Peaks at least 12 dB above that local median are remembered for the
+nominal Decay plus 1.25 s of delay allowance after they leave the input. Weaker
+6–12 dB peaks receive a short 250 ms guard. Protection covers neighboring bins
+and vetoes any EQ band that overlaps the protected region, including held cuts.
+An arriving input note therefore revokes an old overlapping EQ/automatic-phase
+target rather than waiting for its normal release.
+
+Only unprotected feedback peaks can become automatic EQ or phase/tap targets;
+they must exceed the surrounding feedback by at least 8 dB beyond instantaneous
+input prominence and persist for approximately 300 ms. Up to three separated bands receive cuts capped at 9 dB before
 Tame scaling. Their minimum width is limited by FFT resolution, and their
 nominal Q is at most 14. The effective low-frequency resolution changes with
 sample rate; this is not a continuous-frequency resonance detector.
 
-Notches release over roughly 2.5 s, avoiding immediate removal of a successful
+Unprotected notches release over roughly 2.5 s, avoiding immediate removal of a successful
 cut. Two fixed filter banks warm for 20 ms and crossfade over 80 ms, preventing
 coefficient jumps. The callback neither runs FFTs nor waits for the worker; it
 uses a bounded single job slot and lock-free atomic result publication. Missed
 jobs are dropped rather than queued without bound. Auto Off stops analysis submissions; so does Tame at zero when Phase is zero
 or Scatter is zero. Phase still supplies its static
 manual dispersion when Auto is off and Scatter is above zero.
+
+Protection favors preserving observed musical content, so a resonance too
+close to a protected source note is deliberately left alone. Source history is
+retained across Auto toggles and aged by stream time; preparing a new stream
+clears it. Source peaks must have been observed while analysis was enabled.
 
 The output stage is linear at normal levels. A smooth, bounded feedback-write
 guard activates only above magnitude 2, with an asymptotic limit of 3 per delay
