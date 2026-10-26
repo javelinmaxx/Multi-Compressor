@@ -265,7 +265,7 @@ struct ReverbEngineTestAccess
             engine.process(audio,s);
         }
         Analysis a; check(engine.readAnalysis(a),"Shimmer source protection receives a live analysis frame");
-        const auto row = size_t(std::round(std::log(880./30)/std::log(18000./30)*(spectrumBins-1)));
+        const auto row = size_t(std::round(std::log(880./shelfMinHz)/std::log(shelfFrequencyCeiling(48000)/shelfMinHz)*(spectrumBins-1)));
         check(a.input[row] > -45,"intentional shimmer octave is included in the protected source spectrum");
         for (int i = 0; i < a.count; ++i)
             check(std::abs(a.bands[size_t(i)].frequency-880) > 100,"the tamer does not mistake the intentional shimmer octave for resonance");
@@ -954,6 +954,8 @@ void shimmerTests (const juce::File& directory)
 {
     std::ofstream report(directory.getChildFile("shimmer.csv").getFullPathName().toStdString());
     report << "rate,frequency_hz,left_power,right_power,alias_power\n";
+    std::ofstream grainReport(directory.getChildFile("shimmer-grains.csv").getFullPathName().toStdString());
+    grainReport << "rate,input_hz,target_hz,peak_hz,error_cents,peak_power\n";
     for (double rate : {44100.,48000.,96000.})
     {
         lan::Shimmer shifted, alias; shifted.prepare(rate); alias.prepare(rate);
@@ -984,10 +986,52 @@ void shimmerTests (const juce::File& directory)
         for (int hz = 200; hz <= int(std::min(20000.,rate*.45)); hz += 20)
             report << rate << ',' << hz << ',' << power(out.left,hz) << ',' << power(out.right,hz) << ',' << power(rejected.left,hz) << '\n';
         if (std::abs(rate-48000) < .1) writeWav(directory.getChildFile("shimmer-octave.wav"),out,48000,count);
+        lan::Shimmer offNotes, linked, dc, cancellation;
+        offNotes.prepare(rate); linked.prepare(rate); dc.prepare(rate); cancellation.prepare(rate);
+        Audio off; float dcMinimum = 1, dcMaximum = -1; double cancellationPower = 0; int steadySamples = 0;
+        for (int i = 0; i < count; ++i)
+        {
+            const auto shiftedNotes = offNotes.process(float(.2*std::sin(2*pi*443.7*i/rate)),float(.2*std::sin(2*pi*667.3*i/rate)),true);
+            off.left.push_back(shiftedNotes[0]); off.right.push_back(shiftedNotes[1]);
+            const auto x = float(.1*std::sin(2*pi*437.9*i/rate)+.07*std::sin(2*pi*701.3*i/rate));
+            const auto stereo = linked.process(x,-x,true);
+            check(std::abs(stereo[0]+stereo[1]) < 1e-7,"shared grain timing preserves the input's anti-phase stereo relationship");
+            const auto constant = dc.process(.1f,0,true);
+            const auto midpoint = cancellation.process(float(.2*std::sin(2*pi*450*i/rate)),0,true);
+            check(std::abs(constant[1]) < 1e-10,"grains do not leak left-channel audio into the right channel");
+            if (i > rate*.25)
+            {
+                dcMinimum = std::min(dcMinimum,constant[0]); dcMaximum = std::max(dcMaximum,constant[0]);
+                cancellationPower += double(midpoint[0])*midpoint[0]; ++steadySamples;
+            }
+        }
+        std::cout << "Grain DC rate=" << rate << " min=" << dcMinimum << " max=" << dcMaximum << '\n';
+        check(dcMaximum-dcMinimum < 1e-6 && std::abs((dcMaximum+dcMinimum)*.5f-.1f) < .001f,
+              "four Hann grains maintain DC level without periodic gain dips, allowing converter passband ripple");
+        check(cancellationPower/steadySamples > .008,"450 Hz midpoint note survives instead of cancelling between broad grain windows");
+        for (int channel = 0; channel < 2; ++channel)
+        {
+            const auto inputHz = channel == 0 ? 443.7 : 667.3, targetHz = 2*inputHz;
+            double peakHz = 0, peakPower = 0;
+            // Fixed-duration grains produce modulation sidebands, so measure
+            // the actual peak instead of assuming sample-rate doubling makes
+            // arbitrary sustained tones perfectly tuned.
+            for (int step = -48; step <= 48; ++step)
+            {
+                const auto hz = targetHz+step*.25;
+                const auto p = power(channel == 0 ? off.left : off.right,hz);
+                if (p > peakPower) { peakPower = p; peakHz = hz; }
+            }
+            check(peakPower > 1e-4 && std::abs(peakHz-targetHz) <= 10.5,
+                  "off-note grain peaks stay within half the twenty-Hz grain sideband spacing");
+            grainReport << rate << ',' << inputHz << ',' << targetHz << ',' << peakHz << ','
+                        << 1200*std::log2(peakHz/targetHz) << ',' << peakPower << '\n';
+        }
+        if (std::abs(rate-48000) < .1) writeWav(directory.getChildFile("shimmer-off-notes.wav"),off,48000,count);
     }
     lan::Shimmer idle; idle.prepare(48000);
     for (int i = 0; i < 12000; ++i) idle.process(.1f,.1f,false);
-    check(idle.processedHighSamples() == 0,"zero Shimmer suspends both the FIR converter and the phase vocoder");
+    check(idle.processedHighSamples() == 0,"zero Shimmer suspends both the FIR converter and the delay grains");
     for (int i = 0; i < 12000; ++i) idle.process(.1f,.1f,true);
     idle.process(0,0,false); double stale = 0;
     for (int i = 0; i < 12000; ++i) { const auto out = idle.process(0,0,true); stale += out[0]*out[0]+out[1]*out[1]; }

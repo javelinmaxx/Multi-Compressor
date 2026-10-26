@@ -178,22 +178,29 @@ without applying continuous decay. Auto/Tame remain available for resonance cont
 
 ## Shimmer input layer
 
-**Shimmer** feeds the incoming wet source into a +12-semitone phase vocoder
+**Shimmer** feeds the incoming wet source into a +12-semitone granular delay shifter
 running at **2× the host sample rate**, with FIR anti-imaging and anti-aliasing
 filters around the pitch shifter. The knob adds 0–100% of that octave-up signal
 to the original source at the feedback-network injection. The original source
 is retained at its existing level. The recirculating feedback is not repeatedly
 pitch shifted, so this is one added octave rather than a recursively rising
-pitch staircase. Shimmer follows wet Pre-delay, then adds its own STFT timing.
+pitch staircase. Shimmer follows wet Pre-delay, then adds its own grain timing.
 
-The stereo vocoder uses a 2,048-sample FFT and 512-sample hop at the oversampled
-rate, with instantaneous-frequency phase tracking for off-bin notes and four
-Hann-window overlaps. Its wet layer has intentional analysis/conversion delay
-and can soften transients; the dry path still reports zero latency. Source
-protection and the grey input spectrum include the generated octave so that
-the tamer does not mistake it for an unintended resonance.
+Four 200 ms delay grains overlap at 50 ms intervals, with shared timing for
+both channels. Each read head advances at twice the input speed. Concentrated Hann windows
+(Hann raised to the eighth power, normalized across all four heads)
+fade the head resets smoothly and sum to unity, preventing periodic level dips
+on a constant signal. Window coefficients and delay memory are prepared in
+advance; the pitch path performs no FFT or per-sample trigonometric operations.
 
-The send changes over 250 ms. At Off, both the phase vocoder and its FIR
+The added layer spreads onsets over up to approximately 200 ms plus FIR timing,
+while the dry path reports zero latency. Fixed-duration grains can introduce
+modulation sidebands and small tuning offsets on sustained off-grid notes;
+this is a diffuse shimmer texture. The test report measures these offsets and
+provides comparison audio. Source protection and the grey input spectrum
+include the generated layer to protect it from unintended resonance correction.
+
+The send changes over 250 ms. At Off, both the grain shifter and its FIR
 converter stop to save CPU; reenabling clears stale pitch buffers. Host or
 plugin bypass keeps an enabled Shimmer running with the rest of the network.
 Adding the octave can raise wet levels, so Output remains available for gain

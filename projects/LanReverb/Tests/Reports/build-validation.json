@@ -1,7 +1,7 @@
 {
   "plugin": "Lan Reverb",
   "version": "0.5.0",
-  "date": "2026-10-26",
+  "date": "2026-10-27",
   "platform": "Linux x86_64",
   "compiler": "GCC 14.2.0",
   "configuration": "Release",
@@ -9,10 +9,10 @@
     "VST3",
     "Standalone"
   ],
-  "dsp_checks_passed": 24794827,
+  "dsp_checks_passed": 25171042,
   "editor_checks_passed": 109,
   "note": "Assertion counts include per-sample finite/bounds checks, not independent experimental trials; AU and DAW integration require platform testing.",
-  "source_parent_revision": "36981000a0553887e349ee6e10cf58886c29c943",
+  "source_parent_revision": "d86e4d1627018b8e4212cbbb2b023ff9e68f0ece",
   "source_sha256": {
     "projects/LanReverb/Source/PluginEditor.cpp": "e97b28b414650d453ce80287ad2beba8daecf3aafd0753a6563bc7e6d12fa816",
     "projects/LanReverb/Source/PluginEditor.h": "3a8ead15421cd2224f62b95d3f201737493371fd18dabec3b1fecd0ecc90f224",
@@ -21,10 +21,10 @@
     "projects/LanReverb/Source/ReverbEngine.cpp": "33b5ed691aa1070dd83c98c1ee051cd5b746175e46bbb41d6c4db6b6e73dd66f",
     "projects/LanReverb/Source/ReverbEngine.h": "509d1b1d786530ca3380fba43f3a4670877628ac42ec411abad9714d1935be3e",
     "projects/LanReverb/CMakeLists.txt": "9dca4d40597cf8f1f1248a0ac4fc0217e54f86fd4005645517746fc1e3dd93b1",
-    "projects/LanReverb/Tests/ProcessorTests.cpp": "843d006b1467c59f1aa702841edaba51ca910bb81958cd1a72eda5e1328fc560",
+    "projects/LanReverb/Tests/ProcessorTests.cpp": "e4c692d3b1824b030ddda65e30770a8a0d5132c8c55c318039b229773659e2e0",
     "projects/PluginVersion.cmake": "64265941a2f247ac9c0d746f84c779334fb65f0ad8d478a2e50422cd4a69d009",
     "projects/LanReverb/Source/DelayTiming.h": "72296ab9dd3532d2008fc2e5a709195095358779614fba8dd93a7d3dc2a414e8",
-    "projects/LanReverb/Source/Shimmer.h": "0bfbe0d4f00e6fcfb28ef22237541762624bb5d5a5a8ae51aaab18a45ffe43f7",
+    "projects/LanReverb/Source/Shimmer.h": "0ce2e26e3136c03296464b652877c230e9a5715d270a435a8f8ba69d092d4289",
     "projects/LanReverb/Source/SpectrumShelfHandle.h": "0529f9eee9b53cf412f8c4beed893ac7830a8cb44a1889a99d86dbf8f9f76d12"
   },
   "host_parameters": 20,
