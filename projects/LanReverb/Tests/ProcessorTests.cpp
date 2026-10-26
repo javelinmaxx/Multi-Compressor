@@ -234,6 +234,33 @@ struct ReverbEngineTestAccess
         for (int i = 0; i < a.count; ++i)
             check(std::abs(a.bands[size_t(i)].frequency-880) > 100,"the tamer does not mistake the intentional shimmer octave for resonance");
     }
+    static void feedbackLimiterTests (const juce::File& directory)
+    {
+        std::ofstream curve(directory.getChildFile("feedback-limiter.csv").getFullPathName().toStdString());
+        curve << "input_norm,output_norm\n"; double previous = 0;
+        for (int i = 0; i <= 800; ++i)
+        {
+            const auto input = i*.005; std::array<float,8> value {}; value[0] = float(input);
+            ReverbEngine::limitFeedback(value); const auto output = double(value[0]);
+            check(output >= previous-1e-6 && output <= 1.000001 && output <= input+1e-6,
+                  "feedback soft limit is monotonic, bounded and never adds gain");
+            if (input <= .5) check(std::abs(output-input) < 1e-7,"soft limiter is exactly transparent below its knee");
+            curve << input << ',' << output << '\n'; previous = output;
+        }
+        std::array<float,8> unity {.1f,-.1f,.2f,-.2f,0,0,0,0}; const auto original = unity;
+        for (int i = 0; i < 100000; ++i) ReverbEngine::limitFeedback(unity);
+        check(std::memcmp(unity.data(),original.data(),sizeof(unity)) == 0,"unity-gain feedback can circulate indefinitely without limiter-induced decay");
+        std::array<float,8> linked {.1f,.2f,-.3f,.4f,-.5f,.6f,-.7f,.8f}; const auto before = linked;
+        ReverbEngine::limitFeedback(linked);
+        for (size_t i = 1; i < linked.size(); ++i)
+            check(std::abs(double(linked[i])*before[0]-double(linked[0])*before[i]) < 1e-7,"linked feedback limiting preserves relative line balance");
+        std::array<float,8> enormous; enormous.fill(std::numeric_limits<float>::max()); ReverbEngine::limitFeedback(enormous);
+        double power = 0; for (auto x : enormous) power += double(x)*x;
+        check(power <= 1.000001,"finite extreme inputs cannot overflow the soft limiter's norm calculation");
+        enormous[0] = std::numeric_limits<float>::quiet_NaN(); enormous[1] = std::numeric_limits<float>::infinity();
+        ReverbEngine::limitFeedback(enormous);
+        for (auto x : enormous) check(std::isfinite(x),"nonfinite feedback components are contained");
+    }
     static void checkTapCapacity (const ReverbEngine& engine)
     {
         for (const auto& line : engine.lines)
@@ -813,9 +840,9 @@ void measurements (const juce::File& directory)
         for (int i = 0; i < 40; ++i) stress << rate << ',' << i*.1 << ',' << std::sqrt(energy(out,i*.1,(i+1)*.1,rate)) << '\n';
     }
 }
-void unstableFeedbackTests (const juce::File& directory)
+void sustainedFeedbackTests (const juce::File& directory)
 {
-    std::ofstream report(directory.getChildFile("unstable-feedback.csv").getFullPathName().toStdString());
+    std::ofstream report(directory.getChildFile("sustained-feedback.csv").getFullPathName().toStdString());
     report << "rate,boost_db,time_s,rms,peak\n";
     for (double rate : {44100.,48000.,96000.})
     {
@@ -826,10 +853,10 @@ void unstableFeedbackTests (const juce::File& directory)
             settings.timeMs = 20; settings.predelayMs = 0; settings.decaySeconds = 40; settings.mix = 1; settings.width = 1;
             settings.lowShelfHz = 2000; settings.lowShelfDb = boost;
             lan::ReverbEngine engine; engine.prepare(rate,false);
-            double late = 0; float maximum = 0;
-            for (int window = 0; window < 8; ++window)
+            double middle = 0, late = 0; float maximum = 0;
+            for (int window = 0; window < 48; ++window)
             {
-                double sum = 0; float peak = 0; const auto samples = juce::roundToInt(rate*.1);
+                double sum = 0; float peak = 0; const auto samples = juce::roundToInt(rate*.25);
                 for (int at = 0; at < samples; at += 128)
                 {
                     const auto n = std::min(128,samples-at); juce::AudioBuffer<float> audio(2,n); audio.clear();
@@ -838,27 +865,54 @@ void unstableFeedbackTests (const juce::File& directory)
                     for (int i = 0; i < n; ++i)
                     {
                         const auto x = audio.getSample(0,i);
-                        check(std::isfinite(x),"intentional growing-feedback fixture stays numerically representable during its short measurement");
+                        check(std::isfinite(x) && std::abs(x) <= 1.001f,"boosted delay tail remains finite and bounded after the source stops");
                         sum += double(x)*x; peak = std::max(peak,std::abs(x));
                     }
                 }
                 const auto power = sum/samples; maximum = std::max(maximum,peak);
-                report << rate << ',' << boost << ',' << window*.1 << ',' << std::sqrt(power) << ',' << peak << '\n';
-                if (window == 7) late = power;
+                report << rate << ',' << boost << ',' << window*.25 << ',' << std::sqrt(power) << ',' << peak << '\n';
+                if (window >= 24 && window < 32) middle += power/8;
+                if (window >= 40) late += power/8;
             }
             if (boost < 1) reference = late;
             else
             {
-                check(late > reference*1000,"uncompensated shelf boost creates a growing tail after the source impulse stops");
-                check(maximum > 32,"feedback is no longer constrained by the former per-line soft limiter");
+                std::cout << "Sustained feedback rate=" << rate << " mid=" << middle << " late=" << late << " peak=" << maximum << '\n';
+                check(late > reference*1000 && late > .001,"soft limiting permits an audible sustained tail long after excitation stops");
+                check(late > middle*.5 && late < middle*2,"sustained late energy settles rather than growing or being forced to decay");
             }
+        }
+        // A louder fresh source can exceed the feedback ceiling: the limiter
+        // must sit before injection, not clamp the first wet arrivals/output.
+        lan::Settings fresh; fresh.automatic = false; fresh.scatter = 0; fresh.timeMs = 20; fresh.decaySeconds = .3f;
+        fresh.predelayMs = 0; fresh.width = 1; fresh.mix = 1;
+        lan::ReverbEngine engine; engine.prepare(rate,false); float firstArrival = 0;
+        for (int at = 0; at < int(rate*.03); at += 128)
+        {
+            juce::AudioBuffer<float> audio(2,128); audio.clear(); if (at == 0) { audio.setSample(0,0,2); audio.setSample(1,0,2); }
+            engine.process(audio,fresh); firstArrival = std::max(firstArrival,audio.getMagnitude(0,audio.getNumSamples()));
+        }
+        check(firstArrival > 1.2f,"fresh input and first wet arrivals bypass the feedback soft limiter");
+    }
+    // Dense reverb, both shelves boosted, phase dispersion and Shimmer enabled.
+    for (double rate : {8000.,48000.,192000.})
+    {
+        lan::ReverbEngine engine; engine.prepare(rate,false); lan::Settings s;
+        s.lowShelfDb = s.highShelfDb = 6; s.shimmer = 1; s.automatic = false; s.decaySeconds = 40; s.mix = 1;
+        for (int at = 0; at < int(rate*4); at += 128)
+        {
+            juce::AudioBuffer<float> audio(2,128); audio.clear(); if (at == 0) { audio.setSample(0,0,.01f); audio.setSample(1,0,-.01f); }
+            engine.process(audio,s);
+            for (int i = 0; i < 128; ++i) for (int ch = 0; ch < 2; ++ch)
+                check(std::isfinite(audio.getSample(ch,i)) && std::abs(audio.getSample(ch,i)) < 3,
+                      "dense shimmer reverb remains bounded with both shelves boosted");
         }
     }
     LanReverbProcessor processor;
     check(std::isfinite(processor.getTailLengthSeconds()),"neutral shelves keep the ordinary finite tail report");
-    set(processor,"lowShelfDb",6); check(std::isinf(processor.getTailLengthSeconds()),"boosted feedback reports a potentially infinite tail to the host");
+    set(processor,"lowShelfDb",6); check(std::isinf(processor.getTailLengthSeconds()),"sustained boosted feedback still reports a potentially infinite tail");
     set(processor,"lowShelfDb",0); set(processor,"highShelfDb",6);
-    check(std::isinf(processor.getTailLengthSeconds()),"high shelf boost also reports a potentially infinite tail");
+    check(std::isinf(processor.getTailLengthSeconds()),"high shelf boost also retains the potentially infinite tail report");
 }
 void shimmerTests (const juce::File& directory)
 {
@@ -1019,7 +1073,7 @@ int main (int argc, char** argv)
         directory.createDirectory();
         if (argc > 2 && juce::String(argv[1]) == "--editor") editorTests(juce::File(argv[2]));
         else if (argc > 2 && juce::String(argv[1]) == "--shimmer") shimmerTests(directory);
-        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); lan::ReverbEngineTestAccess::multiPhaseTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); lan::ReverbEngineTestAccess::eqTests(directory); shimmerTests(directory); unstableFeedbackTests(directory); }
+        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); lan::ReverbEngineTestAccess::multiPhaseTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); lan::ReverbEngineTestAccess::eqTests(directory); shimmerTests(directory); lan::ReverbEngineTestAccess::feedbackLimiterTests(directory); sustainedFeedbackTests(directory); }
         std::cout << checks << " Lan Reverb checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

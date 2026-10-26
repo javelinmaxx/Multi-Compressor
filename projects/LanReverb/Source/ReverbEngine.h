@@ -17,6 +17,7 @@ struct Settings
 };
 inline constexpr int spectrumBins = 64, maxBands = 3, analysisSize = 4096;
 inline constexpr float tameLimitDb = 6;
+inline constexpr double feedbackKnee = .5, feedbackCeiling = 1;
 inline constexpr double phaseDelayLimitSeconds = .005, basePhaseBudgetSeconds = .001;
 inline constexpr double autoTapBudgetSeconds = .001;
 inline constexpr double bandPhaseBudgetSeconds = (phaseDelayLimitSeconds-basePhaseBudgetSeconds-autoTapBudgetSeconds)/maxBands;
@@ -150,6 +151,7 @@ private:
         float phaseProcess (float) noexcept;
     };
     static float tameScale (const Analysis&, float amount);
+    static void limitFeedback (std::array<float,8>&) noexcept;
     void update (const Settings&);
     void updatePhaseBands (bool active, float amount);
     std::array<Band,maxBands> trackedPhaseBands {};

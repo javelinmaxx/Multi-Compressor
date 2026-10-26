@@ -4,7 +4,7 @@
 |---|---|
 | Time | Sets the repeat time or room size in milliseconds, or selects a musical note length when Sync is on. |
 | Sync | Synchronizes Time to the DAW tempo using straight, dotted or triplet note lengths. |
-| Decay | Sets the nominal time for the feedback tail to fall by sixty decibels before damping and resonance control. |
+| Decay | Sets the nominal feedback decay time before filtering, while shelf boost can sustain an indefinite tail. |
 | Pre-delay | Delays the signal entering the reverb while leaving the dry signal immediate. |
 | Scatter | Morphs aligned delay repeats at zero into a dense stereo reverb at full. |
 | Diffusion | Adjusts the mixing density of the feedback network as Scatter increases. |

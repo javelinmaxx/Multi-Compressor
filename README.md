@@ -164,9 +164,9 @@ Drag the spectrum's **L/H shelf handles** to color the feedback, and add a
 narrow cuts within a shared 6 dB budget. The dry path has zero added latency,
 and Mix reaches 100% wet for sends.
 
-The shelves can boost feedback without compensation, allowing growing or
-unstable tails. Auto reduces detected ringing, while the feedback path has no
-level limiter.
+The shelves can boost feedback without compensation for sustained tails. A
+linked feedback soft limiter controls runaway growth while leaving low-level
+feedback unchanged; Auto reduces detected ringing.
 
 [Controls and signal path](projects/LanReverb/README.md) ·
 [Measurements](projects/LanReverb/Tests/Reports/README.md)

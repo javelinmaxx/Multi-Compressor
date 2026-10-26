@@ -8,7 +8,7 @@ constexpr std::array<const char*,12> names {"TIME","DECAY","PRE-DELAY","SCATTER"
 constexpr std::array<const char*,12> units {" ms"," s"," ms"," %"," %"," %"," %"," %"," %"," %"," %"," dB"};
 constexpr std::array<const char*,12> hints {
     "Sets the repeat time or room size in milliseconds, or selects a musical note length when Sync is on.",
-    "Sets the nominal time for the feedback tail to fall by sixty decibels before damping and resonance control.",
+    "Sets the nominal feedback decay time before filtering, while shelf boost can sustain an indefinite tail.",
     "Delays the signal entering the reverb while leaving the dry signal immediate.",
     "Morphs aligned delay repeats at zero into a dense stereo reverb at full.",
     "Adjusts the mixing density of the feedback network as Scatter increases.",

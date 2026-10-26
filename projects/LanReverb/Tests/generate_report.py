@@ -26,16 +26,20 @@ def main():
     source = args.results
     destination = Path(__file__).resolve().parent/"Reports" if args.publish else source/"report"
     destination.mkdir(parents=True, exist_ok=True)
-    unstable = load(source,"unstable-feedback.csv")
-    fig,ax = plt.subplots(figsize=(10,4),constrained_layout=True)
-    for rate in np.unique(unstable["rate"]):
+    sustain = load(source,"sustained-feedback.csv"); limiter = load(source,"feedback-limiter.csv")
+    fig,axes = plt.subplots(2,1,figsize=(10,7),constrained_layout=True)
+    axes[0].plot(limiter["input_norm"],limiter["output_norm"],color="#b58a42",label="Linked soft limiter")
+    axes[0].plot([0,1],[0,1],ls=":",color="gray",label="Unity gain")
+    axes[0].axvline(.5,ls="--",color="gray",label="Transparent below 0.5")
+    axes[0].set(xlabel="Feedback vector norm before limiting",ylabel="Norm after limiting",ylim=(0,1.1)); axes[0].legend(fontsize=8)
+    for rate in np.unique(sustain["rate"]):
         for boost in [0,6]:
-            rows = unstable[(unstable["rate"] == rate)&(unstable["boost_db"] == boost)]
-            ax.plot(rows["time_s"],20*np.log10(np.maximum(rows["rms"],1e-15)),ls="--" if boost == 0 else "-",label=f"{rate/1000:g} kHz / +{boost:g} dB shelf")
-    ax.axhline(0,color="gray",lw=.7); ax.axvline(.27,color="gray",ls=":",label="Shelf transition complete")
-    ax.set(xlabel="Time after impulse (s)",ylabel="Wet RMS (dBFS)",title="Uncompensated boost: tail grows beyond the former limiter")
-    ax.legend(fontsize=8,ncol=2); ax.grid(alpha=.25)
-    fig.savefig(destination/"unstable-feedback.png",dpi=160); plt.close(fig)
+            rows = sustain[(sustain["rate"] == rate)&(sustain["boost_db"] == boost)]
+            axes[1].plot(rows["time_s"],20*np.log10(np.maximum(rows["rms"],1e-15)),ls="--" if boost == 0 else "-",label=f"{rate/1000:g} kHz / +{boost:g} dB shelf")
+    axes[1].set(xlabel="Time after impulse (s)",ylabel="Wet RMS (dBFS)",title="Shelf boost sustains a bounded tail after a single impulse")
+    axes[1].legend(fontsize=8,ncol=2)
+    for ax in axes: ax.grid(alpha=.25)
+    fig.savefig(destination/"sustained-feedback.png",dpi=160); plt.close(fig)
     feedback_eq = load(source,"feedback-eq.csv")
     fig,axes = plt.subplots(2,1,figsize=(10,6),constrained_layout=True)
     for name,label in [("previous_width_db","Previous bandwidth, same 6 dB depth"),("narrow_db","New half-width tamer"),("three_band_db","Three overlapping bands sharing 6 dB")]:
@@ -202,13 +206,15 @@ A single 1 kHz tamer band at maximum strength must measure −6 dB at its center
 
 Direct production shelf filters verify bass/treble selectivity. Exhaustive corner tests span 8/44.1/48/96/192 kHz, both frequency endpoints, gains −12/0/+6 dB, and 128 spectral points for every combination. Each raw shelf cascade must remain between the sums of its negative and positive gain endpoints. Separate tests require actual low/high boost near +6 dB while the opposite band remains neutral, verifying that no compensation is applied. A rendered impulse through the actual feedback bank (tamer plus both shelves) must match the display curve at 100/1,000/10,000 Hz. The source-routing test above enables shelves too and still requires unchanged first wet arrivals. Native editor tests exercise both drag axes, host parameter updates, positive dragging above 0 dB, double-click reset and scaled hit testing. The pale curve shows target settings; audio follows through the 250 ms bank transition.
 
-## Intentionally unstable feedback
+## Bounded sustained feedback
 
-![Feedback growth with uncompensated boost](unstable-feedback.png)
+![Soft limiting and long sustain](sustained-feedback.png)
 
-At 44.1/48/96 kHz, a stereo 0.001-amplitude impulse feeds Time 20 ms, Decay 40 s, Pre-delay 0, Scatter 0%, Phase 0%, Width 100%, Mix 100%, Output 0 dB and Auto Off. The low shelf is at 2 kHz, either neutral or +6 dB, and the high shelf remains neutral. Eight hundred milliseconds are rendered. The boost enters through the existing 20 ms warm-up and 250 ms fade; the late growth must exceed neutral late-tail power by a factor of 1,000, and the wet peak must exceed magnitude 32. That explicitly verifies the old magnitude-3 per-line soft limiter is absent. Samples must remain numerically representable during this short measurement, not bounded for arbitrarily long boosted feedback. The plotted values use floating-point audio, not a clipped PCM audio example.
+A linked limiter measures the norm of the eight returning feedback lines after nominal decay gain and before fresh input injection. It is exactly transparent at norms up to 0.5, then smoothly approaches norm 1. A single gain preserves the line ratios. Unit tests verify monotonicity, bounded output, transparency, shared scaling, extreme finite values and nonfinite containment. A sub-knee feedback vector must survive 100,000 unity-gain circulations bit-for-bit unchanged: the limiter adds no leakage or mandatory decay.
 
-No gain compensation is applied to shelf boosts. The normal decay coefficients, tamer and phase controls remain operational, but cannot guarantee a stable loop. Nonfinite delay writes are still rejected; finite feedback is neither soft-clipped nor limited. The host tail-report tests require infinity with either shelf boosted and the ordinary finite report at neutral settings. Default unboosted stability tests remain separate from this intentional-growth fixture.
+At 44.1/48/96 kHz, a stereo 0.001-amplitude impulse feeds Time 20 ms, Decay 40 s, Pre-delay 0, Scatter 0%, Phase 0%, Width 100%, Mix 100%, Output 0 dB and Auto Off. The low shelf is at 2 kHz, either neutral or +6 dB, and the high shelf remains neutral. Twelve seconds are rendered after that single impulse. Boost enters through the 20 ms warm-up and 250 ms EQ fade. Boosted 10–12 s tail power must exceed the neutral result by a factor of 1,000 and remain audible; it must stay within a factor of two of its own 6–8 s power, demonstrating a bounded sustained level rather than continued growth or forced decay. Every sample in this matched-delay fixture must remain finite and below magnitude 1.001. This verifies twelve seconds of actual sustain, not a finite-duration proof of infinite reverb for every setting.
+
+Further checks run dense reverb with both shelves at +6 dB, Shimmer on, Phase dispersion and Auto Off for four seconds at 8/48/192 kHz; both channels must stay finite and below magnitude 3. A separate louder impulse must produce first wet arrivals above magnitude 1.2, confirming the stabilizer does not clamp fresh source injection or serve as a final output limiter. Existing dry and first-arrival routing checks remain active. Positive shelves retain their uncompensated frequency response and potentially infinite host tail report. Gain balance, damping and spectral correction can still cause some settings to decay; sustained modes may change timbre. The limiter permits sustained feedback rather than guaranteeing a frozen waveform.
 
 ## Oversampled octave Shimmer
 

@@ -529,6 +529,20 @@ void ReverbEngine::update (const Settings& s)
     }
     first = false;
 }
+void ReverbEngine::limitFeedback (std::array<float,8>& feedback) noexcept
+{
+    double power = 0;
+    for (auto& value : feedback)
+    {
+        if (!std::isfinite(value)) value = 0;
+        power += double(value)*value;
+    }
+    if (power <= feedbackKnee*feedbackKnee) return; // exact unity, no decay floor
+    const auto length = std::sqrt(power), headroom = feedbackCeiling-feedbackKnee;
+    const auto limited = feedbackKnee+headroom*std::tanh((length-feedbackKnee)/headroom);
+    const auto gain = limited/length;
+    for (auto& value : feedback) value = float(double(value)*gain);
+}
 void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& settings, bool hostBypass)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -622,17 +636,21 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
             for (size_t base = 0; base < 8; base += 2*stride)
                 for (size_t i = 0; i < stride; ++i)
                 { const auto a = scattered[base+i], b = scattered[base+i+stride]; scattered[base+i] = matrixCos*a+matrixSin*b; scattered[base+i+stride] = -matrixSin*a+matrixCos*b; }
+        for (size_t line = 0; line < 8; ++line) scattered[line] *= feedbackGain[line].getNextValue();
+        // Bound only the returning feedback, with a shared gain for all lines.
+        // Positive shelf gain can sustain the tail at an equilibrium level;
+        // there is no unconditional attenuation to force it to die away.
+        limitFeedback(scattered);
         for (size_t line = 0; line < 8; ++line)
         {
             const auto feedback = scattered[line];
-            const auto gain = feedbackGain[line].getNextValue();
             // The source feed is independent of automatic feedback tap/gain
             // changes; only recirculated audio receives EQ and phase processing.
             const auto injection = injectionGain[line].getNextValue()
                 *(sourceLeft+((line&1u) != 0 ? -sourceRight : sourceRight));
-            auto value = gain*feedback+injection;
-            // Deliberately no level limiter: uncompensated shelf boosts may
-            // produce growing feedback. Reject nonfinite writes only.
+            const auto value = feedback+injection;
+            // Input injection remains outside the limiter, preserving the
+            // source and first wet arrivals; reject nonfinite writes only.
             auto& memory = lines[line]; memory.delay[memory.position] = std::isfinite(value) ? value : 0;
             memory.position = (memory.position+1)%memory.delay.size();
         }

@@ -81,7 +81,7 @@ loss from the phase-path blend, so Decay remains a nominal control.
 
 `delay-line wet taps → stereo pickups → Width → dry/wet mix → Output`
 
-`separate feedback taps → narrow tamer EQ → uncompensated shelves → phase dispersion → damping → orthogonal mixing → feedback gains → delay-line writes`
+`separate feedback taps → narrow tamer EQ → uncompensated shelves → phase dispersion → damping → orthogonal mixing → feedback gains → linked soft limiter → delay-line writes`
 
 The wet return is read **before** EQ, phase processing and loop damping. Those
 stages process only the recirculated signal, which is added to the independent
@@ -157,7 +157,8 @@ Drag the **L** and **H** handles on the spectrum horizontally to choose each
 shelf's transition frequency and vertically to set its gain. Double-click a
 handle to restore its default frequency and 0 dB. Both axes support host
 automation and session recall, and remain usable at 50%–120% UI scaling.
-The curve shows the requested response; the feedback filter banks follow it
+The curve shows the requested EQ response, excluding level-dependent limiting;
+the feedback filter banks follow it
 through their existing 20 ms warm-up and 250 ms crossfade.
 
 Shelves process **feedback only**, including when Auto is off. They do not
@@ -165,8 +166,9 @@ filter the dry signal or the first wet arrivals. Both shelves range from
 −12 dB to +6 dB, with the same limits for dragging and host automation.
 Positive gain is applied directly, with **no compensation** or reduction of
 other frequencies. Boosted bands can exceed unity around the feedback loop
-and grow after the input stops, even though the nominal Decay gains remain
-below unity. Auto/Tame remain available, but do not guarantee stabilization.
+and sustain the tail after the input stops, even though the nominal Decay gains
+remain below unity. A linked soft limiter bounds the returning feedback level
+without applying continuous decay. Auto/Tame remain available for resonance control.
 
 ## Shimmer input layer
 
@@ -244,12 +246,24 @@ the same frequency. Sparse or ambiguous tails retain source protection. Source h
 retained across Auto toggles and aged by stream time; preparing a new stream
 clears it. Source peaks must have been observed while analysis was enabled.
 
-The feedback-write soft limiter has been removed. The loop can build levels
-above the previous magnitude-3 per-line ceiling and produce unstable tails;
-there is no feedback or output level limiter. Nonfinite host inputs and delay
-writes are still replaced with zero as numerical housekeeping, rather than
-limiting finite audio amplitudes. The plugin cannot guarantee resonance removal
-or bounded levels on arbitrary material or external feedback arrangements.
+A **linked feedback soft limiter** now controls growth without forcing every
+tail to fade. It measures the instantaneous vector norm of all eight returning
+feedback lines after their decay gains, then applies one shared gain. Below a
+combined norm of 0.5, it is exactly unity. Above that knee it smoothly approaches
+a norm of 1: `r_out = 0.5 + 0.5 × tanh(2 × r_in − 1)`. Relative line balance is
+preserved, with no independent channel clipping or attack/release overshoot.
+
+There is no fixed gain reduction or leakage in this limiter. When shelf boost
+offsets the loop's losses, feedback can settle at a bounded sustained level
+rather than exploding or being forced to decay. Not every setting will sustain,
+and the tail can evolve or settle into resonant modes. The limiter does not
+freeze the existing waveform or guarantee a spectrally unchanged infinite tail.
+
+The limiter sits **before fresh source injection** and outside the wet output.
+It therefore preserves incoming transients and first wet arrivals; the dry path
+is unchanged. This is a feedback-stability control, not a final output ceiling:
+fresh input, stereo pickup summation and Output gain can still produce peaks
+above 0 dBFS. Nonfinite input samples and delay writes remain contained.
 
 With either shelf boosted, the processor reports a **potentially infinite tail**
 to the host, including VST3's infinite-tail flag. With both shelves neutral or
