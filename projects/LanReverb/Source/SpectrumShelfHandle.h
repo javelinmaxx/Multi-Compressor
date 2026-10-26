@@ -8,7 +8,7 @@ public:
     {
         setName(high ? "High shelf" : "Low shelf");
         setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-        setTooltip("Drag horizontally for shelf frequency and vertically for gain, or double-click to reset the shelf.");
+        setTooltip("Drag across the full frequency range and vertically for up to +3 dB shelf gain, or double-click to reset.");
     }
     ~SpectrumShelfHandle() override { finishGesture(); }
     void paint (juce::Graphics& g) override

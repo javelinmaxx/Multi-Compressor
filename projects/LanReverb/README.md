@@ -20,8 +20,8 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 | Phase | 0–100% / 60% | All-pass phase dispersion and automatic phase/tap steering |
 | Tame | 0–100% / 75% | Strength of narrow automatic feedback EQ, sharing a 6 dB total cut budget |
 | Shimmer | 0–100% / Off | Adds a +12-semitone, 2× oversampled layer to the source feeding the delay network |
-| Low shelf handle | 40–2,000 Hz / 200 Hz; −12–+6 dB / 0 dB | Drag its L node horizontally for frequency and vertically for gain |
-| High shelf handle | 2,000–16,000 Hz / 8,000 Hz; −12–+6 dB / 0 dB | Drag its H node horizontally for frequency and vertically for gain |
+| Low shelf handle | 20–20,000 Hz / 200 Hz; −12–+3 dB / 0 dB | Drag its L node horizontally for frequency and vertically for gain |
+| High shelf handle | 20–20,000 Hz / 8,000 Hz; −12–+3 dB / 0 dB | Drag its H node horizontally for frequency and vertically for gain |
 | Dry / Wet | 0–100% / 80% | Linear mix, including true full-wet operation for sends |
 | Output | −24–12 dB / 0 dB | Final output gain |
 | Auto | On | Enables input-aware spectral peak analysis and automatic correction |
@@ -157,13 +157,16 @@ Drag the **L** and **H** handles on the spectrum horizontally to choose each
 shelf's transition frequency and vertically to set its gain. Double-click a
 handle to restore its default frequency and 0 dB. Both axes support host
 automation and session recall, and remain usable at 50%–120% UI scaling.
+Both shelves independently cover 20 Hz–20 kHz with continuous frequency values,
+and their transition frequencies can cross freely. At low sample rates,
+the display and DSP cap the frequency at 98% of Nyquist.
 The curve shows the requested EQ response, excluding level-dependent limiting;
 the feedback filter banks follow it
 through their existing 20 ms warm-up and 250 ms crossfade.
 
 Shelves process **feedback only**, including when Auto is off. They do not
 filter the dry signal or the first wet arrivals. Both shelves range from
-−12 dB to +6 dB, with the same limits for dragging and host automation.
+−12 dB to +3 dB, with the same limits for dragging and host automation.
 Positive gain is applied directly, with **no compensation** or reduction of
 other frequencies. Boosted bands can exceed unity around the feedback loop
 and sustain the tail after the input stops, even though the nominal Decay gains

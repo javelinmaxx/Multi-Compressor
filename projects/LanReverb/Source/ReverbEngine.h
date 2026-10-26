@@ -17,6 +17,8 @@ struct Settings
 };
 inline constexpr int spectrumBins = 64, maxBands = 3, analysisSize = 4096;
 inline constexpr float tameLimitDb = 6;
+inline constexpr float shelfMinHz = 20, shelfMaxHz = 20000, shelfMaxBoostDb = 3;
+inline double shelfFrequencyCeiling (double rate) { return std::min(double(shelfMaxHz),rate*.49); }
 inline constexpr double feedbackKnee = .5, feedbackCeiling = 1;
 inline constexpr double phaseDelayLimitSeconds = .005, basePhaseBudgetSeconds = .001;
 inline constexpr double autoTapBudgetSeconds = .001;

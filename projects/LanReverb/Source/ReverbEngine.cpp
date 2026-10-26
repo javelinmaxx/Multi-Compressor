@@ -40,8 +40,8 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
     const auto binHz = frame.rate/analysisSize;
     for (int row = 0; row < spectrumBins; ++row)
     {
-        const auto hz = 30*std::pow(std::min(18000.,frame.rate*.43)/30,row/double(spectrumBins-1));
-        const auto halfStep = std::sqrt(std::pow(std::min(18000.,frame.rate*.43)/30,1./(spectrumBins-1)));
+        const auto hz = shelfMinHz*std::pow(shelfFrequencyCeiling(frame.rate)/shelfMinHz,row/double(spectrumBins-1));
+        const auto halfStep = std::sqrt(std::pow(shelfFrequencyCeiling(frame.rate)/shelfMinHz,1./(spectrumBins-1)));
         const auto firstBin = std::clamp(int(std::floor(hz/halfStep/binHz)),1,analysisSize/2-1);
         const auto lastBin = std::clamp(int(std::ceil(hz*halfStep/binHz)),firstBin,analysisSize/2-1);
         double inputPeak = 0, feedbackPeak = 0;
@@ -297,8 +297,8 @@ void ReverbEngine::Filter::configure (const Band& band, double rate, float amoun
 }
 void ReverbEngine::Filter::shelf (bool high, double hz, double gainDb, double rate)
 {
-    const auto a = std::pow(10.,std::clamp(gainDb,-12.,6.)/40);
-    const auto omega = 2*pi*std::clamp(hz,20.,rate*.4)/rate;
+    const auto a = std::pow(10.,std::clamp(gainDb,-12.,double(shelfMaxBoostDb))/40);
+    const auto omega = 2*pi*std::clamp(hz,double(shelfMinHz),shelfFrequencyCeiling(rate))/rate;
     const auto c = std::cos(omega), beta = std::sqrt(2*a)*std::sin(omega);
     const auto sign = high ? 1. : -1.;
     const auto denominator = (a+1)-sign*(a-1)*c+beta;
@@ -560,8 +560,8 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
     safeSettings.phase = std::clamp(safeSettings.phase,0.f,1.f);
     safeSettings.tame = std::clamp(safeSettings.tame,0.f,1.f);
     safeSettings.shimmer = std::clamp(safeSettings.shimmer,0.f,1.f);
-    safeSettings.lowShelfHz = std::clamp(safeSettings.lowShelfHz,40.f,2000.f); safeSettings.lowShelfDb = std::clamp(safeSettings.lowShelfDb,-12.f,6.f);
-    safeSettings.highShelfHz = std::clamp(safeSettings.highShelfHz,2000.f,16000.f); safeSettings.highShelfDb = std::clamp(safeSettings.highShelfDb,-12.f,6.f);
+    safeSettings.lowShelfHz = std::clamp(safeSettings.lowShelfHz,shelfMinHz,shelfMaxHz); safeSettings.lowShelfDb = std::clamp(safeSettings.lowShelfDb,-12.f,shelfMaxBoostDb);
+    safeSettings.highShelfHz = std::clamp(safeSettings.highShelfHz,shelfMinHz,shelfMaxHz); safeSettings.highShelfDb = std::clamp(safeSettings.highShelfDb,-12.f,shelfMaxBoostDb);
     const bool initial = first; update(safeSettings);
     const auto bypassed = safeSettings.bypass || hostBypass;
     if (initial) bypass.setCurrentAndTargetValue(bypassed ? 1.f : 0.f); else bypass.setTargetValue(bypassed ? 1.f : 0.f);

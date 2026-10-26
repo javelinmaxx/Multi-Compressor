@@ -25,10 +25,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout LanReverbProcessor::createPa
     juce::StringArray notes;
     for (const auto& note : lan::noteLengths) notes.add(note.label);
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"note",1},"Time note length",notes,lan::defaultNote));
-    add("lowShelfHz","Low shelf frequency",40,2000,1,200,"Hz",.4f);
-    add("lowShelfDb","Low shelf gain",-12,6,.1f,0,"dB");
-    add("highShelfHz","High shelf frequency",2000,16000,1,8000,"Hz",.6f);
-    add("highShelfDb","High shelf gain",-12,6,.1f,0,"dB");
+    add("lowShelfHz","Low shelf frequency",lan::shelfMinHz,lan::shelfMaxHz,0,200,"Hz",.4f);
+    add("lowShelfDb","Low shelf gain",-12,lan::shelfMaxBoostDb,.1f,0,"dB");
+    add("highShelfHz","High shelf frequency",lan::shelfMinHz,lan::shelfMaxHz,0,8000,"Hz",.6f);
+    add("highShelfDb","High shelf gain",-12,lan::shelfMaxBoostDb,.1f,0,"dB");
     add("shimmer","Shimmer",0,100,.1f,0,"%");
     return result;
 }
@@ -43,8 +43,8 @@ lan::Settings LanReverbProcessor::settings() const
     s.timeMs = get("sync") >= .5f ? lan::noteTimeMs(juce::roundToInt(get("note")),hostTempo.load()) : get("time"); s.decaySeconds = get("decay"); s.predelayMs = get("predelay");
     s.scatter = get("scatter")*.01f; s.diffusion = get("diffusion")*.01f; s.width = get("width")*.01f; s.tap = get("tap")*.01f;
     s.phase = get("phase")*.01f; s.tame = get("tame")*.01f; s.mix = get("mix")*.01f; s.outputDb = get("output");
-    s.lowShelfHz = get("lowShelfHz"); s.lowShelfDb = std::clamp(get("lowShelfDb"),-12.f,6.f);
-    s.highShelfHz = get("highShelfHz"); s.highShelfDb = std::clamp(get("highShelfDb"),-12.f,6.f); s.shimmer = get("shimmer")*.01f;
+    s.lowShelfHz = get("lowShelfHz"); s.lowShelfDb = std::clamp(get("lowShelfDb"),-12.f,lan::shelfMaxBoostDb);
+    s.highShelfHz = get("highShelfHz"); s.highShelfDb = std::clamp(get("highShelfDb"),-12.f,lan::shelfMaxBoostDb); s.shimmer = get("shimmer")*.01f;
     s.automatic = get("automatic") >= .5f; s.bypass = get("bypass") >= .5f; return s;
 }
 juce::AudioProcessorParameter* LanReverbProcessor::getBypassParameter() const { return parameters.getParameter("bypass"); }

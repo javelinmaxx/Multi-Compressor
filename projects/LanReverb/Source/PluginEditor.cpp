@@ -88,9 +88,9 @@ void LanReverbEditor::updateTimeMode()
 void LanReverbEditor::moveShelf (int which, juce::Point<float> position)
 {
     const auto rate = processor.getSampleRate() > 0 ? processor.getSampleRate() : 48000.;
-    const auto ceiling = std::min(18000.,rate*.43);
-    const auto frequency = 30*std::pow(ceiling/30,std::clamp((position.x-42)/656.f,0.f,1.f));
-    const auto gain = std::clamp((160-position.y)/3.5f,-12.f,6.f);
+    const auto ceiling = lan::shelfFrequencyCeiling(rate);
+    const auto frequency = lan::shelfMinHz*std::pow(ceiling/lan::shelfMinHz,std::clamp((position.x-42)/656.f,0.f,1.f));
+    const auto gain = std::clamp((160-position.y)/3.5f,-12.f,lan::shelfMaxBoostDb);
     auto* frequencyParameter = processor.parameters.getParameter(which == 0 ? "lowShelfHz" : "highShelfHz");
     auto* gainParameter = processor.parameters.getParameter(which == 0 ? "lowShelfDb" : "highShelfDb");
     frequencyParameter->setValueNotifyingHost(frequencyParameter->convertTo0to1(float(frequency)));
@@ -100,12 +100,12 @@ void LanReverbEditor::moveShelf (int which, juce::Point<float> position)
 void LanReverbEditor::updateShelves()
 {
     const auto s = processor.settings(); const auto rate = processor.getSampleRate() > 0 ? processor.getSampleRate() : 48000.;
-    const auto ceiling = std::min(18000.,rate*.43);
+    const auto ceiling = lan::shelfFrequencyCeiling(rate);
     for (int i = 0; i < 2; ++i)
     {
-        const auto hz = std::clamp(double(i == 0 ? s.lowShelfHz : s.highShelfHz),30.,ceiling);
+        const auto hz = std::clamp(double(i == 0 ? s.lowShelfHz : s.highShelfHz),double(lan::shelfMinHz),ceiling);
         const auto gain = i == 0 ? s.lowShelfDb : s.highShelfDb;
-        const auto x = 42+656*std::log(hz/30)/std::log(ceiling/30); const auto y = 160-gain*3.5f;
+        const auto x = 42+656*std::log(hz/lan::shelfMinHz)/std::log(ceiling/lan::shelfMinHz); const auto y = 160-gain*3.5f;
         shelfHandles[size_t(i)].setBounds(juce::roundToInt(x)-8,juce::roundToInt(y)-8,16,16);
     }
 }
@@ -151,11 +151,11 @@ void LanReverbEditor::paint (juce::Graphics& g)
     const juce::Rectangle<float> plot(42,132,656,112);
     g.setColour(inset); g.fillRoundedRectangle(plot,5);
     const auto rate = processor.getSampleRate() > 0 ? processor.getSampleRate() : 48000.;
-    const auto ceiling = float(std::min(18000.,rate*.43));
+    const auto ceiling = float(lan::shelfFrequencyCeiling(rate));
     for (float hz : {100.f,1000.f,10000.f})
     {
         if (hz > ceiling) continue;
-        const auto x = plot.getX()+plot.getWidth()*std::log(hz/30.f)/std::log(ceiling/30.f);
+        const auto x = plot.getX()+plot.getWidth()*std::log(hz/lan::shelfMinHz)/std::log(ceiling/lan::shelfMinHz);
         g.setColour(grid); g.drawVerticalLine(int(x),plot.getY(),plot.getBottom());
         g.setColour(secondary); g.drawText(hz < 1000 ? "100 Hz" : hz < 10000 ? "1 kHz" : "10 kHz",int(x)-24,246,48,16,juce::Justification::centred);
     }
@@ -165,7 +165,7 @@ void LanReverbEditor::paint (juce::Graphics& g)
         for (int band = 0; band < analysis.count; ++band)
         {
             const auto& b = analysis.bands[size_t(band)];
-            const auto x = plot.getX()+plot.getWidth()*std::log(std::max(30.f,b.frequency)/30.f)/std::log(ceiling/30.f);
+            const auto x = plot.getX()+plot.getWidth()*std::log(std::max(lan::shelfMinHz,b.frequency)/lan::shelfMinHz)/std::log(ceiling/lan::shelfMinHz);
             g.setColour(amber.withAlpha(.13f)); g.fillRect(juce::Rectangle<float>(x-4,plot.getY(),8,plot.getHeight()));
         }
         for (int which = 0; which < 2; ++which)
@@ -187,7 +187,7 @@ void LanReverbEditor::paint (juce::Graphics& g)
     juce::Path eq;
     for (int i = 0; i < 768; ++i)
     {
-        const auto hz = 30*std::pow(ceiling/30,i/767.);
+        const auto hz = lan::shelfMinHz*std::pow(ceiling/lan::shelfMinHz,i/767.);
         const auto db = lan::ReverbEngine::responseDb(settings,analysis,hz,rate);
         const auto x = plot.getX()+plot.getWidth()*i/767.f;
         const auto y = std::clamp(160-db*3.5f,plot.getY(),plot.getBottom());

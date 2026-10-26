@@ -183,8 +183,8 @@ struct ReverbEngineTestAccess
         check(high.magnitude(17000,48000) < .4 && high.magnitude(100,48000) > .99,"high shelf changes treble while preserving the lower band");
         // Exhaust actual uncompensated shelf gains at all frequency endpoints.
         for (double rate : {8000.,44100.,48000.,96000.,192000.})
-            for (float lf : {40.f,2000.f}) for (float hf : {2000.f,16000.f})
-                for (float lg : {-12.f,0.f,6.f}) for (float hg : {-12.f,0.f,6.f})
+            for (float lf : {20.f,20000.f}) for (float hf : {20.f,20000.f})
+                for (float lg : {-12.f,0.f,3.f}) for (float hg : {-12.f,0.f,3.f})
                 {
                     Settings s; s.automatic = false; s.lowShelfHz = lf; s.highShelfHz = hf; s.lowShelfDb = lg; s.highShelfDb = hg;
                     for (int point = 0; point < 128; ++point)
@@ -195,23 +195,40 @@ struct ReverbEngineTestAccess
                               "uncompensated shelf response stays within the individual gain endpoints");
                     }
                 }
-        Settings boosted; boosted.automatic = false; boosted.lowShelfDb = 6;
-        check(ReverbEngine::responseDb(boosted,{},30,48000) > 5.9,"low shelf provides the requested positive gain");
+        Settings boosted; boosted.automatic = false; boosted.lowShelfDb = 3;
+        check(ReverbEngine::responseDb(boosted,{},30,48000) > 2.9,"low shelf provides the requested positive gain");
         check(std::abs(ReverbEngine::responseDb(boosted,{},5000,48000)) < .01,"low shelf boost does not attenuate the unaffected high band");
-        boosted.lowShelfDb = 0; boosted.highShelfDb = 6;
-        check(ReverbEngine::responseDb(boosted,{},18000,48000) > 5.8,"high shelf provides the requested positive gain");
+        boosted.lowShelfDb = 0; boosted.highShelfDb = 3;
+        check(ReverbEngine::responseDb(boosted,{},18000,48000) > 2.8,"high shelf provides the requested positive gain");
         check(std::abs(ReverbEngine::responseDb(boosted,{},100,48000)) < .01,"high shelf boost does not attenuate the unaffected low band");
+        for (bool highShelf : {false,true})
+        {
+            ReverbEngine::Filter capped, requested;
+            capped.shelf(highShelf,1234.5,3,48000);
+            requested.shelf(highShelf,1234.5,6,48000);
+            for (double hz : {20.,1234.5,20000.})
+                check(std::abs(capped.magnitude(hz,48000)-requested.magnitude(hz,48000)) < 1e-12,
+                      "DSP clamps legacy or out-of-range shelf boost to three dB");
+            // A low shelf may reach the treble and a high shelf may reach the bass.
+            requested.shelf(highShelf,highShelf ? 80.25 : 16000.5,3,48000);
+            check(std::abs(20*std::log10(requested.magnitude(highShelf ? 80.25 : 16000.5,48000))-1.5) < 1e-6,
+                  "either shelf reaches its requested arbitrary frequency without the old band restriction");
+            requested.shelf(highShelf,20000,3,8000);
+            capped.shelf(highShelf,3920,3,8000);
+            check(std::abs(capped.magnitude(3800,8000)-requested.magnitude(3800,8000)) < 1e-12,
+                  "shelf frequency remains below Nyquist at low sample rates");
+        }
         // Exercise actual feedback filter state, not only coefficient formulas.
         ReverbEngine::Bank bank; bank.count = 1; bank.shelfCount = 2;
         bank.filters[0][0].configure({1000,1000.f/14,-6},48000,1);
-        bank.shelves[0][0].shelf(false,200,-9,48000); bank.shelves[0][1].shelf(true,8000,6,48000);
+        bank.shelves[0][0].shelf(false,200,-9,48000); bank.shelves[0][1].shelf(true,8000,3,48000);
         std::array<double,3> frequencies {100,1000,10000}; std::array<std::complex<double>,3> measured {};
         for (int i = 0; i < 32768; ++i)
         {
             const auto y = bank.process(i == 0 ? 1.f : 0.f,0);
             for (size_t j = 0; j < frequencies.size(); ++j) measured[j] += double(y)*std::polar(1.,-juce::MathConstants<double>::twoPi*frequencies[j]*i/48000);
         }
-        Settings s; s.tame = 1; s.lowShelfDb = -9; s.highShelfDb = 6;
+        Settings s; s.tame = 1; s.lowShelfDb = -9; s.highShelfDb = 3;
         Analysis single; single.count = 1; single.bands[0] = {1000,1000.f/14,-6};
         for (size_t i = 0; i < frequencies.size(); ++i)
             check(std::abs(20*std::log10(std::abs(measured[i]))-ReverbEngine::responseDb(s,single,frequencies[i],48000)) < .001,
@@ -847,7 +864,7 @@ void sustainedFeedbackTests (const juce::File& directory)
     for (double rate : {44100.,48000.,96000.})
     {
         double reference = 0;
-        for (float boost : {0.f,6.f})
+        for (float boost : {0.f,3.f})
         {
             lan::Settings settings; settings.automatic = false; settings.scatter = 0; settings.phase = 0;
             settings.timeMs = 20; settings.predelayMs = 0; settings.decaySeconds = 40; settings.mix = 1; settings.width = 1;
@@ -898,7 +915,7 @@ void sustainedFeedbackTests (const juce::File& directory)
     for (double rate : {8000.,48000.,192000.})
     {
         lan::ReverbEngine engine; engine.prepare(rate,false); lan::Settings s;
-        s.lowShelfDb = s.highShelfDb = 6; s.shimmer = 1; s.automatic = false; s.decaySeconds = 40; s.mix = 1;
+        s.lowShelfDb = s.highShelfDb = 3; s.shimmer = 1; s.automatic = false; s.decaySeconds = 40; s.mix = 1;
         for (int at = 0; at < int(rate*4); at += 128)
         {
             juce::AudioBuffer<float> audio(2,128); audio.clear(); if (at == 0) { audio.setSample(0,0,.01f); audio.setSample(1,0,-.01f); }
@@ -910,8 +927,8 @@ void sustainedFeedbackTests (const juce::File& directory)
     }
     LanReverbProcessor processor;
     check(std::isfinite(processor.getTailLengthSeconds()),"neutral shelves keep the ordinary finite tail report");
-    set(processor,"lowShelfDb",6); check(std::isinf(processor.getTailLengthSeconds()),"sustained boosted feedback still reports a potentially infinite tail");
-    set(processor,"lowShelfDb",0); set(processor,"highShelfDb",6);
+    set(processor,"lowShelfDb",3); check(std::isinf(processor.getTailLengthSeconds()),"sustained boosted feedback still reports a potentially infinite tail");
+    set(processor,"lowShelfDb",0); set(processor,"highShelfDb",3);
     check(std::isinf(processor.getTailLengthSeconds()),"high shelf boost also retains the potentially infinite tail report");
 }
 void shimmerTests (const juce::File& directory)
@@ -1020,19 +1037,19 @@ void editorTests (const juce::File& destination)
         if (auto* handle = dynamic_cast<SpectrumShelfHandle*>(child))
         {
             const auto high = handle->getName() == "High shelf";
-            const auto hz = high ? 5000.f : 300.f;
-            const juce::Point<float> position {float(42+656*std::log(hz/30)/std::log(18000./30)),181};
+            const auto hz = high ? 80.25f : 16000.5f;
+            const juce::Point<float> position {float(42+656*std::log(hz/20)/std::log(20000./20)),181};
             const auto now = juce::Time::getCurrentTime();
             juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(),position,juce::ModifierKeys::leftButtonModifier,1,0,0,0,0,editor.get(),editor.get(),now,position,now,1,true);
             handle->mouseDown(event); handle->mouseDrag(event);
-            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfHz" : "lowShelfHz")->load()-hz) < 2,"shelf horizontal drag updates the host frequency");
+            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfHz" : "lowShelfHz")->load()-hz) < .1,"shelf horizontal drag updates the host frequency");
             check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load()+6) < .11,"shelf vertical drag updates the host gain");
             handle->mouseDoubleClick(event); handle->mouseUp(event);
             check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load()) < .01,"double-click restores a neutral shelf");
             const auto aboveZero = event.withNewPosition(juce::Point<float>{position.x,140.f});
             handle->mouseDown(aboveZero); handle->mouseDrag(aboveZero); handle->mouseUp(aboveZero);
-            check(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load() > 5,"dragging above the zero line applies positive shelf gain");
-            check(p.parameters.getParameter(high ? "highShelfDb" : "lowShelfDb")->getNormalisableRange().end >= 6,"host automation exposes positive shelf gain");
+            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load()-3) < .001,"dragging above the zero line caps shelf gain at three dB");
+            check(std::abs(p.parameters.getParameter(high ? "highShelfDb" : "lowShelfDb")->getNormalisableRange().end-3) < .001,"host automation caps shelf boost at three dB");
             check(handle->getTooltip().endsWithChar('.'),"draggable shelf has a one-sentence hint"); ++shelves;
         }
     check(shelves == 2,"both draggable shelf handles are present");
