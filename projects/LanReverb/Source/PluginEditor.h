@@ -11,18 +11,20 @@ public:
     void resized() override;
 private:
     void timerCallback() override;
+    void updateTimeMode();
     static constexpr int designWidth = 740, designHeight = 540;
     LanReverbProcessor& processor;
     StageLookAndFeel look;
     juce::TooltipWindow tooltipWindow { this };
     editorTooltips::TitleHint titleHint { JucePlugin_VersionString };
     StageBypassButton bypass;
-    juce::TextButton automatic { "AUTO" };
+    juce::TextButton automatic { "AUTO" }, sync { "SYNC" };
+    bool timeSynced = false;
     std::array<juce::Slider,11> sliders;
     std::array<juce::Label,11> labels;
     using State = juce::AudioProcessorValueTreeState;
     std::array<std::unique_ptr<State::SliderAttachment>,11> attachments;
-    std::unique_ptr<State::ButtonAttachment> autoAttachment, bypassAttachment;
+    std::unique_ptr<State::ButtonAttachment> autoAttachment, bypassAttachment, syncAttachment;
     lan::Analysis analysis;
     float reduction = 0, outputPeak = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LanReverbEditor)

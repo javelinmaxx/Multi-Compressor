@@ -19,6 +19,12 @@ struct ReverbEngineTestAccess
         engine.appliedRevision = 2; engine.appliedAuto = true; engine.previousTame = 1;
         engine.warm = 0; engine.bankFade = 1;
     }
+    static void checkTapCapacity (const ReverbEngine& engine)
+    {
+        for (const auto& line : engine.lines)
+            check(line.tap.current() <= float(line.delay.size()-2) && line.wetTap.current() <= float(line.delay.size()-2),
+                  "long synchronized wet and steered feedback taps fit their prepared buffers");
+    }
     static void seedFeedback (ReverbEngine& engine)
     {
         // A controlled in-loop disturbance, absent from the source spectrum.
@@ -315,9 +321,84 @@ void tapTests()
     }
     check(jump < .012,"tap automation adds no abrupt tone discontinuity");
 }
+class TempoPlayHead final : public juce::AudioPlayHead
+{
+public:
+    juce::Optional<double> bpm {120};
+    bool available = true;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        if (!available) return {};
+        PositionInfo position; position.setBpm(bpm); position.setIsPlaying(false); return position;
+    }
+};
+void tempoSyncTests (const juce::File& directory)
+{
+    std::ofstream report(directory.getChildFile("tempo-sync.csv").getFullPathName().toStdString());
+    report << "rate,note_index,bpm,expected_ms,first_return_ms\n";
+    const auto findNote = [] (const char* label)
+    {
+        for (size_t i = 0; i < lan::noteLengths.size(); ++i)
+            if (juce::String(lan::noteLengths[i].label) == label) return int(i);
+        throw std::runtime_error("missing synchronized note length");
+    };
+    TempoPlayHead host; LanReverbProcessor processor; processor.setPlayHead(&host); processor.prepareToPlay(48000,128);
+    juce::MidiBuffer midi; juce::AudioBuffer<float> silence(2,128);
+    const auto tick = [&] { silence.clear(); processor.processBlock(silence,midi); };
+    set(processor,"sync",1); set(processor,"note",float(findNote("1/4"))); tick();
+    check(std::abs(processor.settings().timeMs-500) < .001,"quarter note uses a stopped host's 120 BPM tempo");
+    host.bpm = 90; tick(); check(std::abs(processor.settings().timeMs-60000.f/90) < .001,"tempo changes are applied at the next callback");
+    host.bpm = {}; tick(); check(std::abs(processor.tempoBpm()-90) < 1e-9,"missing BPM retains the last valid tempo");
+    host.available = false; tick(); check(std::abs(processor.tempoBpm()-90) < 1e-9,"missing transport retains the last valid tempo"); host.available = true;
+    for (auto invalid : {0.,-50.,10.,500.,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()})
+    { host.bpm = invalid; tick(); check(std::abs(processor.tempoBpm()-90) < 1e-9,"invalid or unsupported host tempo cannot disturb the delay"); }
+    processor.setPlayHead(nullptr); tick(); check(std::abs(processor.tempoBpm()-90) < 1e-9,"detaching the playhead retains its last tempo");
+    set(processor,"time",137); set(processor,"sync",0); tick();
+    check(std::abs(processor.settings().timeMs-137) < .001,"free time retains its own value when Sync is disabled");
+    set(processor,"sync",1); tick(); check(std::abs(processor.settings().timeMs-60000.f/90) < .001,"re-enabling Sync retains the note selection");
+    LanReverbProcessor noHost; set(noHost,"sync",1); set(noHost,"note",float(findNote("1/8")));
+    check(std::abs(noHost.settings().timeMs-250) < .001,"a plugin without host tempo starts at 120 BPM");
+    for (size_t i = 1; i < lan::noteLengths.size(); ++i)
+        check(lan::noteLengths[i].beats > lan::noteLengths[i-1].beats,"note lengths increase monotonically around the Time knob");
+
+    struct Example { const char* note; double bpm, milliseconds; };
+    constexpr std::array<Example,4> examples {{{"1/2",120,1000},{"1/4 D",120,750},{"1/4 T",120,1000./3},{"1/64 T",400,6.25}}};
+    for (double rate : {44100.,48000.,96000.})
+        for (const auto& example : examples)
+        {
+            TempoPlayHead clock; clock.bpm = example.bpm;
+            LanReverbProcessor p; p.setPlayHead(&clock);
+            set(p,"sync",1); set(p,"note",float(findNote(example.note))); set(p,"automatic",0);
+            set(p,"scatter",0); set(p,"predelay",0); set(p,"width",100); set(p,"mix",100);
+            p.prepareToPlay(rate,128); int firstReturn = -1;
+            const auto count = juce::roundToInt(rate*(example.milliseconds*.001+.05));
+            for (int at = 0; at < count && firstReturn < 0; at += 128)
+            {
+                juce::AudioBuffer<float> block(2,128); block.clear();
+                if (at == 0) { block.setSample(0,0,.8f); block.setSample(1,0,.8f); }
+                p.processBlock(block,midi);
+                for (int i = 0; i < 128; ++i)
+                    if (std::abs(block.getSample(0,i)) > 1e-5) { firstReturn = at+i; break; }
+            }
+            check(firstReturn >= 0 && std::abs(firstReturn-example.milliseconds*.001*rate) <= 1.1,
+                  "real synced delay first arrival matches straight, dotted and triplet timing within interpolation tolerance");
+            report << rate << ',' << findNote(example.note) << ',' << example.bpm << ',' << example.milliseconds << ',' << firstReturn*1000/rate << '\n';
+        }
+    // The longest note must not clamp to the former 500 ms range or exhaust
+    // memory at the most extreme Time/Tap/Scatter combinations.
+    for (float scatter : {0.f,.5f,1.f})
+        for (float tap : {-1.f,1.f})
+        {
+            lan::Settings s; s.timeMs = lan::noteTimeMs(findNote("1/1 D"),20); s.scatter = scatter; s.tap = tap;
+            lan::ReverbEngine engine; engine.prepare(48000,false); lan::ReverbEngineTestAccess::forceCorrection(engine);
+            juce::AudioBuffer<float> block(2,1); block.clear(); engine.process(block,s);
+            check(std::abs(s.timeMs-18000) < .001,"dotted whole note at minimum tempo retains eighteen seconds");
+            lan::ReverbEngineTestAccess::checkTapCapacity(engine);
+        }
+}
 void processorTests()
 {
-    stateTests<LanReverbProcessor>(13);
+    stateTests<LanReverbProcessor>(15);
     LanReverbProcessor p; set(p,"mix",0); set(p,"automatic",0); p.prepareToPlay(48000,128);
     check(p.getLatencySamples() == 0,"reverb introduces no dry-path latency");
     juce::MidiBuffer midi; juce::AudioBuffer<float> b(2,128);
@@ -524,6 +605,23 @@ void editorTests (const juce::File& destination)
             check(hint->getTooltip().contains("J-Sonic Team") && hint->getTooltip().contains(JucePlugin_VersionString),"title hover shows release information");
     }
     check(sliders == 11,"all eleven controls are present");
+    juce::Slider* timeControl = nullptr; juce::Button* syncControl = nullptr;
+    for (auto* child : editor->getChildren())
+    {
+        if (auto* slider = dynamic_cast<juce::Slider*>(child)) if (slider->getName() == "TIME") timeControl = slider;
+        if (auto* button = dynamic_cast<juce::TextButton*>(child)) if (button->getButtonText() == "SYNC") syncControl = button;
+    }
+    check(timeControl != nullptr && syncControl != nullptr,"Time knob has a Sync button");
+    const auto pump = [] { for (int i = 0; i < 4; ++i) { juce::Thread::sleep(20); juce::Timer::callPendingTimersSynchronously(); } };
+    const auto freeTime = p.parameters.getRawParameterValue("time")->load();
+    set(p,"sync",1); pump();
+    timeControl->setValue(15,juce::sendNotificationSync);
+    check(std::abs(p.parameters.getRawParameterValue("note")->load()-15) < .01,"synced Time knob edits the host note parameter");
+    check(timeControl->getTextFromValue(timeControl->getValue()) == "1/4 D","synced Time shows a note label rather than milliseconds");
+    check(std::abs(p.parameters.getRawParameterValue("time")->load()-freeTime) < .01,"note editing leaves the stored millisecond value intact");
+    set(p,"note",11); pump(); check(timeControl->getTextFromValue(timeControl->getValue()) == "1/4 T","host note automation updates the visible Time knob");
+    syncControl->setToggleState(false,juce::sendNotificationSync); pump();
+    check(p.parameters.getRawParameterValue("sync")->load() < .5f && std::abs(timeControl->getValue()-freeTime) < .01,"clicking Sync off restores the free Time knob and value");
     for (auto* parameter : p.getParameters()) parameter->setValueNotifyingHost(parameter->getDefaultValue());
     juce::MidiBuffer midi;
     for (int at = 0; at < 28800; at += 128)
@@ -560,7 +658,7 @@ int main (int argc, char** argv)
             : juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("lan-reverb-report");
         directory.createDirectory();
         if (argc > 2 && juce::String(argv[1]) == "--editor") editorTests(juce::File(argv[2]));
-        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); tapTests(); processorTests(); scatterTests(directory); measurements(directory); }
+        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); }
         std::cout << checks << " Lan Reverb checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

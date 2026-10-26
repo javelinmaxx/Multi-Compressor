@@ -9,7 +9,8 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 
 | Control | Range / default | Function |
 |---|---|---|
-| Time | 20–500 ms / 90 ms | Repeat time at zero Scatter; reference room size at full Scatter |
+| Time | 20–500 ms / 90 ms; note lengths with Sync | Repeat time at zero Scatter; reference room size at full Scatter |
+| Sync | Off | Switches Time between milliseconds and DAW-synchronized note lengths |
 | Decay | 0.3–40 s / 10 s | Nominal RT60, with further loss from damping, interpolation and automatic EQ |
 | Pre-delay | 0–200 ms / 20 ms | Delay before the wet network; dry remains immediate |
 | Scatter | 0–100% / 100% | Morphs regular stereo delay into a dense stereo reverb |
@@ -28,6 +29,30 @@ provides one-sentence control hints. Hover over its title for developer, year,
 and version. The plot compares input and feedback power spectra; gold markers
 indicate tracked resonance bands. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
+
+## Tempo-synchronized Time
+
+Enable **Sync** beside the Time label to select musical note lengths with the
+same knob: 1/64 through 1/1, including triplet (**T**) and dotted (**D**) values.
+The choices increase in duration around the knob; the default synced value is
+1/8. With Sync off, Time returns to its stored 20–500 ms value. The free time,
+note selection and Sync state are separately automated and saved in sessions.
+
+The processor reads the DAW's tempo each callback, including while transport is
+stopped. A quarter note is 500 ms at 120 BPM, a dotted quarter 750 ms, and a
+quarter-note triplet about 333.33 ms. Delay times follow host tempo changes
+through the existing queued 50 ms tap crossfades; this follows tempo, rather
+than resetting the echo phase to the bar on playback. Scatter 0% gives regular
+note-timed repeats, while higher Scatter uses the selected note as the reference
+for its spread delay lengths. Pre-delay remains an independent millisecond value.
+
+Supported host tempo is 20–400 BPM; missing, invalid or unsupported data retains
+the last valid value, initially 120 BPM in standalone or without host tempo.
+The longest choice is a dotted whole note (18 s at 20 BPM). Delay buffers are
+reserved during prepare so tempo automation never allocates memory on the audio
+thread. This increases reserved delay memory to roughly 42 MB at 48 kHz and
+scales with sample rate, independent of the current Time setting. Host latency
+remains zero; the conservative reported tail is 120 s.
 
 ## Delay to reverb with Scatter
 
@@ -161,7 +186,7 @@ minimal Xvfb environments. Plot generation needs Python `numpy` and `matplotlib`
 macOS also provides `LanReverb_AU`; the root `build-macos-all.sh` discovers this
 project automatically. Windows workflows are unchanged. The latency reported to
 the host is **zero samples**; wet pre-delay and feedback delay remain intentional
-effect timing. A conservative 65 s tail is reported to the host.
+effect timing. A conservative 120 s tail is reported to the host.
 
 See the [test report](Tests/Reports/README.md) for reproducible measurements and
 scope, and [TOOLTIPS.md](TOOLTIPS.md) for the complete hover text.

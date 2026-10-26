@@ -20,7 +20,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 65; }
+    double getTailLengthSeconds() const override { return 120; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram (int) override {}
@@ -32,10 +32,12 @@ public:
     bool readAnalysis (lan::Analysis& a) const { return engine.readAnalysis(a); }
     float reductionDb() const { return engine.reductionDb(); }
     float peakLevel() const { return engine.peakLevel(); }
+    double tempoBpm() const noexcept { return hostTempo.load(); }
     juce::AudioProcessorValueTreeState parameters;
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     lan::ReverbEngine engine;
+    std::atomic<double> hostTempo { 120 };
     void process (juce::AudioBuffer<float>&, bool hostBypass);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LanReverbProcessor)
 };

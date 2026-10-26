@@ -9,21 +9,22 @@
     "VST3",
     "Standalone"
   ],
-  "dsp_checks_passed": 13851286,
-  "editor_checks_passed": 77,
+  "dsp_checks_passed": 13851388,
+  "editor_checks_passed": 86,
   "note": "Assertion counts include per-sample finite/bounds checks, not independent experimental trials; AU and DAW integration require platform testing.",
-  "source_parent_revision": "eef3ee0122a4deee1811096bab8eed826adc6c58",
+  "source_parent_revision": "1ef34e019fb349f98913ec0c44812e174a2a9fe1",
   "source_sha256": {
-    "projects/LanReverb/Source/PluginEditor.cpp": "1f5b6e96d7ff6375f0ec28774da039d947eeb78431237b06316e43b2a3f7d7c1",
-    "projects/LanReverb/Source/PluginEditor.h": "445e00cbd044d546ef9ab0113993b66787412144a000f35128985b798b647c17",
-    "projects/LanReverb/Source/PluginProcessor.cpp": "8ca4ce7fe14bf6256161e723cbfceb58e53fc84766d20dd10479159e4c46cec0",
-    "projects/LanReverb/Source/PluginProcessor.h": "466b5e565b35a6110abbaf9d3655ad7d4ee03ed26792b71490ea10df56ae068e",
-    "projects/LanReverb/Source/ReverbEngine.cpp": "457da1596be56e705ab62f5d384079ed2b480a86b136a5523669f1ece4448d1b",
-    "projects/LanReverb/Source/ReverbEngine.h": "2d6346c9250f53489df37327038f32906f7388e78a25aa03af463da74133ceb2",
+    "projects/LanReverb/Source/PluginEditor.cpp": "a043cf59d7aa6dff7b420dae38142cf080b711654c99147522ce9f5a1ed0f76a",
+    "projects/LanReverb/Source/PluginEditor.h": "fbbd4d050d5742338b4b76dc39ca866b16cff761b8df67a6f8f2c8547440f339",
+    "projects/LanReverb/Source/PluginProcessor.cpp": "077831a9209e4d8f762131a21e188330cee7769776b5e3fa6859622e31b9f167",
+    "projects/LanReverb/Source/PluginProcessor.h": "293bc0b2a27b44b44d95e3ae49f1f42d81399255ca2d001e279c1c30d8dbea98",
+    "projects/LanReverb/Source/ReverbEngine.cpp": "6ede1a6bdc911a5f4afe3da54ed355b18af5b9a1a1227be81d0b6191647a1a3f",
+    "projects/LanReverb/Source/ReverbEngine.h": "3eab2506bc0424d30ddc5c559c11fc3d98800323244ad339f0d559cf4f3addd3",
     "projects/LanReverb/CMakeLists.txt": "9dca4d40597cf8f1f1248a0ac4fc0217e54f86fd4005645517746fc1e3dd93b1",
-    "projects/LanReverb/Tests/ProcessorTests.cpp": "e310083850b440a9af9a74f62713271c4dd07bb9e5acd6010b559e9ca534f0f6",
-    "projects/PluginVersion.cmake": "64265941a2f247ac9c0d746f84c779334fb65f0ad8d478a2e50422cd4a69d009"
+    "projects/LanReverb/Tests/ProcessorTests.cpp": "8df2eebedaec849d6afd0318ab2d83305633a328ae88552192f7b930d1bfb096",
+    "projects/PluginVersion.cmake": "64265941a2f247ac9c0d746f84c779334fb65f0ad8d478a2e50422cd4a69d009",
+    "projects/LanReverb/Source/DelayTiming.h": "72296ab9dd3532d2008fc2e5a709195095358779614fba8dd93a7d3dc2a414e8"
   },
-  "host_parameters": 13,
+  "host_parameters": 15,
   "editor_knobs": 11
 }

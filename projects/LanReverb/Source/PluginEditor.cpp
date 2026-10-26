@@ -7,7 +7,7 @@ constexpr std::array<const char*,11> ids {"time","decay","predelay","scatter","d
 constexpr std::array<const char*,11> names {"TIME","DECAY","PRE-DELAY","SCATTER","DIFFUSION","WIDTH","TAP SHIFT","PHASE","TAME","DRY / WET","OUTPUT"};
 constexpr std::array<const char*,11> units {" ms"," s"," ms"," %"," %"," %"," %"," %"," %"," %"," dB"};
 constexpr std::array<const char*,11> hints {
-    "Sets the repeat time in delay mode and the reference room size in reverb mode.",
+    "Sets the repeat time or room size in milliseconds, or selects a musical note length when Sync is on.",
     "Sets the nominal time for the feedback tail to fall by sixty decibels before damping and resonance control.",
     "Delays the signal entering the reverb while leaving the dry signal immediate.",
     "Morphs aligned delay repeats at zero into a dense stereo reverb at full.",
@@ -24,7 +24,12 @@ LanReverbEditor::LanReverbEditor (LanReverbProcessor& p) : AudioProcessorEditor(
     setOpaque(true); setLookAndFeel(&look);
     look.setColour(juce::TooltipWindow::backgroundColourId,panel);
     look.setColour(juce::TooltipWindow::textColourId,foreground); look.setColour(juce::TooltipWindow::outlineColourId,grid);
-    addAndMakeVisible(titleHint); addAndMakeVisible(bypass); addAndMakeVisible(automatic);
+    addAndMakeVisible(titleHint); addAndMakeVisible(bypass); addAndMakeVisible(automatic); addAndMakeVisible(sync);
+    sync.setClickingTogglesState(true);
+    sync.setColour(juce::TextButton::buttonColourId,inset); sync.setColour(juce::TextButton::buttonOnColourId,amber.darker(.6f));
+    sync.setTooltip("Synchronizes Time to the DAW tempo using straight, dotted or triplet note lengths.");
+    syncAttachment = std::make_unique<State::ButtonAttachment>(p.parameters,"sync",sync);
+    sync.onClick = [this] { updateTimeMode(); };
     automatic.setClickingTogglesState(true);
     automatic.setColour(juce::TextButton::buttonColourId,inset); automatic.setColour(juce::TextButton::buttonOnColourId,amber.darker(.6f));
     automatic.setTooltip("Compares spectral peaks and frequency decay rates to guide input-protected feedback correction; Saves CPU when Off.");
@@ -46,7 +51,18 @@ LanReverbEditor::LanReverbEditor (LanReverbProcessor& p) : AudioProcessorEditor(
         attachments[i] = std::make_unique<State::SliderAttachment>(p.parameters,ids[i],slider);
         editorTooltips::setHint(slider,labels[i],hints[i]);
     }
+    updateTimeMode();
     editorScaling::enable(*this,designWidth,designHeight); startTimerHz(20);
+}
+void LanReverbEditor::updateTimeMode()
+{
+    const auto enabled = processor.parameters.getRawParameterValue("sync")->load() >= .5f;
+    if (enabled == timeSynced) return;
+    // Rebind only on the message thread; the free time and note choice each
+    // retain their own host-automatable value when switching modes.
+    attachments[0].reset(); timeSynced = enabled;
+    sliders[0].setTextValueSuffix(enabled ? "" : " ms");
+    attachments[0] = std::make_unique<State::SliderAttachment>(processor.parameters,enabled ? "note" : "time",sliders[0]);
 }
 void LanReverbEditor::resized()
 {
@@ -58,13 +74,15 @@ void LanReverbEditor::resized()
         const auto y = top ? 310 : 422, controlWidth = top ? 100 : 120;
         labels[i].setBounds(x,y,controlWidth,16); sliders[i].setBounds(x,y+20,controlWidth,76);
     }
+    labels[0].setBounds(45,310,46,16); sync.setBounds(98,307,47,20);
     const auto transform = editorScaling::transform(*this,designWidth,designHeight);
-    titleHint.setTransform(transform); automatic.setTransform(transform); bypass.setTransform(transform);
+    titleHint.setTransform(transform); automatic.setTransform(transform); bypass.setTransform(transform); sync.setTransform(transform);
     for (auto& slider : sliders) slider.setTransform(transform);
     for (auto& label : labels) label.setTransform(transform);
 }
 void LanReverbEditor::timerCallback()
 {
+    updateTimeMode();
     if (!isShowing()) return;
     if (!processor.readAnalysis(analysis)) analysis = {};
     reduction = processor.reductionDb(); outputPeak = processor.peakLevel();

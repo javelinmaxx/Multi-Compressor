@@ -21,6 +21,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout LanReverbProcessor::createPa
     add("output","Output",-24,12,.1f,0,"dB");
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"automatic",1},"Auto resonance",true));
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"bypass",1},"Bypass",false));
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"sync",1},"Time tempo sync",false));
+    juce::StringArray notes;
+    for (const auto& note : lan::noteLengths) notes.add(note.label);
+    result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"note",1},"Time note length",notes,lan::defaultNote));
     return result;
 }
 LanReverbProcessor::LanReverbProcessor()
@@ -31,7 +35,7 @@ lan::Settings LanReverbProcessor::settings() const
 {
     lan::Settings s;
     const auto get = [this] (const char* id) { return parameters.getRawParameterValue(id)->load(); };
-    s.timeMs = get("time"); s.decaySeconds = get("decay"); s.predelayMs = get("predelay");
+    s.timeMs = get("sync") >= .5f ? lan::noteTimeMs(juce::roundToInt(get("note")),hostTempo.load()) : get("time"); s.decaySeconds = get("decay"); s.predelayMs = get("predelay");
     s.scatter = get("scatter")*.01f; s.diffusion = get("diffusion")*.01f; s.width = get("width")*.01f; s.tap = get("tap")*.01f;
     s.phase = get("phase")*.01f; s.tame = get("tame")*.01f; s.mix = get("mix")*.01f; s.outputDb = get("output");
     s.automatic = get("automatic") >= .5f; s.bypass = get("bypass") >= .5f; return s;
@@ -53,5 +57,16 @@ bool LanReverbProcessor::isBusesLayoutSupported (const BusesLayout& layout) cons
 }
 void LanReverbProcessor::processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) { process(b,false); }
 void LanReverbProcessor::processBlockBypassed (juce::AudioBuffer<float>& b, juce::MidiBuffer&) { process(b,true); }
-void LanReverbProcessor::process (juce::AudioBuffer<float>& b, bool hostBypass) { engine.process(b,settings(),hostBypass); }
+void LanReverbProcessor::process (juce::AudioBuffer<float>& b, bool hostBypass)
+{
+    // Hosts provide transport information on the audio thread, including when
+    // stopped. Missing or invalid tempo retains the last valid value (120 at
+    // startup), so intermittent host data cannot make the delay jump.
+    if (auto* transport = getPlayHead())
+        if (const auto position = transport->getPosition())
+            if (const auto bpm = position->getBpm())
+                if (std::isfinite(*bpm) && *bpm >= lan::minimumTempo && *bpm <= lan::maximumTempo)
+                    hostTempo.store(*bpm);
+    engine.process(b,settings(),hostBypass);
+}
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new LanReverbProcessor(); }

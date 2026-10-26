@@ -332,7 +332,10 @@ void ReverbEngine::prepare (double rate, bool worker)
     for (size_t i = 0; i < lines.size(); ++i)
     {
         auto& line = lines[i]; line = {};
-        line.delay.assign(size_t(std::ceil(sampleRate*.99))+4,0);
+        // Reserve the longest supported synchronized note, including tap steering,
+        // during prepare; tempo automation never reallocates on the callback.
+        const auto capacitySeconds = maximumTimeMs*.001*std::max(1.f,ratios[i])*1.4;
+        line.delay.assign(size_t(std::ceil(sampleRate*capacitySeconds))+4,0);
         line.phaseMemory.assign(size_t(std::max(1,juce::roundToInt(sampleRate*(.0017+i*.00083)))),0);
         line.tap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
         line.wetTap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
@@ -365,7 +368,7 @@ void ReverbEngine::update (const Settings& s)
     {
         auto& line = lines[i];
         const auto autoSpread = active ? latest.strength*s.phase*.09f*std::sin(latest.frequency*.017f+float(i)*2.399963f) : 0.f;
-        const auto wetSeconds = std::clamp(s.timeMs,20.f,500.f)*.001f*(1+s.scatter*(ratios[i]-1));
+        const auto wetSeconds = std::clamp(s.timeMs,1.f,maximumTimeMs)*.001f*(1+s.scatter*(ratios[i]-1));
         const auto seconds = wetSeconds
             *(1+std::clamp(s.tap,-1.f,1.f)*.3f*(1+s.scatter*(tapPattern[i]-1))+s.scatter*autoSpread);
         if (first) line.wetTap.prepare(sampleRate,float(sampleRate)*wetSeconds);

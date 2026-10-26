@@ -26,6 +26,8 @@ def main():
     source = args.results
     destination = Path(__file__).resolve().parent/"Reports" if args.publish else source/"report"
     destination.mkdir(parents=True, exist_ok=True)
+    sync = load(source,"tempo-sync.csv")
+    sync_rows = "\n".join(f"| {r['rate']/1000:g} | {int(r['note_index'])} | {r['bpm']:g} | {r['expected_ms']:.4f} | {r['first_return_ms']:.4f} |" for r in sync)
     relative = load(source,"relative-decay.csv")
     fig,axes = plt.subplots(2,1,figsize=(10,7),constrained_layout=True,sharex=True)
     scenarios = {0:"Slow tail: −2 vs −12 dB/s",1:"Equal decay: −12 dB/s",2:"Notes still present",3:"Rising peak",4:"Single tone, no reference",5:"Long tail: −0.2 vs −1.5 dB/s",6:"Faster target: −18 vs −12 dB/s"}
@@ -141,6 +143,16 @@ Repeat windows are the first 12 ms after each multiple of 80 ms. Their energy fr
 
 All remaining measurements below use Scatter 100%. Intermediate settings can introduce additional decay loss; the morph is not a claim of constant RMS or identical RT60 at every position. The input-aligned and reverb output vectors rotate smoothly, while feedback taps retain their queued crossfades.
 
+## DAW tempo synchronization
+
+The production processor is connected to a fake JUCE playhead and receives a stereo impulse with Scatter 0%, Pre-delay 0, Width 100%, Mix 100% and Auto Off. Tests measure the first wet sample above amplitude 1e−5, requiring it within 1.1 samples of the requested time at 44.1/48/96 kHz. Cases cover a half note at 120 BPM (1,000 ms, beyond the former 500 ms ceiling), dotted and triplet quarters, and a 1/64 triplet at 400 BPM (6.25 ms, below the free control's 20 ms floor).
+
+| Rate (kHz) | Note index | Host BPM | Expected (ms) | First return (ms) |
+|---|---:|---:|---:|---:|
+{sync_rows}
+
+Indices 16/15/11/0 mean 1/2, 1/4 D, 1/4 T and 1/64 T in the duration-sorted choice parameter. Additional tests cover callback-by-callback tempo changes, stopped transport, absent transport/BPM/playhead, nonfinite and unsupported tempos, 120 BPM startup fallback, independent recall of free Time and the synced note, and monotonic ordering. Test-only access verifies that wet and feedback read heads fit the prepared buffers at the longest 18 s synchronized setting, all three Scatter endpoints and both Tap extremes with forced automatic correction; this capacity check is separate from the measured shorter impulse renders. The processor supports 20–400 BPM and follows changes through the existing queued tap crossfade. There is no bar-phase reset.
+
 ## Long, fully wet tails
 
 ![Decay settings](decay.png)
@@ -185,7 +197,7 @@ At 8/44.1/48/96/192 kHz, two seconds of mono noise feed a full-wet 40 s-decay en
 
 A separate read-head test changes the requested tap every 31 samples while a 50 ms fade is in progress. It verifies exact DC unity and no abrupt discontinuity on a stationary periodic tone. New requests wait for the current fade endpoint. Spectral tests verify persistence, detection of anti-phase feedback without mid cancellation, protection of a matching input partial, no cuts on seeded broadband noise, and release of held bands during silence. The displayed release curve follows a previously detected tone; it illustrates the approximately 1.2 s release constant, not onset latency.
 
-Host checks cover all thirteen parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover all eleven control bindings, title information, one-sentence hints and 50%–120% bounds.
+Host checks cover all fifteen parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover all eleven knob bindings, the Sync button, note-label display and free/synced Time rebinding, title information, one-sentence hints and 50%–120% bounds.
 
 ## Reproduce
 
