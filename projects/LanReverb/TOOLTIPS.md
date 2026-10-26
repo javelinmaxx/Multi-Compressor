@@ -10,9 +10,9 @@
 | Width | Sets the stereo spread of the wet signal with a normalized mid and side balance. |
 | Tap Shift | Moves the feedback read taps through a smooth crossfade to scatter existing ringing frequencies. |
 | Phase | Sets feedback phase dispersion and automatic tap scattering as Scatter increases. |
-| Tame | Sets feedback attenuation for persistent ringing outside the protected input notes. |
+| Tame | Sets feedback attenuation for persistent peaks and unusually slow frequency decays while protecting incoming notes. |
 | Dry / Wet | Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent. |
 | Output | Adjusts the final output level after the dry and wet signals are mixed. |
-| Auto | Uses spectral analysis with input-note protection to guide feedback correction; Saves CPU when Off. |
+| Auto | Compares spectral peaks and frequency decay rates to guide input-protected feedback correction; Saves CPU when Off. |
 | Bypass | Bypasses the output while keeping the reverb and resonance analysis running for a smooth return. |
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.5.0 |

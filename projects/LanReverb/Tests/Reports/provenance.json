@@ -1,15 +1,16 @@
 {
-  "generator_sha256": "ab4e815ff130834eb0530d164b792846f8eda965659d73426d1c1f637b3cd57f",
+  "generator_sha256": "befccc34c4d5ec8a3410771493b473964cfda92e5b3674760459339956eec248",
   "data_sha256": {
-    "automation.csv": "9e7adfb7079f77c4c7c21d1ac942dbbdcb8bb58f4bb7b86490ecf5e0b60473bd",
+    "automation.csv": "9a14ccd1debd44c2f22b44f64f9bb0b6a7b97c72b3b77324c16d9fff412d16f9",
     "decay.csv": "384b90c66870d80adc4392d82621e93c26ea69c20a76135011b5b8a82c3e5afa",
-    "detector.csv": "588c1311e0e95a2d593636c3ff443bfa6cb9f66e2ab002ef0616ee389c0a95dc",
+    "detector.csv": "12706b37d29869dc48faf50229fec451bc5ae4647c98a99a02523d557117e2ab",
     "feedback-routing.csv": "2aadad251b3a2befb6f371dee059b8180ee05c8d600cd48f0408d042928343fa",
     "input-protection.csv": "71a60bce616cce6fc2fcc050708f91a27d4eff4ac5c9650d881378d4d57bb565",
-    "resonance.csv": "dc0c953d92f437753e13ee95eb6ddea7ac8ef2f3641a30be7e66d84b04442e8a",
+    "relative-decay.csv": "8f7bd0cdf70920c9e9a7d3b9007f53f2fa3d045387e425b7b397d7f54c0406b5",
+    "resonance.csv": "42c1d1f3ebe244ca19bd215e6bfeaa6a72f96708408a8ad930d63b1cd650448d",
     "scatter-summary.csv": "8e84efe1621a81220a390ad60004ae3c5169338e7de75c07a2027e2e0fe77f57",
     "scatter.csv": "6230658691146cfdc984f5cde6f56d8a8a36c61ebef1458387ca55199639493a",
-    "spectra.csv": "bd148b6afd170da7c3fb6e8ce1eef3c429ea30898f53b562af8aa5fd6b74307b",
+    "spectra.csv": "8d406fb8491bb8442f26c4ae98190f534c35a96226f2fbfbb8ab882912535ce0",
     "stereo-scatter.csv": "a686c8fb957f49b4416eb1ef1abfa65ffbc276927850cb3b98c5bbcd31068a22",
     "stereo.csv": "cb861769b344430b7eaa7a65e9cbc8de61bbfa9503f0ef126debd7e7cd33d429",
     "tap-shift.csv": "9fd960a5a32e08febd3fa0e90648aa7252300e0ea7a54bbafd2ac526e0af1911"

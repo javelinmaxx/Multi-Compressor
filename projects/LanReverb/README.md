@@ -96,30 +96,44 @@ A background worker transforms a 4,096-sample Hann-windowed frame at up to
 Input peaks are protected before feedback candidates are scored. A robust
 neighboring-bin median preserves quieter notes beside loud partials; peaks
 within 60 dB of the strongest input bin and above the absolute noise floor are
-eligible. Peaks at least 12 dB above that local median are remembered for the
-nominal Decay plus 1.25 s of delay allowance after they leave the input. Weaker
-6–12 dB peaks receive a short 250 ms guard. Protection covers neighboring bins
-and vetoes any EQ band that overlaps the protected region, including held cuts.
-An arriving input note therefore revokes an old overlapping EQ/automatic-phase
-target rather than waiting for its normal release.
+eligible. Strong peaks receive an absolute guard of 4% of (Decay + 1.25 s),
+clamped to **250–650 ms** after they leave the input; weaker 6–12 dB peaks use
+200 ms. Protection covers neighboring bins and revokes overlapping held cuts
+when a new note arrives.
 
-Only unprotected feedback peaks can become automatic EQ or phase/tap targets;
-they must exceed the surrounding feedback by at least 8 dB beyond instantaneous
-input prominence and persist for approximately 300 ms. Up to three separated bands receive cuts capped at 9 dB before
-Tame scaling. Their minimum width is limited by FFT resolution, and their
-nominal Q is at most 14. The effective low-frequency resolution changes with
-sample rate; this is not a continuous-frequency resonance detector.
+After this short guard, remembered source identity becomes conditional rather
+than a blanket veto. The worker fits **dB-per-second decay slopes** across eight
+frames (normally 0.7 s), requiring at least six frames. Each peak's three-bin
+power is compared with the median decay of at least three populated bands from
+a 24-band logarithmic reference spectrum, excluding the candidate's band and
+its immediate neighbors. The reference must decay
+faster than 0.6 dB/s, and the candidate must decay at least 35% more slowly, with
+an additional advantage above max(0.6 dB/s, 20% of the reference rate). Clearly
+rising peaks are excluded from this relative-decay evidence. Equal-rate tails,
+regardless of their original spectral levels, and single tones with no usable
+reference do not supply evidence to override source memory. The remembered
+identity expires after Decay + 1.25 s; source notes still present in the input
+remain guarded. A stream gap above 300 ms clears slope history.
 
-Unprotected notches release over roughly 2.5 s, avoiding immediate removal of a successful
-cut. Two fixed filter banks warm for 20 ms and crossfade over 80 ms, preventing
+Up to three separated bands receive attenuation-only cuts capped at **18 dB**
+before Tame scaling (13.5 dB at the default 75%). Without comparative decay
+evidence, a feedback peak must exceed its neighborhood by 8 dB beyond input
+prominence and persist for about 300 ms. Strong slow-decay evidence lowers this
+to 6 dB and about 200 ms, raises priority, and adds up to 6 dB of requested cut.
+Minimum width is FFT-limited and nominal Q is at most 14. This is not a
+continuous-frequency detector. Held notches release with a **1.2 s** time
+constant, reducing the influence of old decisions.
+
+Two fixed filter banks warm for 20 ms and crossfade over 80 ms, preventing
 coefficient jumps. The callback neither runs FFTs nor waits for the worker; it
 uses a bounded single job slot and lock-free atomic result publication. Missed
 jobs are dropped rather than queued without bound. Auto Off stops analysis submissions; so does Tame at zero when Phase is zero
 or Scatter is zero. Phase still supplies its static
 manual dispersion when Auto is off and Scatter is above zero.
 
-Protection favors preserving observed musical content, so a resonance too
-close to a protected source note is deliberately left alone. Source history is
+Protection favors preserving observed musical content while a note is present
+or within its short guard; later, measured slow decay can identify ringing at
+the same frequency. Sparse or ambiguous tails retain source protection. Source history is
 retained across Auto toggles and aged by stream time; preparing a new stream
 clears it. Source peaks must have been observed while analysis was enabled.
 

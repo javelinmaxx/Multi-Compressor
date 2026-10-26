@@ -26,6 +26,19 @@ def main():
     source = args.results
     destination = Path(__file__).resolve().parent/"Reports" if args.publish else source/"report"
     destination.mkdir(parents=True, exist_ok=True)
+    relative = load(source,"relative-decay.csv")
+    fig,axes = plt.subplots(2,1,figsize=(10,7),constrained_layout=True,sharex=True)
+    scenarios = {0:"Slow tail: −2 vs −12 dB/s",1:"Equal decay: −12 dB/s",2:"Notes still present",3:"Rising peak",4:"Single tone, no reference",5:"Long tail: −0.2 vs −1.5 dB/s",6:"Faster target: −18 vs −12 dB/s"}
+    for scenario,label in scenarios.items():
+        rows = relative[(relative["rate"] == 48000)&(relative["scenario"] == scenario)]
+        ax = axes[0] if scenario in (0,5) else axes[1]
+        ax.step(rows["time_s"],rows["cut_db"],where="post",label=label,ls="--" if scenario == 5 else "-",lw=2.8 if scenario == 0 else 1.5)
+    for ax in axes:
+        ax.axvspan(0,.65,color="gray",alpha=.12,label="650 ms input guard")
+        ax.set(ylabel="Requested target cut (dB)",ylim=(-.5,18.5)); ax.grid(alpha=.25); ax.legend(fontsize=8)
+    axes[0].set_title("Former source note: relative decay can override long memory")
+    axes[1].set(xlabel="Time after decay begins (s)",title="Control cases preserve intended notes (all five traces coincide at zero)")
+    fig.savefig(destination/"relative-decay.png",dpi=160); plt.close(fig)
     protection = load(source,"input-protection.csv"); routing = load(source,"feedback-routing.csv")
     fig,axes = plt.subplots(2,1,figsize=(10,7),constrained_layout=True)
     measured = protection[protection["rate"] == 48000]
@@ -102,9 +115,17 @@ Version 0.5.0. These are reproducible synthetic engineering tests, not listening
 
 Three-rate spectral tests (44.1/48/96 kHz) use a 220/329.7/997.3 Hz chord with a quiet 997.3 Hz partial, added noise, and anti-phase stereo. The corresponding feedback partial is louder and offset by 0.6 FFT bins. Source peaks must not become EQ or automatic phase/tap targets, even when the feedback spectrum is much more tonal. After the source stops, its peaks remain protected while an unrelated 1,800 Hz feedback component is detected. A separate test makes previously ringing frequencies appear in the input and requires their held targets to be revoked. Service-level tests also verify that observed-note protection survives Auto Off/On and expires correctly with elapsed stream time.
 
-Strong source peaks use a median neighborhood to avoid loud neighboring notes masking a quiet partial. Protection lasts for nominal Decay plus 1.25 s after observation (three seconds in the direct spectral fixture); weaker peaks receive a short guard. Filter-band overlap is vetoed as well as exact-bin matches. The report's protection trace shows selected targets, not output gain. Protection depends on observed source frames and deliberately leaves ringing overlapping a protected note untreated.
+Strong source peaks use a median neighborhood to avoid loud neighboring notes masking a quiet partial. Their absolute guard is now only 4% of (Decay + 1.25 s), clamped to 250–650 ms; weaker peaks use 200 ms. Afterwards, soft source identity prevents cuts unless the relative decay comparison supplies evidence. Filter-band overlap is vetoed as well as exact-bin matches while the guard is active. The report's protection trace shows selected targets, not output gain. Its stationary tail supplies no relative-decay evidence, so remembered notes stay protected even after the short guard expires.
 
 For routing, a test-only friend preloads an actual −9 dB feedback filter at 1,100 Hz and forces a phase/automatic-tap target before rendering an impulse. The ordinary reference has no correction. At Time 80 ms, Scatter 100%, Pre-delay 0 and Width 100%, the first arrivals before 65 ms must agree within 2e−7 at all three sample rates; later returns must differ. This verifies that the correction is active **inside the feedback return**, rather than proving equality with an accidentally bypassed processor. Separate wet and feedback read heads, plus independent source injection gain, prevent automatic tap/gain changes from altering the first arrivals. Recirculated audio naturally carries the corrections on subsequent repeats; there is no EQ or phase insert on the wet output.
+
+## Relative frequency decay and stronger taming
+
+![Relative decay and negative controls](relative-decay.png)
+
+At 44.1/48/96 kHz, seven bin-centered tones near 187.5/375/750/937.5/1,500/3,000/6,000 Hz are first observed in the stereo input. The 187.5 Hz tone starts at amplitude 0.3; all others start at 0.03, so the loudest note is not the intended target. Soft source memory is set to 30 s, but its absolute guard is only 650 ms. After input stops, the target near 937.5 Hz decays at −2 dB/s while the others decay at −12 dB/s. A second positive case uses −0.2 versus −1.5 dB/s to represent a long reverb tail. Both must acquire the target and request more than 9 dB attenuation, well before the old 30 s protection would expire. Other originally observed notes must remain untargeted. The requested cap is now 18 dB before Tame scaling.
+
+Negative controls use equal −12 dB/s decay, continuously present input notes, a rising +8 dB/s target, a single tone without reference bands, and a faster −18 dB/s target. None may acquire the target. These are direct production-analyser tests with controlled spectral envelopes, not full reverb renders or acoustic decay estimates. Each regression uses up to eight frames and actual sample timestamps; the reference is the median of at least three populated logarithmic frequency bands excluding the target and its immediate neighboring bands. The input guard and persistence still delay acquisition. All cases are written to `relative-decay.csv.gz`.
 
 ## Scatter: delay to reverb
 
@@ -162,7 +183,7 @@ Seeded uniform mono noise (MT19937 seed 72463, amplitude ±0.25) plays for two s
 
 At 8/44.1/48/96/192 kHz, two seconds of mono noise feed a full-wet 40 s-decay engine while Time alternates between 20/500 ms, Tap Shift between −100/+100%, Phase between 0/100%, and Diffusion and Scatter across five settings. New settings arrive every 17 blocks of 128 samples, so their rate varies with sample rate. Four seconds are rendered. Every sample must remain finite and bounded, and the late tail must remain bounded after the source stops. This is a stress test, not proof against every automation schedule.
 
-A separate read-head test changes the requested tap every 31 samples while a 50 ms fade is in progress. It verifies exact DC unity and no abrupt discontinuity on a stationary periodic tone. New requests wait for the current fade endpoint. Spectral tests verify persistence, detection of anti-phase feedback without mid cancellation, protection of a matching input partial, no cuts on seeded broadband noise, and release of held bands during silence. The displayed release curve follows a previously detected tone; it illustrates the approximately 2.5 s release constant, not onset latency.
+A separate read-head test changes the requested tap every 31 samples while a 50 ms fade is in progress. It verifies exact DC unity and no abrupt discontinuity on a stationary periodic tone. New requests wait for the current fade endpoint. Spectral tests verify persistence, detection of anti-phase feedback without mid cancellation, protection of a matching input partial, no cuts on seeded broadband noise, and release of held bands during silence. The displayed release curve follows a previously detected tone; it illustrates the approximately 1.2 s release constant, not onset latency.
 
 Host checks cover all thirteen parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover all eleven control bindings, title information, one-sentence hints and 50%–120% bounds.
 

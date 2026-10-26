@@ -20,8 +20,8 @@ float interpolate (const std::vector<float>& buffer, size_t position, float dela
 }
 void ResonanceAnalyser::reset (bool preserveSource)
 {
-    ages = {}; held = {};
-    if (!preserveSource) { sourceHolds = {}; previousSample = 0; }
+    ages = {}; held = {}; decayCount = decayPosition = 0; decayTime = 0;
+    if (!preserveSource) { sourceHolds = {}; sourceMemory = {}; previousSample = 0; }
 }
 Analysis ResonanceAnalyser::analyse (const Frame& frame)
 {
@@ -54,12 +54,67 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
     std::array<Candidate,maxBands> selected {};
     const auto previousAges = ages; ages.fill(0);
     const auto inputMaximum = *std::max_element(input.begin(),input.end());
-    // Protect source peaks before evaluating the feedback, including peaks
-    // belonging to a note which has stopped but is still in the delay network.
+    // Source identity is soft memory: only the first 250–650 ms is an absolute
+    // veto. Later, measured slow decay can override a remembered source note.
     const auto elapsed = previousSample > 0 && frame.sampleEnd > previousSample
         ? float((frame.sampleEnd-previousSample)/frame.rate) : .1f;
     previousSample = frame.sampleEnd;
     for (auto& hold : sourceHolds) hold = std::max(0.f,hold-elapsed);
+    for (auto& memory : sourceMemory) memory = std::max(0.f,memory-elapsed);
+
+    // Regress dB power against real stream time over the last eight frames.
+    // A gap (including Auto Off) invalidates slopes rather than inventing a
+    // decay rate from stale frames. All of this remains on the analysis worker.
+    if (elapsed > .3f) decayCount = decayPosition = 0;
+    decayTime += elapsed;
+    const auto historySlot = size_t(decayPosition);
+    decayTimes[historySlot] = decayTime;
+    const auto ceiling = std::min(16000.,frame.rate*.4);
+    const auto bandFor = [ceiling] (double hz)
+    { return std::clamp(int(std::log(std::max(60.,hz)/60)/std::log(ceiling/60)*decayBands),0,decayBands-1); };
+    std::array<double,decayBands> bandPower {};
+    for (int k = 1; k < analysisSize/2; ++k)
+    {
+        const auto power = feedback[size_t(k-1)]+feedback[size_t(k)]+feedback[size_t(k+1)];
+        decayHistory[historySlot][size_t(k)] = float(10*std::log10(std::max(1e-14,power)));
+        if (k*binHz >= 60 && k*binHz <= ceiling)
+            bandPower[size_t(bandFor(k*binHz))] += feedback[size_t(k)];
+    }
+    for (int band = 0; band < decayBands; ++band)
+        bandHistory[historySlot][size_t(band)] = float(10*std::log10(std::max(1e-14,bandPower[size_t(band)])));
+    decayPosition = (decayPosition+1)%decayFrames; decayCount = std::min(decayFrames,decayCount+1);
+    const auto slope = [&] (const auto& history, int bin)
+    {
+        double meanTime = 0, meanLevel = 0;
+        for (int i = 0; i < decayCount; ++i) { meanTime += decayTimes[size_t(i)]; meanLevel += history[size_t(i)][size_t(bin)]; }
+        meanTime /= decayCount; meanLevel /= decayCount;
+        double numerator = 0, denominator = 0;
+        for (int i = 0; i < decayCount; ++i)
+        { const auto t = decayTimes[size_t(i)]-meanTime; numerator += t*(history[size_t(i)][size_t(bin)]-meanLevel); denominator += t*t; }
+        return denominator > .01 ? numerator/denominator : 0.;
+    };
+    const auto maximumBandPower = *std::max_element(bandPower.begin(),bandPower.end());
+    const auto decayEvidence = [&] (int bin)
+    {
+        if (decayCount < 6) return 0.; // at least about half a second of evidence
+        std::array<double,decayBands> references {}; int count = 0;
+        const auto candidateBand = bandFor(bin*binHz);
+        for (int band = 0; band < decayBands; ++band)
+        {
+            if (std::abs(band-candidateBand) <= 1 || bandPower[size_t(band)] < std::max(1e-10,maximumBandPower*1e-5)) continue;
+            const auto rate = slope(bandHistory,band);
+            // Include stable bands in the median, but reject fresh rising ones.
+            if (rate <= 1) references[size_t(count++)] = rate;
+        }
+        if (count < 3) return 0.;
+        std::nth_element(references.begin(),references.begin()+count/2,references.begin()+count);
+        const auto reference = references[size_t(count/2)];
+        const auto candidate = slope(decayHistory,bin);
+        if (reference > -.6 || candidate > 1 || candidate < reference*.65) return 0.;
+        const auto advantage = candidate-reference;
+        const auto margin = std::max(.6,std::abs(reference)*.2);
+        return std::clamp((advantage-margin)/std::max(1.5,std::abs(reference)*.5),0.,1.);
+    };
     for (int k = 1; k < analysisSize/2-14; ++k)
     {
         const auto index = size_t(k);
@@ -72,22 +127,28 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
         std::nth_element(neighbours.begin(),neighbours.begin()+9,neighbours.end());
         const auto prominence = 10*std::log10(input[index]/std::max(1e-12,neighbours[9]));
         if (prominence >= 6)
+        {
             sourceHolds[index] = std::max(sourceHolds[index],prominence >= 12
-                ? std::clamp(frame.sourceHoldSeconds,.3f,45.f) : .25f);
+                ? std::clamp(frame.sourceHoldSeconds*.04f,.25f,.65f) : .2f);
+            sourceMemory[index] = std::max(sourceMemory[index],std::clamp(frame.sourceHoldSeconds,.3f,45.f));
+        }
     }
-    std::array<bool,analysisSize/2+1> protectedBins {};
+    std::array<bool,analysisSize/2+1> protectedBins {}, rememberedBins {};
     for (int k = 1; k < analysisSize/2; ++k)
-        if (sourceHolds[size_t(k)] > 0)
+        if (sourceMemory[size_t(k)] > 0)
         {
             const auto radius = std::max(2,int(std::ceil(k*.02)));
             for (int bin = std::max(1,k-radius); bin <= std::min(analysisSize/2,k+radius); ++bin)
-                protectedBins[size_t(bin)] = true;
+            {
+                rememberedBins[size_t(bin)] = true;
+                if (sourceHolds[size_t(k)] > 0) protectedBins[size_t(bin)] = true;
+            }
         }
-    const auto overlapsSource = [&] (double frequency, double bandwidth)
+    const auto overlaps = [&] (const auto& mask, double frequency, double bandwidth)
     {
         const auto firstBin = std::clamp(int(std::floor((frequency-bandwidth)/binHz)),1,analysisSize/2);
         const auto lastBin = std::clamp(int(std::ceil((frequency+bandwidth)/binHz)),firstBin,analysisSize/2);
-        for (int bin = firstBin; bin <= lastBin; ++bin) if (protectedBins[size_t(bin)]) return true;
+        for (int bin = firstBin; bin <= lastBin; ++bin) if (mask[size_t(bin)]) return true;
         return false;
     };
     for (int k = 2; k < analysisSize/2-14; ++k)
@@ -107,13 +168,16 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
         const auto protection = inputPeak > std::max(1e-9,inputMaximum*.0001)
             ? std::clamp(10*std::log10(inputPeak/std::max(1e-12,inputLocal)),0.,60.) : 0.;
         const auto bandwidth = float(std::max(binHz*2.5,hz/14));
+        const auto slowDecay = decayEvidence(k);
         const auto excess = prominence-protection;
-        if (excess < 8 || overlapsSource(hz,bandwidth)) continue;
-        ages[index] = std::min(2.f,.1f+std::max({previousAges[index-1],previousAges[index],previousAges[index+1]}));
-        if (ages[index] < .25f) continue;
+        if (overlaps(protectedBins,hz,bandwidth) || excess < (slowDecay > 0 ? 6 : 8)
+            || (overlaps(rememberedBins,hz,bandwidth) && slowDecay <= 0)) continue;
+        ages[index] = std::min(2.f,std::min(elapsed,.15f)+std::max({previousAges[index-1],previousAges[index],previousAges[index+1]}));
+        if (ages[index] < (slowDecay > 0 ? .18f : .25f)) continue;
         // Three separated, attenuation-only bands; FFT resolution limits their
         // minimum width. Preserve original input peaks while the source plays.
-        Candidate candidate {{float(hz),bandwidth,-float(std::min(9.,(excess-6)*.6))},excess*std::sqrt(feedback[index])};
+        Candidate candidate {{float(hz),bandwidth,-float(std::min(18.,(excess-4)*.9+slowDecay*6))},
+                             (excess+slowDecay*12)*std::sqrt(feedback[index])};
         bool duplicate = false;
         for (const auto& existing : selected)
             if (existing.priority > 0 && std::abs(existing.band.frequency-hz) < 2*bandwidth) duplicate = true;
@@ -128,15 +192,15 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
     for (int i = 0; i < held.count; ++i)
     {
         auto band = held.bands[size_t(i)];
-        if (overlapsSource(band.frequency,band.width)) continue; // revoke stale cuts on a new note
+        if (overlaps(protectedBins,band.frequency,band.width)) continue; // revoke stale cuts on a new note
         bool found = false;
         for (int j = 0; j < result.count; ++j)
             if (std::abs(result.bands[size_t(j)].frequency-band.frequency) < band.width)
-            { result.bands[size_t(j)].gainDb = std::min(result.bands[size_t(j)].gainDb,band.gainDb*.961f); found = true; }
-        band.gainDb *= .961f;
+            { result.bands[size_t(j)].gainDb = std::min(result.bands[size_t(j)].gainDb,band.gainDb*std::exp(-elapsed/1.2f)); found = true; }
+        band.gainDb *= std::exp(-elapsed/1.2f);
         if (!found && result.count < maxBands && band.gainDb < -.2f) result.bands[size_t(result.count++)] = band;
     }
-    if (result.count > 0) { result.frequency = result.bands[0].frequency; result.strength = std::clamp(-result.bands[0].gainDb/9,0.f,1.f); }
+    if (result.count > 0) { result.frequency = result.bands[0].frequency; result.strength = std::clamp(-result.bands[0].gainDb/18,0.f,1.f); }
     held = result; return result;
 }
 AnalysisService::AnalysisService() : Thread("Lan resonance analysis") {}

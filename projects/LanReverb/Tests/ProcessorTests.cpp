@@ -112,7 +112,7 @@ void analyserTests (const juce::File& directory)
     lan::ResonanceAnalyser analyser; lan::Analysis result;
     for (int i = 0; i < 5; ++i) result = analyser.analyse(*frame);
     check(result.count > 0 && std::abs(result.frequency-frequency) < 15,"persistent anti-phase feedback peak is detected without mid cancellation");
-    check(result.bands[0].gainDb < -1 && result.bands[0].gainDb >= -9,"resonance correction requests bounded attenuation");
+    check(result.bands[0].gainDb < -1 && result.bands[0].gainDb >= -18,"resonance correction requests bounded attenuation");
     std::ofstream response(directory.getChildFile("detector.csv").getFullPathName().toStdString());
     response << "time_s,cut_db,frequency_hz\n";
     for (int i = 0; i < 4; ++i) frame->audio[size_t(i)].fill(0);
@@ -203,6 +203,67 @@ void inputProtectionTests (const juce::File& directory)
     bool expired = false; lan::Analysis after; check(service.read(after),"worker resumes after a long inactive interval");
     for (int i = 0; i < after.count; ++i) expired |= std::abs(after.bands[size_t(i)].frequency-996.09375) < 120;
     check(expired,"source protection expires by stream time even while Auto is off");
+}
+void relativeDecayTests (const juce::File& directory)
+{
+    std::ofstream report(directory.getChildFile("relative-decay.csv").getFullPathName().toStdString());
+    report << "rate,scenario,time_s,target_slope_db_s,reference_slope_db_s,cut_db,target_hz\n";
+    // Every tone is first observed in the input. The loudest tone is not the
+    // slow-decaying target: absolute spectral level alone cannot pass this test.
+    for (double rate : {44100.,48000.,96000.})
+        for (int scenario = 0; scenario < 7; ++scenario)
+        {
+            auto frame = std::make_unique<lan::Frame>(); frame->rate = rate; frame->sourceHoldSeconds = 30;
+            lan::ResonanceAnalyser analyser;
+            constexpr std::array<double,7> requested {187.5,375,750,1500,3000,6000,937.5};
+            std::array<double,7> frequencies {};
+            for (size_t j = 0; j < frequencies.size(); ++j)
+                frequencies[j] = std::round(requested[j]*lan::analysisSize/rate)*rate/lan::analysisSize;
+            const auto target = frequencies.back();
+            const double referenceSlope = scenario == 5 ? -1.5 : -12;
+            const double targetSlope = scenario == 0 ? -2 : scenario == 3 ? 8 : scenario == 5 ? -.2 : scenario == 6 ? -18 : -12;
+            const auto fill = [&] (double t, bool source)
+            {
+                for (int i = 0; i < lan::analysisSize; ++i)
+                {
+                    double x = 0;
+                    for (size_t j = 0; j < frequencies.size(); ++j)
+                    {
+                        if (scenario == 4 && j != frequencies.size()-1) continue;
+                        const auto slope = j == frequencies.size()-1 ? targetSlope : referenceSlope;
+                        const auto amplitude = (j == 0 ? .3 : .03)*std::pow(10.,slope*t/20);
+                        x += amplitude*std::sin(2*pi*frequencies[j]*(i/rate+t));
+                    }
+                    frame->audio[0][size_t(i)] = source ? float(x) : 0;
+                    frame->audio[1][size_t(i)] = source ? -float(x) : 0;
+                    frame->audio[2][size_t(i)] = float(x); frame->audio[3][size_t(i)] = -float(x);
+                }
+                frame->sampleEnd += uint64_t(std::round(rate*.1));
+            };
+            for (int step = 0; step < 8; ++step) { fill(0,true); check(analyser.analyse(*frame).count == 0,"source notes are protected before decay comparison"); }
+            bool detected = false; double deepest = 0;
+            for (int step = 0; step < 25; ++step)
+            {
+                const auto t = step*.1; fill(t,scenario == 2);
+                const auto a = analyser.analyse(*frame); double cut = 0;
+                for (int band = 0; band < a.count; ++band)
+                {
+                    const auto& b = a.bands[size_t(band)];
+                    if (std::abs(b.frequency-target) < 2*rate/lan::analysisSize)
+                    { cut = std::max(cut,-double(b.gainDb)); detected = true; }
+                    check(b.gainDb >= -18 && b.gainDb <= 0,"aggressive decay correction stays within its attenuation-only limit");
+                    if (scenario == 0 || scenario == 5)
+                        check(std::abs(b.frequency-target) < 2*rate/lan::analysisSize,"decay comparison selects the slow tail rather than louder normally decaying notes");
+                }
+                deepest = std::max(deepest,cut);
+                if (t < .5) check(cut < 1e-7,"short input guard prevents immediate tail cuts");
+                report << rate << ',' << scenario << ',' << t << ',' << targetSlope << ',' << referenceSlope << ',' << cut << ',' << target << '\n';
+            }
+            if (scenario == 0 || scenario == 5)
+                check(detected && deepest > 9,"relative decay overrides long source memory and permits stronger than 9 dB correction");
+            else
+                check(!detected,"equal decay, active source, rising energy and single-tone tails do not masquerade as relative decay resonance");
+        }
 }
 void feedbackRoutingTests (const juce::File& directory)
 {
@@ -499,7 +560,7 @@ int main (int argc, char** argv)
             : juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("lan-reverb-report");
         directory.createDirectory();
         if (argc > 2 && juce::String(argv[1]) == "--editor") editorTests(juce::File(argv[2]));
-        else { analyserTests(directory); inputProtectionTests(directory); feedbackRoutingTests(directory); tapTests(); processorTests(); scatterTests(directory); measurements(directory); }
+        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); tapTests(); processorTests(); scatterTests(directory); measurements(directory); }
         std::cout << checks << " Lan Reverb checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

@@ -30,7 +30,7 @@ struct Frame
     uint32_t generation = 0;
     uint64_t sampleEnd = 0;
 };
-// Input-aware peak prominence and persistence detect narrow, sustained loop
+// Input-aware prominence plus relative spectral decay detect sustained loop
 // coloration. Only attenuation is requested; this is not a feedback canceller.
 class ResonanceAnalyser
 {
@@ -41,7 +41,13 @@ private:
     juce::dsp::FFT fft { 12 };
     std::array<float, 2*analysisSize> fftData {};
     std::array<double, analysisSize/2+1> input {}, feedback {};
-    std::array<float, analysisSize/2+1> ages {}, sourceHolds {};
+    std::array<float, analysisSize/2+1> ages {}, sourceHolds {}, sourceMemory {};
+    static constexpr int decayFrames = 8, decayBands = 24;
+    std::array<std::array<float, analysisSize/2+1>, decayFrames> decayHistory {};
+    std::array<std::array<float, decayBands>, decayFrames> bandHistory {};
+    std::array<double, decayFrames> decayTimes {};
+    int decayPosition = 0, decayCount = 0;
+    double decayTime = 0;
     Analysis held;
     uint64_t previousSample = 0;
 };

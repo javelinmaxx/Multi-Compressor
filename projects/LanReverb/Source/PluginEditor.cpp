@@ -15,7 +15,7 @@ constexpr std::array<const char*,11> hints {
     "Sets the stereo spread of the wet signal with a normalized mid and side balance.",
     "Moves the feedback read taps through a smooth crossfade to scatter existing ringing frequencies.",
     "Sets feedback phase dispersion and automatic tap scattering as Scatter increases.",
-    "Sets feedback attenuation for persistent ringing outside the protected input notes.",
+    "Sets feedback attenuation for persistent peaks and unusually slow frequency decays while protecting incoming notes.",
     "Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent.",
     "Adjusts the final output level after the dry and wet signals are mixed." };
 }
@@ -27,7 +27,7 @@ LanReverbEditor::LanReverbEditor (LanReverbProcessor& p) : AudioProcessorEditor(
     addAndMakeVisible(titleHint); addAndMakeVisible(bypass); addAndMakeVisible(automatic);
     automatic.setClickingTogglesState(true);
     automatic.setColour(juce::TextButton::buttonColourId,inset); automatic.setColour(juce::TextButton::buttonOnColourId,amber.darker(.6f));
-    automatic.setTooltip("Uses spectral analysis with input-note protection to guide feedback correction; Saves CPU when Off.");
+    automatic.setTooltip("Compares spectral peaks and frequency decay rates to guide input-protected feedback correction; Saves CPU when Off.");
     bypass.setTooltip("Bypasses the output while keeping the reverb and resonance analysis running for a smooth return.");
     autoAttachment = std::make_unique<State::ButtonAttachment>(p.parameters,"automatic",automatic);
     bypassAttachment = std::make_unique<State::ButtonAttachment>(p.parameters,"bypass",bypass);
