@@ -297,7 +297,7 @@ void ReverbEngine::Filter::configure (const Band& band, double rate, float amoun
 }
 void ReverbEngine::Filter::shelf (bool high, double hz, double gainDb, double rate)
 {
-    const auto a = std::pow(10.,std::clamp(gainDb,-12.,6.)/40);
+    const auto a = std::pow(10.,std::clamp(gainDb,-12.,0.)/40);
     const auto omega = 2*pi*std::clamp(hz,20.,rate*.4)/rate;
     const auto c = std::cos(omega), beta = std::sqrt(2*a)*std::sin(omega);
     const auto sign = high ? 1. : -1.;
@@ -329,7 +329,7 @@ float ReverbEngine::responseDb (const Settings& s, const Analysis& a, double hz,
         { filter.configure(a.bands[size_t(i)],rate,tameScale(a,s.tame)); magnitude *= filter.magnitude(hz,rate); }
     filter.shelf(false,s.lowShelfHz,s.lowShelfDb,rate); magnitude *= filter.magnitude(hz,rate);
     filter.shelf(true,s.highShelfHz,s.highShelfDb,rate); magnitude *= filter.magnitude(hz,rate);
-    return float(20*std::log10(std::max(1e-12,magnitude))-std::max(0.f,s.lowShelfDb)-std::max(0.f,s.highShelfDb));
+    return float(20*std::log10(std::max(1e-12,magnitude)));
 }
 float ReverbEngine::Filter::process (float x) noexcept
 {
@@ -339,7 +339,7 @@ float ReverbEngine::Bank::process (float x, size_t line) noexcept
 {
     for (int i = 0; i < count; ++i) x = filters[line][size_t(i)].process(x);
     for (int i = 0; i < shelfCount; ++i) x = shelves[line][size_t(i)].process(x);
-    return x*shelfNormalization;
+    return x;
 }
 float ReverbEngine::Line::phaseProcess (float x) noexcept
 {
@@ -523,9 +523,6 @@ void ReverbEngine::update (const Settings& s)
             for (auto& line : bank.shelves) line[size_t(bank.shelfCount)].shelf(shelf != 0,shelf == 0 ? s.lowShelfHz : s.highShelfHz,gain,sampleRate);
             ++bank.shelfCount;
         }
-        // A shelf boost is relative coloration: reserve its worst-case gain
-        // inside this feedback bank so no new loop gain exceeds unity.
-        bank.shelfNormalization = juce::Decibels::decibelsToGain(-std::max(0.f,s.lowShelfDb)-std::max(0.f,s.highShelfDb));
         appliedShelves = shelfSettings;
         displayedReduction.store(reduction); warm = juce::roundToInt(sampleRate*.02); bankFade = 0;
         appliedRevision = latest.revision; appliedAuto = active; previousTame = s.tame;
@@ -549,8 +546,8 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
     safeSettings.phase = std::clamp(safeSettings.phase,0.f,1.f);
     safeSettings.tame = std::clamp(safeSettings.tame,0.f,1.f);
     safeSettings.shimmer = std::clamp(safeSettings.shimmer,0.f,1.f);
-    safeSettings.lowShelfHz = std::clamp(safeSettings.lowShelfHz,40.f,2000.f); safeSettings.lowShelfDb = std::clamp(safeSettings.lowShelfDb,-12.f,6.f);
-    safeSettings.highShelfHz = std::clamp(safeSettings.highShelfHz,2000.f,16000.f); safeSettings.highShelfDb = std::clamp(safeSettings.highShelfDb,-12.f,6.f);
+    safeSettings.lowShelfHz = std::clamp(safeSettings.lowShelfHz,40.f,2000.f); safeSettings.lowShelfDb = std::clamp(safeSettings.lowShelfDb,-12.f,0.f);
+    safeSettings.highShelfHz = std::clamp(safeSettings.highShelfHz,2000.f,16000.f); safeSettings.highShelfDb = std::clamp(safeSettings.highShelfDb,-12.f,0.f);
     const bool initial = first; update(safeSettings);
     const auto bypassed = safeSettings.bypass || hostBypass;
     if (initial) bypass.setCurrentAndTargetValue(bypassed ? 1.f : 0.f); else bypass.setTargetValue(bypassed ? 1.f : 0.f);

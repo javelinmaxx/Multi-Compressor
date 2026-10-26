@@ -20,8 +20,8 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 | Phase | 0–100% / 60% | All-pass phase dispersion and automatic phase/tap steering |
 | Tame | 0–100% / 75% | Strength of narrow automatic feedback EQ, sharing a 6 dB total cut budget |
 | Shimmer | 0–100% / Off | Adds a +12-semitone, 2× oversampled layer to the source feeding the delay network |
-| Low shelf handle | 40–2,000 Hz / 200 Hz; −12–+6 dB / 0 dB | Drag its L node horizontally for frequency and vertically for gain |
-| High shelf handle | 2,000–16,000 Hz / 8,000 Hz; −12–+6 dB / 0 dB | Drag its H node horizontally for frequency and vertically for gain |
+| Low shelf handle | 40–2,000 Hz / 200 Hz; −12–0 dB / 0 dB | Drag its L node horizontally for frequency and vertically for gain |
+| High shelf handle | 2,000–16,000 Hz / 8,000 Hz; −12–0 dB / 0 dB | Drag its H node horizontally for frequency and vertically for gain |
 | Dry / Wet | 0–100% / 80% | Linear mix, including true full-wet operation for sends |
 | Output | −24–12 dB / 0 dB | Final output gain |
 | Auto | On | Enables input-aware spectral peak analysis and automatic correction |
@@ -30,7 +30,7 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 The ebony-and-gold editor matches the collection, scales from 50% to 120%, and
 provides one-sentence control hints. Hover over its title for developer, year,
 and version. The plot compares input and feedback power spectra; gold markers
-indicate tracked resonance bands. A pale target EQ curve combines the narrow tamer filters with the two shelves and their headroom compensation. The reduction readout shows the deepest
+indicate tracked resonance bands. A pale target EQ curve combines the narrow tamer filters with the two cut-only shelves. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
 
 ## Tempo-synchronized Time
@@ -80,7 +80,7 @@ loss from the phase-path blend, so Decay remains a nominal control.
 
 `delay-line wet taps → stereo pickups → Width → dry/wet mix → Output`
 
-`separate feedback taps → narrow tamer EQ → shelves + loop headroom → phase dispersion → damping → orthogonal mixing → feedback gains → delay-line writes`
+`separate feedback taps → narrow tamer EQ → cut-only shelves → phase dispersion → damping → orthogonal mixing → feedback gains → delay-line writes`
 
 The wet return is read **before** EQ, phase processing and loop damping. Those
 stages process only the recirculated signal, which is added to the independent
@@ -160,12 +160,11 @@ The curve shows the requested response; the feedback filter banks follow it
 through their existing 20 ms warm-up and 250 ms crossfade.
 
 Shelves process **feedback only**, including when Auto is off. They do not
-filter the dry signal or the first wet arrivals. Boosts are relative coloration:
-the loop reserves headroom equal to the sum of positive shelf gains, keeping
-the fixed shelf transfer at or below unity at every frequency. For example,
-a +6 dB high shelf includes 6 dB of overall loop attenuation; this favors high
-frequencies without creating a growing feedback loop. It can shorten the decay
-of other frequencies. The target EQ curve includes this compensation.
+filter the dry signal or the first wet arrivals. Both shelves are attenuation-only,
+from −12 dB to 0 dB: upward dragging stops at zero, and host automation exposes
+the same range. Invalid positive values are clamped to neutral in the DSP and
+display. No boost headroom compensation is applied; unaffected frequencies keep
+their existing loop gain.
 
 ## Shimmer input layer
 

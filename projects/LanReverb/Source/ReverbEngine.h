@@ -127,7 +127,6 @@ private:
         std::array<std::array<Filter, maxBands>, 8> filters;
         std::array<std::array<Filter,2>,8> shelves;
         int count = 0, shelfCount = 0;
-        float shelfNormalization = 1;
         float process (float x, size_t line) noexcept;
     };
     // A normalized two-junction lattice stays passive while its coefficients
