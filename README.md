@@ -1,7 +1,7 @@
 # Multi-Compressor
 
-Seven J-SONIC audio plugins for dynamics, de-essing, stereo width, overdrive,
-transformer coloration, and phase alignment. Built with JUCE and C++17, with VST3 and Standalone
+Eight J-SONIC audio plugins for dynamics, de-essing, stereo width, overdrive,
+transformer coloration, phase alignment, and adaptive reverb/delay. Built with JUCE and C++17, with VST3 and Standalone
 targets on Windows, macOS, and Linux, plus Audio Units on macOS.
 
 Collection version: **0.5.0**. Hover over any plugin's title to see its developer
@@ -26,6 +26,7 @@ the JUCE framework is included in this repository.
 | [Ren Transformer](projects/RenTransformer/README.md) | `RenTransformer` | Transformer coloration | Yinyang's transformer stage in a compact four-knob interface |
 | [Kuo Velvet](projects/KuoVelvet/README.md) | `KuoVelvet` | Convolution widening | Kuo's Velvet stage with Width, Transient, Attack, and Output controls |
 | [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
+| [Lan Reverb](projects/LanReverb/README.md) | `LanReverb` | Reverb / delay | Long stereo tails, live feedback-tap scattering, automatic resonance EQ and phase dispersion |
 
 ### Yinyang Compressor
 
@@ -149,6 +150,24 @@ bands red, with white left-channel and gold right-channel traces for applied pha
 [Phase and transient measurements](projects/XuanPhase/Tests/Reports/REPORT.md) ·
 [Auto alignment performance](projects/XuanPhase/Tests/Reports/AUTO_ALIGNMENT.md)
 
+### Lan Reverb
+
+![Lan Reverb with feedback spectrum and ten controls](projects/LanReverb/Previews/lan-reverb.png)
+
+Create long, wide tails at high wet settings with an eight-line stereo feedback
+network. **Time**, **Decay**, and **Diffusion** move from discrete echoes to dense
+reverb; **Tap Shift** crossfades feedback read positions while audio is ringing.
+**Auto** tracks persistent spectral peaks, applies attenuation-only feedback EQ,
+and guides phase and tap scattering. **Tame** and **Phase** set their strengths.
+The dry path has zero added latency, and Mix reaches 100% wet for sends.
+
+The feedback design and safeguards limit runaway behavior, while the analyser
+reduces detected ringing rather than promising a resonance-free result for every
+source or external feedback arrangement.
+
+[Controls and signal path](projects/LanReverb/README.md) ·
+[Measurements](projects/LanReverb/Tests/Reports/README.md)
+
 ## Measured examples
 
 ### Four approaches to compression
@@ -185,7 +204,7 @@ git clone --branch master https://github.com/javelinmaxx/Multi-Compressor.git
 cd Multi-Compressor
 ```
 
-**macOS — build all seven plugins as VST3 and AU:** install full Xcode and CMake,
+**macOS — build all eight plugins as VST3 and AU:** install full Xcode and CMake,
 then run:
 
 ```bash
@@ -198,7 +217,7 @@ installing by default. See `./build-macos-all.sh --help` for all options.
 
 **Windows — build VST3:** the manual
 [All Plugins - Windows VST3 workflow](https://github.com/javelinmaxx/Multi-Compressor/actions/workflows/all-plugins-windows.yml)
-packages all seven plugins, including Xuan Phase. For a local Yinyang build, use
+packages the previous seven plugins, including Xuan Phase; build Lan Reverb with its per-project CMake commands. For a local Yinyang build, use
 [`build-windows-vst3.ps1`](build-windows-vst3.ps1) with Visual Studio 2022's C++
 tools. The [build guide](docs/BUILDING.md#windows-vst3) covers local commands,
 workflow artifacts, and installation.

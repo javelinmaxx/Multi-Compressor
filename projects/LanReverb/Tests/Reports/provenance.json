@@ -1,0 +1,15 @@
+{
+  "generator_sha256": "853b47f5b3025c2985a2173b039c68262533fbaa4b8fc6a729740348b7fe862a",
+  "data_sha256": {
+    "automation.csv": "62676353525960ea8d851d3a5e345e91866074d242bf1b8999a305a1a3b5d955",
+    "decay.csv": "6ac16951582a386ac50cc7112fb9052e3f49e9b9d65f652dfd1b3c2b4cabb318",
+    "detector.csv": "588c1311e0e95a2d593636c3ff443bfa6cb9f66e2ab002ef0616ee389c0a95dc",
+    "resonance.csv": "c3869ea906fa617b7d252be22e6c5e8046c01013e322461eb0d40462b2cb1f9b",
+    "spectra.csv": "04c66996dd4ebdfa687167312a0a58d1d76ad7f0ea140a70bccf5040f68c3c7b",
+    "stereo-scatter.csv": "a2b311760ee8cb38e693578d80e4a2d3ba7db44c11a2ababbe66fdccac3203ea",
+    "stereo.csv": "4c202b1db2210c5e6b832acb47471da0f34ce772bf09cbe08910bfc8b71d8c2f",
+    "tap-shift.csv": "41ed23f843bfa1627a8b2048686514c0f5b1e838182125f2355be7515ab04ee0"
+  },
+  "numpy": "2.3.5",
+  "matplotlib": "3.10.8"
+}

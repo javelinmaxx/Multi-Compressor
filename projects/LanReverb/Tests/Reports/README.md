@@ -1,0 +1,65 @@
+# Lan Reverb engineering measurements
+
+Version 0.5.0. These are reproducible synthetic engineering tests, not listening results or a claim that every resonance can be removed.
+
+## Long, fully wet tails
+
+![Decay settings](decay.png)
+
+A stereo-linked 0.8-amplitude impulse feeds the real eight-line engine at 48 kHz, with Time 90 ms, Pre-delay 20 ms, Diffusion 85%, Phase 60%, Width 125%, Mix 100%, Output 0 dB and Auto Off. Twelve seconds are rendered at nominal Decay 2/10/30 s. Each plotted point is absolute two-channel RMS over 100 ms; there is no gain normalization. The tests require substantially more 3–4 s tail energy at 30 s than at 2 s. Damping and fractional delay interpolation make the controls nominal, especially at high frequencies. This is not a measured 30 s broadband RT60 fit.
+
+[Eight-second fully wet impulse example](wet-impulse.wav).
+
+## Automatic ringing control
+
+![Tail and spectral comparison](resonance.png)
+
+The input contains 220 Hz and 997 Hz tones at amplitudes 0.14 and 0.10 for one second, followed by nine seconds of silence. Time is 90 ms, Decay 30 s, Diffusion 10%, Pre-delay 20 ms, Width 125%, Mix 100%, and Output 0 dB. Conditions are Auto Off with Phase 0; Auto On with Tame 100% / Phase 0; Auto On with Tame 0 / Phase 100%; and Auto On with the default Tame 75% / Phase 60%. These compare isolated EQ, isolated phase/tap processing, and their combined result. Phase zero retains the phase stage's pure delay.
+
+| Condition | Mean late-tail power, 3–8 s | Change from Off |
+|---|---:|---:|
+| Auto Off | 7.050502e-06 | +0.00 dB |
+| EQ only | 1.2158653e-08 | -27.63 dB |
+| Phase / tap only | 2.2812698e-05 | +5.10 dB |
+| Combined (Tame 75 / Phase 60) | 1.0532674e-08 | -28.26 dB |
+
+The deepest requested single-band cut was **9.00 dB**. Tests require a genuine correction request and at least 10% less late energy with EQ and with the combined controls on this deliberately tonal fixture. The spectrum uses overlapping 4,096-sample Hann windows with 2,048-sample hops over 3–8 s, averaging both channel powers. No output matching conceals attenuation. Phase/tap processing redistributes loop modes and may move energy between frequencies; its result is reported independently rather than required to beat EQ or reduce total energy.
+
+The analyser and feedback filters are production code. Tests run the analyser synchronously at callback boundaries for deterministic results; the shipped plugin runs it in a background worker, whose scheduling can delay or drop updates. The plotted 100 ms RMS windows are independent of the internal FFT windows. The CSV's `max_cut_db` column is the maximum over the entire render, not a time-varying reduction trace.
+
+[Tamed tail example](tamed-tail.wav).
+
+## Manual feedback-tap change during the tail
+
+![Tap shift redistributes existing ringing](tap-shift.png)
+
+The same tone excitation and settings as the Auto Off condition are rendered again, but Tap Shift changes from 0 to +70% at 2 s, after the source has stopped. Other controls stay fixed. The plot compares 3–8 s tail spectra. A normalized spectral dot-product check requires the shifted result to differ from the unchanged network. This directly exercises existing ringing rather than merely changing the settings before excitation. Energy can move into other frequencies; a tap change alone is not an attenuation guarantee.
+
+## Width from mono
+
+![Stereo field](width.png)
+
+Seeded uniform mono noise (MT19937 seed 72463, amplitude ±0.25) plays for two seconds, followed by a one-second tail. Other controls are defaults, except Auto Off and Mix 100%. Side/mid RMS is measured over 0.5–2.5 s, including the beginning of the tail. Width 0 must be mono; 100% and 200% must produce substantial side energy. The scatter uses every third sample from 0.5–0.625 s at Width 100%. Width is outside the feedback loop and uses normalization to avoid increasing its maximum mid/side gain.
+
+## Tap automation, detector behavior and host integration
+
+![Automation and detector release](automation.png)
+
+At 8/44.1/48/96/192 kHz, two seconds of mono noise feed a full-wet 40 s-decay engine while Time alternates between 20/500 ms, Tap Shift between −100/+100%, Phase between 0/100%, and Diffusion across five settings. New settings arrive every 17 blocks of 128 samples, so their rate varies with sample rate. Four seconds are rendered. Every sample must remain finite and bounded, and the late tail must remain bounded after the source stops. This is a stress test, not proof against every automation schedule.
+
+A separate read-head test changes the requested tap every 31 samples while a 50 ms fade is in progress. It verifies exact DC unity and no abrupt discontinuity on a stationary periodic tone. New requests wait for the current fade endpoint. Spectral tests verify persistence, detection of anti-phase feedback without mid cancellation, protection of a matching input partial, no cuts on seeded broadband noise, and release of held bands during silence. The displayed release curve follows a previously detected tone; it illustrates the approximately 2.5 s release constant, not onset latency.
+
+Host checks cover all twelve parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover control bindings, title information, one-sentence hints and 50%–120% bounds.
+
+## Reproduce
+
+From the repository root:
+
+```sh
+cmake -S projects/LanReverb -B build/lan -DCMAKE_BUILD_TYPE=Release -DLAN_REVERB_BUILD_TESTS=ON
+cmake --build build/lan --target LanReverbTests --parallel 3
+xvfb-run -a ./build/lan/LanReverbTests --report /tmp/lan-reverb-report
+python3 projects/LanReverb/Tests/generate_report.py /tmp/lan-reverb-report --publish
+```
+
+Omit `xvfb-run -a` on a desktop system. Linux GUI previews can additionally use the existing X11-atom helper described in the project README. Python plots require NumPy and Matplotlib. Compressed CSVs preserve raw measurements. No DAW, external processor, hardware reference, or listening panel is part of these tests. AU/macOS and real DAW behavior require platform validation.
