@@ -9,8 +9,8 @@
 | Scatter | Morphs aligned delay repeats at zero into a dense stereo reverb at full. |
 | Diffusion | Adjusts the mixing density of the feedback network as Scatter increases. |
 | Width | Sets the stereo spread of the wet signal with a normalized mid and side balance. |
-| Tap Shift | Moves the feedback read taps through a smooth crossfade to scatter existing ringing frequencies. |
-| Phase | Sets feedback phase dispersion and automatic tap scattering as Scatter increases. |
+| Tap Shift | Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies. |
+| Phase | Sets feedback phase dispersion and correction across three resonance bands within a five-millisecond delay budget. |
 | Tame | Sets feedback attenuation for persistent peaks and unusually slow frequency decays while protecting incoming notes. |
 | Dry / Wet | Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent. |
 | Output | Adjusts the final output level after the dry and wet signals are mixed. |

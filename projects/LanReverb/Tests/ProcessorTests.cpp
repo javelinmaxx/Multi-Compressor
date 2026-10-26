@@ -9,15 +9,149 @@ struct ReverbEngineTestAccess
 {
     static void forceCorrection (ReverbEngine& engine)
     {
-        engine.latest = {}; engine.latest.count = 1; engine.latest.frequency = 1100; engine.latest.strength = 1; engine.latest.revision = 2;
-        engine.latest.bands[0] = {1100,80,-9};
+        engine.latest = {}; engine.latest.count = maxBands; engine.latest.frequency = 1100; engine.latest.strength = 1; engine.latest.revision = 2;
+        engine.latest.bands = {{{1100,80,-9},{3300,240,-12},{7200,520,-18}}};
         for (auto& bank : engine.banks)
         {
-            bank.count = 1;
-            for (auto& line : bank.filters) line[0].configure(engine.latest.bands[0],engine.sampleRate,1);
+            bank.count = maxBands;
+            for (auto& line : bank.filters) for (int i = 0; i < maxBands; ++i) line[size_t(i)].configure(engine.latest.bands[size_t(i)],engine.sampleRate,1);
         }
         engine.appliedRevision = 2; engine.appliedAuto = true; engine.previousTame = 1;
         engine.warm = 0; engine.bankFade = 1;
+    }
+    static std::complex<double> response (const ReverbEngine::BandPhase& section, double hz, double rate, bool target = true)
+    {
+        const auto k1 = target ? section.target1 : section.k1, k2 = target ? section.target2 : section.k2;
+        const auto z = std::polar(1.,-2*juce::MathConstants<double>::pi*hz/rate);
+        const auto a1 = k1*(1+k2);
+        return (k2+a1*z+z*z)/(1.+a1*z+k2*z*z);
+    }
+    static void multiPhaseTests (const juce::File& directory)
+    {
+        constexpr auto pi = juce::MathConstants<double>::pi;
+        const std::array<Band,maxBands> bands {{{300,300.f/14,-18},{1400,100,-12},{6500,6500.f/14,-9}}};
+        std::ofstream report(directory.getChildFile("multiband-phase.csv").getFullPathName().toStdString());
+        report << "rate,line,frequency_hz,phase_0_deg,phase_1_deg,phase_2_deg,total_phase_deg,magnitude_db,total_delay_bound_ms\n";
+        for (double rate : {44100.,48000.,96000.})
+        {
+            auto frame = std::make_unique<Frame>(); frame->rate = rate;
+            for (int i = 0; i < analysisSize; ++i)
+            {
+                double x = 0;
+                for (size_t band = 0; band < bands.size(); ++band)
+                    x += .3*std::pow(.3,double(band))*std::sin(2*pi*bands[band].frequency*i/rate);
+                frame->audio[2][size_t(i)] = float(x); frame->audio[3][size_t(i)] = -float(x);
+            }
+            ResonanceAnalyser analyser; Analysis detected;
+            for (int i = 0; i < 6; ++i) detected = analyser.analyse(*frame);
+            check(detected.count == 3,"production analyser detects three simultaneous feedback resonances");
+            ReverbEngine engine; engine.prepare(rate,false); engine.latest = detected; engine.updatePhaseBands(true,1);
+            for (const auto& section : engine.lines[0].phaseBands)
+                check(section.target2 > 0,"all three detected feedback resonances engage automatic phase sections");
+            engine.latest.count = maxBands;
+            engine.latest.bands = bands; engine.latest.frequency = bands[0].frequency; engine.latest.revision = 1;
+            engine.updatePhaseBands(true,1);
+            for (size_t line = 0; line < 2; ++line)
+            {
+                auto& sections = engine.lines[line].phaseBands;
+                for (size_t i = 0; i < bands.size(); ++i)
+                {
+                    const auto h = response(sections[i],bands[i].frequency,rate);
+                    const auto baseline = std::polar(1.,-4*pi*bands[i].frequency/rate);
+                    check(std::abs(h-baseline) > .005,
+                          "all three tracked frequencies receive distinct phase correction beyond the baseline");
+                    check(std::abs(std::abs(h)-1) < 1e-9,"each fixed phase section has unity gain at its target frequency");
+                }
+                // Render the actual three-section cascade after settling to its
+                // targets, and compare its impulse Fourier response with H(z).
+                for (int i = 0; i < juce::roundToInt(rate*transitionSeconds); ++i)
+                    for (auto& section : sections) section.process(0);
+                for (const auto& section : sections)
+                    check(section.remaining == 0,"phase changes finish at the end of the 250 ms fade");
+                std::array<std::complex<double>,3> measured {}; double outputEnergy = 0;
+                for (int i = 0; i < 32768; ++i)
+                {
+                    float x = i == 0 ? 1.f : 0.f;
+                    for (auto& section : sections) x = section.process(x);
+                    outputEnergy += x*x;
+                    for (size_t band = 0; band < bands.size(); ++band)
+                        measured[band] += double(x)*std::polar(1.,-2*pi*bands[band].frequency*i/rate);
+                }
+                check(std::abs(outputEnergy-1) < 1e-5,"fixed three-band lattice cascade preserves impulse energy");
+                for (size_t band = 0; band < bands.size(); ++band)
+                {
+                    std::complex<double> expected {1,0};
+                    for (const auto& section : sections) expected *= response(section,bands[band].frequency,rate);
+                    check(std::abs(expected-measured[band]) < 2e-5,"rendered multiband phase matches its analytic all-pass response");
+                }
+                for (int point = 0; point < 180; ++point)
+                {
+                    const auto hz = 60*std::pow(16000./60,point/179.); std::complex<double> h {1,0};
+                    report << rate << ',' << line << ',' << hz;
+                    for (const auto& section : sections)
+                    { const auto band = response(section,hz,rate); h *= band; report << ',' << std::arg(band)*180/pi; }
+                    check(std::abs(std::abs(h)-1) < 1e-8,"multiband phase does not add static EQ gain or loss");
+                    constexpr double delta = .01;
+                    std::complex<double> plus {1,0}, minus {1,0};
+                    for (const auto& section : sections)
+                    { plus *= response(section,hz+delta,rate); minus *= response(section,hz-delta,rate); }
+                    const auto bandDelay = -std::arg(plus/minus)/(4*pi*delta);
+                    const auto manualDelay = engine.lines[line].phaseMemory.size()/rate
+                        *(1+std::abs(engine.lines[line].phaseTarget))/(1-std::abs(engine.lines[line].phaseTarget));
+                    check(bandDelay+manualDelay+autoTapBudgetSeconds <= phaseDelayLimitSeconds+1e-7,
+                          "combined phase branch plus automatic tap steering stays within five milliseconds");
+                    report << ',' << std::arg(h)*180/pi << ',' << 20*std::log10(std::abs(h)) << ',' << (bandDelay+manualDelay+autoTapBudgetSeconds)*1000 << '\n';
+                }
+            }
+            const auto before = engine.lines[0].phaseBands;
+            std::swap(engine.latest.bands[0],engine.latest.bands[2]); ++engine.latest.revision; engine.first = false;
+            engine.updatePhaseBands(true,1);
+            for (size_t i = 0; i < bands.size(); ++i)
+                check(std::abs(engine.lines[0].phaseBands[i].target1-before[i].target1) < 1e-12
+                      && std::abs(engine.lines[0].phaseBands[i].target2-before[i].target2) < 1e-12,
+                      "priority reordering preserves phase section identity");
+            engine.latest.bands[0].frequency = 7200; ++engine.latest.revision; engine.updatePhaseBands(true,1);
+            check(std::abs(engine.lines[0].phaseBands[2].target1-before[2].target1) > 1e-4,
+                  "a secondary resonance updates phase even when the primary frequency is unchanged");
+            engine.updatePhaseBands(false,1);
+            for (const auto& line : engine.lines) for (const auto& band : line.phaseBands)
+                check(std::abs(band.target2) < 1e-12 && std::abs(band.target1) < 1e-12,"Auto Off releases every automatic phase section toward the pure-delay baseline");
+            engine.updatePhaseBands(true,0);
+            for (const auto& line : engine.lines) for (const auto& band : line.phaseBands)
+                check(std::abs(band.target2) < 1e-12 && std::abs(band.target1) < 1e-12,"zero Phase releases all automatic bands to their pure-delay baseline");
+            for (float time : {20.f,18000.f})
+            {
+                Settings settings; settings.timeMs = time; settings.phase = 1; settings.tame = 0;
+                engine.first = true; engine.latest.strength = 1; engine.update(settings);
+                for (const auto& line : engine.lines)
+                    check(std::abs(line.tap.current()-line.wetTap.current()) <= autoTapBudgetSeconds*rate+.2,
+                          "automatic tap offsets remain below one millisecond even with long synced notes");
+            }
+            // Sweep targets on populated lattice states. Orthogonal junctions
+            // must not create energy even during coefficient changes or removal.
+            std::array<ReverbEngine::BandPhase,maxBands> moving;
+            double inputEnergy = 0, outputEnergy = 0;
+            for (int i = 0; i < 48000; ++i)
+            {
+                if (i%137 == 0)
+                    for (size_t band = 0; band < moving.size(); ++band)
+                    {
+                        auto b = bands[band]; b.frequency *= float(.6+(i%11)*.08);
+                        moving[band].target(b,rate,(i%7)*.16,band%2 == 0 ? 1 : -1);
+                    }
+                const auto input = i < 12000 ? float(.15*std::sin(2*pi*997*i/rate)) : 0.f;
+                auto x = input; for (auto& section : moving) x = section.process(x);
+                check(std::isfinite(x),"moving multiband phase remains finite on a populated tail");
+                for (const auto& section : moving)
+                {
+                    const auto r = std::sqrt(section.k2);
+                    const auto delayBound = 2*(1+r)/(1-r)/rate;
+                    check(delayBound <= bandPhaseBudgetSeconds+1e-9,"pole-delay bound stays below the per-band budget throughout coefficient fades");
+                }
+                inputEnergy += input*input; outputEnergy += x*x;
+                check(outputEnergy <= inputEnergy+1e-4,"modulated normalized lattices never generate feedback energy");
+            }
+        }
     }
     static void checkTapCapacity (const ReverbEngine& engine)
     {
@@ -303,14 +437,26 @@ void feedbackRoutingTests (const juce::File& directory)
 }
 void tapTests()
 {
+    for (double rate : {44100.,48000.,96000.})
+    {
+        std::vector<float> constant(4096,1); lan::MovingTap transition; transition.prepare(rate,100); transition.target(200);
+        const auto samples = juce::roundToInt(rate*.25);
+        for (int i = 0; i < samples-3; ++i) transition.read(constant,0);
+        check(std::abs(transition.current()-100) < .01,"tap crossfade does not finish before 250 ms");
+        for (int i = 0; i < 12; ++i) transition.read(constant,0);
+        check(std::abs(transition.current()-200) < .01,"tap crossfade completes at approximately 250 ms");
+    }
     std::vector<float> data(4096,1.f); lan::MovingTap tap; tap.prepare(48000,100);
     for (int i = 0; i < 20000; ++i)
     {
         if (i%31 == 0) tap.target(float(1+i%3500));
         check(std::abs(tap.read(data,size_t(i)%data.size())-1) < 1e-6,"rapid queued tap automation is a convex DC-unity fade");
     }
-    check(tap.current() > 100,"queued tap changes eventually advance the read head");
-    // A 50 ms queued fade must not introduce a one-sample step on a stationary
+    check(std::abs(tap.current()-100) > 1,"queued tap changes eventually advance the read head");
+    tap.target(700);
+    for (int i = 0; i < 36010; ++i) tap.read(data,0);
+    check(std::abs(tap.current()-700) < .01,"latest queued tap request is reached after the longer fades complete");
+    // A 250 ms queued fade must not introduce a one-sample step on a stationary
     // tone, even when the requested delays alternate every 31 samples.
     for (size_t i = 0; i < data.size(); ++i) data[i] = float(.2*std::sin(2*pi*i/128));
     tap.prepare(48000,100); float previous = tap.read(data,0); double jump = 0;
@@ -561,17 +707,21 @@ void measurements (const juce::File& directory)
     lan::Settings shifted; shifted.mix = 1; shifted.decaySeconds = 30; shifted.diffusion = .1f; shifted.phase = 0; shifted.automatic = false;
     const auto shiftedAudio = render(shifted,10,48000,1,128,false,true,true);
     const auto shiftedSpectrum = spectrum(shiftedAudio);
-    double dot = 0, beforeNorm = 0, afterNorm = 0;
+    double dot = 0, beforeNorm = 0, afterNorm = 0, differenceNorm = 0;
     std::ofstream tapReport(directory.getChildFile("tap-shift.csv").getFullPathName().toStdString()); tapReport << "frequency_hz,fixed_power,shifted_power\n";
     for (size_t k = 1; k < shiftedSpectrum.size(); ++k)
     {
         dot += spectra[0][k]*shiftedSpectrum[k]; beforeNorm += spectra[0][k]*spectra[0][k]; afterNorm += shiftedSpectrum[k]*shiftedSpectrum[k];
+        differenceNorm += std::pow(spectra[0][k]-shiftedSpectrum[k],2);
         tapReport << k*48000./4096 << ',' << spectra[0][k] << ',' << shiftedSpectrum[k] << '\n';
     }
     const auto similarity = dot/std::sqrt(std::max(1e-300,beforeNorm*afterNorm));
     std::cout << "Tap spectral similarity=" << similarity << " combined power=" << late[3] << '\n';
     check(energy(shiftedAudio,3,8,48000) > 1e-15,"tap-shift comparison contains a measurable tail");
-    check(similarity < .99,"manual feedback tap shift changes an already ringing spectrum");
+    check(differenceNorm/std::max(1e-300,beforeNorm) > .01,"manual feedback tap shift materially changes the absolute ringing spectrum");
+    std::ofstream tapSummary(directory.getChildFile("tap-shift-summary.csv").getFullPathName().toStdString());
+    tapSummary << "shape_similarity,relative_spectral_l2,late_power_ratio\n" << similarity << ','
+        << std::sqrt(differenceNorm/std::max(1e-300,beforeNorm)) << ',' << energy(shiftedAudio,3,8,48000)/late[0] << '\n';
     std::ofstream stress(directory.getChildFile("automation.csv").getFullPathName().toStdString()); stress << "rate,time_s,rms\n";
     for (double rate : {8000.,44100.,48000.,96000.,192000.})
     {
@@ -658,7 +808,7 @@ int main (int argc, char** argv)
             : juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("lan-reverb-report");
         directory.createDirectory();
         if (argc > 2 && juce::String(argv[1]) == "--editor") editorTests(juce::File(argv[2]));
-        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); }
+        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); lan::ReverbEngineTestAccess::multiPhaseTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); }
         std::cout << checks << " Lan Reverb checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

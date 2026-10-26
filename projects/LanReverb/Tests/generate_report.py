@@ -26,6 +26,23 @@ def main():
     source = args.results
     destination = Path(__file__).resolve().parent/"Reports" if args.publish else source/"report"
     destination.mkdir(parents=True, exist_ok=True)
+    phase = load(source,"multiband-phase.csv")
+    fig,axes = plt.subplots(3,1,figsize=(10,8),constrained_layout=True,sharex=True)
+    selected = phase[(phase["rate"] == 48000)&(phase["line"] == 0)]
+    for band,label in enumerate(["300 Hz / full strength","1,400 Hz / two-thirds strength","6,500 Hz / half strength"]):
+        delay = -np.unwrap(np.deg2rad(selected[f"phase_{band}_deg"]))*1000/(2*np.pi*selected["frequency_hz"])
+        axes[0].semilogx(selected["frequency_hz"],delay,label=label)
+    axes[0].axhline(1,ls="--",color="gray",label="1 ms per-section budget")
+    axes[0].set(ylabel="Section phase delay (ms)",ylim=(0,1.05),title="Three simultaneous automatic all-pass sections"); axes[0].legend(fontsize=8)
+    axes[1].semilogx(selected["frequency_hz"],selected["magnitude_db"]); axes[1].set(ylabel="Cascade gain (dB)",ylim=(-.01,.01))
+    for rate in np.unique(phase["rate"]):
+        for line in [0,1]:
+            rows = phase[(phase["rate"] == rate)&(phase["line"] == line)]
+            axes[2].semilogx(rows["frequency_hz"],rows["total_delay_bound_ms"],label=f"{rate/1000:g} kHz / line {line+1}")
+    axes[2].axhline(5,ls="--",color="gray",label="5 ms budget")
+    axes[2].set(xlabel="Frequency (Hz)",ylabel="Phase + tap bound (ms)",ylim=(0,5.3)); axes[2].legend(fontsize=7,ncol=2)
+    for ax in axes: ax.grid(alpha=.25)
+    fig.savefig(destination/"multiband-phase.png",dpi=160); plt.close(fig)
     sync = load(source,"tempo-sync.csv")
     sync_rows = "\n".join(f"| {r['rate']/1000:g} | {int(r['note_index'])} | {r['bpm']:g} | {r['expected_ms']:.4f} | {r['first_return_ms']:.4f} |" for r in sync)
     relative = load(source,"relative-decay.csv")
@@ -85,7 +102,7 @@ def main():
     axes[1].set(xlabel="Frequency (Hz)",ylabel="Late-tail power (dBFS)",xlim=(60,16000),ylim=(-150,-10))
     for ax in axes: ax.grid(alpha=.25); ax.legend(fontsize=9)
     fig.savefig(destination/"resonance.png",dpi=160); plt.close(fig)
-    taps = load(source,"tap-shift.csv")
+    taps = load(source,"tap-shift.csv"); tap_summary = load(source,"tap-shift-summary.csv")
     fig, ax = plt.subplots(figsize=(10,3.5),constrained_layout=True)
     for column,label in [("fixed_power","Fixed taps"),("shifted_power","Tap Shift +70% after 2 s")]:
         ax.semilogx(taps["frequency_hz"],10*np.log10(np.maximum(taps[column],1e-20)),label=label)
@@ -119,7 +136,7 @@ Three-rate spectral tests (44.1/48/96 kHz) use a 220/329.7/997.3 Hz chord with a
 
 Strong source peaks use a median neighborhood to avoid loud neighboring notes masking a quiet partial. Their absolute guard is now only 4% of (Decay + 1.25 s), clamped to 250–650 ms; weaker peaks use 200 ms. Afterwards, soft source identity prevents cuts unless the relative decay comparison supplies evidence. Filter-band overlap is vetoed as well as exact-bin matches while the guard is active. The report's protection trace shows selected targets, not output gain. Its stationary tail supplies no relative-decay evidence, so remembered notes stay protected even after the short guard expires.
 
-For routing, a test-only friend preloads an actual −9 dB feedback filter at 1,100 Hz and forces a phase/automatic-tap target before rendering an impulse. The ordinary reference has no correction. At Time 80 ms, Scatter 100%, Pre-delay 0 and Width 100%, the first arrivals before 65 ms must agree within 2e−7 at all three sample rates; later returns must differ. This verifies that the correction is active **inside the feedback return**, rather than proving equality with an accidentally bypassed processor. Separate wet and feedback read heads, plus independent source injection gain, prevent automatic tap/gain changes from altering the first arrivals. Recirculated audio naturally carries the corrections on subsequent repeats; there is no EQ or phase insert on the wet output.
+For routing, a test-only friend preloads actual feedback filters at 1,100/3,300/7,200 Hz (−9/−12/−18 dB) and forces a phase/automatic-tap target before rendering an impulse. The ordinary reference has no correction. At Time 80 ms, Scatter 100%, Pre-delay 0 and Width 100%, the first arrivals before 65 ms must agree within 2e−7 at all three sample rates; later returns must differ. This verifies that the correction is active **inside the feedback return**, rather than proving equality with an accidentally bypassed processor. Separate wet and feedback read heads, plus independent source injection gain, prevent automatic tap/gain changes from altering the first arrivals. Recirculated audio naturally carries the corrections on subsequent repeats; there is no EQ or phase insert on the wet output.
 
 ## Relative frequency decay and stronger taming
 
@@ -143,6 +160,18 @@ Repeat windows are the first 12 ms after each multiple of 80 ms. Their energy fr
 
 All remaining measurements below use Scatter 100%. Intermediate settings can introduce additional decay loss; the morph is not a claim of constant RMS or identical RT60 at every position. The input-aligned and reverb output vectors rotate smoothly, while feedback taps retain their queued crossfades.
 
+## Multiband phase correction, five-millisecond limit and longer fades
+
+![Three-band phase response and delay budget](multiband-phase.png)
+
+The production analyser must detect simultaneous anti-phase feedback tones at 300/1,400/6,500 Hz at 44.1/48/96 kHz, and all three detections must engage their automatic phase sections. Controlled targets then use those frequencies at strengths 1, 2/3 and 1/2 (requested cuts 18/12/9 dB, independent of Tame). Each section must change phase beyond its inactive two-sample baseline. An impulse rendered through the three actual normalized lattice sections must agree with the analytical all-pass response and preserve energy; the static cascade must remain within 1e−8 of unity magnitude across the sampled spectrum. The top graph converts unwrapped section phase to equivalent delay; it isolates automatic sections, excluding the manual diffuser and the rest of the reverb.
+
+The lower graph sums the measured three-section group delay with the manual diffuser's conservative worst-case bound and the full 1 ms automatic tap allowance. This must remain below 5 ms. Separate checks constrain pole radii throughout 250 ms coefficient ramps, verify the fade endpoint, and ensure moving, populated lattice states do not generate energy. Both alternating-line target patterns are checked. Input tones stop after 12,000 samples in the modulation fixture, while targets continue changing every 137 samples for 48,000 samples total. This is a passivity test, not a listening test.
+
+Priority-order swaps must preserve section identities; changing a secondary frequency must update its section even if the primary frequency is unchanged. Auto Off and Phase 0 release automatic sections to their two-sample baselines. Automatic feedback tap offsets must stay within ±1 ms even with an 18 s synchronized Time. Manual diffuser delays are shortened to approximately 0.25–0.775 ms, and their coefficients are bounded to a 1 ms worst-case group delay; three automatic sections each have a 1 ms budget. The budget covers these phase operations and automatic tap steering, excluding intentional Time, Pre-delay, manual Tap Shift and EQ/damping. Composite paths during Scatter morphs or tap crossfades can comb, so the test does not claim a uniform group-delay bound for those mixtures. Source protection and first-arrival routing tests remain active, now with three forced feedback correction bands.
+
+Tap and pre-delay changes use 250 ms quintic crossfades, checked at three rates, and phase coefficient ramps also finish after 250 ms for fixed targets. The EQ banks retain their 20 ms warm-up and now crossfade over 250 ms. New requests arriving during a tap fade remain queued.
+
 ## DAW tempo synchronization
 
 The production processor is connected to a fake JUCE playhead and receives a stereo impulse with Scatter 0%, Pre-delay 0, Width 100%, Mix 100% and Auto Off. Tests measure the first wet sample above amplitude 1e−5, requiring it within 1.1 samples of the requested time at 44.1/48/96 kHz. Cases cover a half note at 120 BPM (1,000 ms, beyond the former 500 ms ceiling), dotted and triplet quarters, and a 1/64 triplet at 400 BPM (6.25 ms, below the free control's 20 ms floor).
@@ -151,7 +180,7 @@ The production processor is connected to a fake JUCE playhead and receives a ste
 |---|---:|---:|---:|---:|
 {sync_rows}
 
-Indices 16/15/11/0 mean 1/2, 1/4 D, 1/4 T and 1/64 T in the duration-sorted choice parameter. Additional tests cover callback-by-callback tempo changes, stopped transport, absent transport/BPM/playhead, nonfinite and unsupported tempos, 120 BPM startup fallback, independent recall of free Time and the synced note, and monotonic ordering. Test-only access verifies that wet and feedback read heads fit the prepared buffers at the longest 18 s synchronized setting, all three Scatter endpoints and both Tap extremes with forced automatic correction; this capacity check is separate from the measured shorter impulse renders. The processor supports 20–400 BPM and follows changes through the existing queued tap crossfade. There is no bar-phase reset.
+Indices 16/15/11/0 mean 1/2, 1/4 D, 1/4 T and 1/64 T in the duration-sorted choice parameter. Additional tests cover callback-by-callback tempo changes, stopped transport, absent transport/BPM/playhead, nonfinite and unsupported tempos, 120 BPM startup fallback, independent recall of free Time and the synced note, and monotonic ordering. Test-only access verifies that wet and feedback read heads fit the prepared buffers at the longest 18 s synchronized setting, all three Scatter endpoints and both Tap extremes with forced automatic correction; this capacity check is separate from the measured shorter impulse renders. The processor supports 20–400 BPM and follows changes through the existing queued 250 ms tap crossfade. There is no bar-phase reset.
 
 ## Long, fully wet tails
 
@@ -165,7 +194,7 @@ A stereo-linked 0.8-amplitude impulse feeds the real eight-line engine at 48 kHz
 
 ![Tail and spectral comparison](resonance.png)
 
-The source contains 220 Hz and 997 Hz tones at amplitudes 0.14 and 0.10 for one second, followed by nine seconds of silence. At one second, a test-only helper adds a 0.08-amplitude 1,800 Hz sinusoid to the eight delay-line histories, signed with the left wet pickup pattern. This controlled in-loop disturbance is absent from the source and can be corrected without treating its intended tones as faults. It is a seeded-state engineering fixture, not a recording or naturally generated resonance claim. Time is 90 ms, Decay 30 s, Diffusion 10%, Pre-delay 20 ms, Width 125%, Mix 100%, and Output 0 dB. Conditions are Auto Off with Phase 0; Auto On with Tame 100% / Phase 0; Auto On with Tame 0 / Phase 100%; and Auto On with the default Tame 75% / Phase 60%. These compare isolated EQ, isolated phase/tap processing, and their combined result. Phase zero retains the phase stage's pure delay in the feedback branch only.
+The source contains 220 Hz and 997 Hz tones at amplitudes 0.14 and 0.10 for one second, followed by nine seconds of silence. At one second, a test-only helper adds a 0.08-amplitude 1,800 Hz sinusoid to the eight delay-line histories, signed with the left wet pickup pattern. This controlled in-loop disturbance is absent from the source and can be corrected without treating its intended tones as faults. It is a seeded-state engineering fixture, not a recording or naturally generated resonance claim. Time is 90 ms, Decay 30 s, Diffusion 10%, Pre-delay 20 ms, Width 125%, Mix 100%, and Output 0 dB. Conditions are Auto Off with Phase 0; Auto On with Tame 100% / Phase 0; Auto On with Tame 0 / Phase 100%; and Auto On with the default Tame 75% / Phase 60%. These compare isolated EQ, isolated phase/tap processing, and their combined result. Phase zero retains the short manual diffuser delay plus the three sections' six-sample baseline in the feedback branch only.
 
 | Condition | Mean late-tail power, 3–8 s | Change from Off |
 |---|---:|---:|
@@ -181,7 +210,7 @@ The analyser and feedback filters are production code. Tests run the analyser sy
 
 ![Tap shift redistributes existing ringing](tap-shift.png)
 
-The same source tones, seeded feedback disturbance and settings as the Auto Off condition are rendered again, but Tap Shift changes from 0 to +70% at 2 s, after the source has stopped. Other controls stay fixed. The plot compares 3–8 s tail spectra. A normalized spectral dot-product check requires the shifted result to differ from the unchanged network. This directly exercises existing ringing rather than merely changing the settings before excitation. Energy can move into other frequencies; a tap change alone is not an attenuation guarantee.
+The same source tones, seeded feedback disturbance and settings as the Auto Off condition are rendered again, but Tap Shift changes from 0 to +70% at 2 s, after the source has stopped. Other controls stay fixed. The plot compares 3–8 s tail spectra. The absolute spectral RMS difference relative to the fixed spectrum must exceed 10%; this detects changes in either shape or level without assuming that retiming a stored tone must move its frequency. The normalized shape similarity is {float(tap_summary['shape_similarity']):.6f}, the relative spectral RMS difference is {float(tap_summary['relative_spectral_l2'])*100:.2f}%, and the late-tail power ratio is {float(tap_summary['late_power_ratio']):.4f}. This directly exercises existing ringing rather than merely changing the settings before excitation. Energy can move into other frequencies; a tap change alone is not an attenuation guarantee.
 
 ## Width from mono
 
@@ -195,7 +224,7 @@ Seeded uniform mono noise (MT19937 seed 72463, amplitude ±0.25) plays for two s
 
 At 8/44.1/48/96/192 kHz, two seconds of mono noise feed a full-wet 40 s-decay engine while Time alternates between 20/500 ms, Tap Shift between −100/+100%, Phase between 0/100%, and Diffusion and Scatter across five settings. New settings arrive every 17 blocks of 128 samples, so their rate varies with sample rate. Four seconds are rendered. Every sample must remain finite and bounded, and the late tail must remain bounded after the source stops. This is a stress test, not proof against every automation schedule.
 
-A separate read-head test changes the requested tap every 31 samples while a 50 ms fade is in progress. It verifies exact DC unity and no abrupt discontinuity on a stationary periodic tone. New requests wait for the current fade endpoint. Spectral tests verify persistence, detection of anti-phase feedback without mid cancellation, protection of a matching input partial, no cuts on seeded broadband noise, and release of held bands during silence. The displayed release curve follows a previously detected tone; it illustrates the approximately 1.2 s release constant, not onset latency.
+A separate read-head test changes the requested tap every 31 samples while a 250 ms fade is in progress. It verifies exact DC unity and no abrupt discontinuity on a stationary periodic tone. New requests wait for the current fade endpoint. Spectral tests verify persistence, detection of anti-phase feedback without mid cancellation, protection of a matching input partial, no cuts on seeded broadband noise, and release of held bands during silence. The displayed release curve follows a previously detected tone; it illustrates the approximately 1.2 s release constant, not onset latency.
 
 Host checks cover all fifteen parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover all eleven knob bindings, the Sync button, note-label display and free/synced Time rebinding, title information, one-sentence hints and 50%–120% bounds.
 

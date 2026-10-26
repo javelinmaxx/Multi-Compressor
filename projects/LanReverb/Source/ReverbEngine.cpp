@@ -276,7 +276,7 @@ bool AnalysisService::read (Analysis& a) const noexcept
     a = copy; return true;
 }
 void MovingTap::prepare (double rate, float initial)
-{ active = next = wanted = initial; progress = 1; step = float(1/(rate*.05)); }
+{ active = next = wanted = initial; progress = 1; step = float(1/(rate*transitionSeconds)); }
 float MovingTap::read (const std::vector<float>& buffer, size_t position) noexcept
 {
     if (progress >= 1 && std::abs(wanted-active) > .1f) { next = wanted; progress = 0; }
@@ -311,24 +311,96 @@ float ReverbEngine::Line::phaseProcess (float x) noexcept
     phaseMemory[phasePosition] = b*x-phaseCoefficient*state;
     phasePosition = (phasePosition+1)%phaseMemory.size(); return y;
 }
-float ReverbEngine::phaseCoefficient (float hz, size_t delay, double rate, size_t line)
+void ReverbEngine::BandPhase::target (const Band& band, double rate, double depth, double direction)
 {
-    const auto z = std::polar(1.,-2*pi*hz*delay/rate);
-    const auto desired = std::arg(z)+(line%2 == 0 ? 1 : -1)*pi*.65;
-    double best = 10; float coefficient = 0;
-    for (int i = -7; i <= 7; ++i)
+    const auto amount = std::clamp(depth*double(-band.gainDb)/18,0.,1.);
+    double next1 = 0, next2 = 0; // a two-sample all-pass baseline
+    if (band.frequency > 0 && amount >= 1e-6)
     {
-        const auto a = i*.1; const auto h = (a+z)/(1.+a*z);
-        const auto error = std::abs(std::remainder(std::arg(h)-desired,2*pi));
-        if (error < best) { best = error; coefficient = float(a); }
+        const auto omega = 2*pi*std::clamp(double(band.frequency),30.,rate*.4)/rate;
+        const auto q = std::clamp(double(band.frequency)/std::max(1.f,band.width),1.,14.);
+        const auto alpha = std::sin(omega)/(2*q);
+        // The sum of the two pole-delay peaks is <= this section's budget.
+        // Together, three sections plus the manual diffuser stay within 4 ms;
+        // automatic tap steering uses the remaining 1 ms.
+        const auto budgetSamples = bandPhaseBudgetSeconds*rate;
+        const auto maximumRadius = (budgetSamples-2)/(budgetSamples+2);
+        next2 = std::min((1-alpha)/(1+alpha),maximumRadius*maximumRadius);
+        const auto boundedAlpha = (1-next2)/(1+next2);
+        // Modest, different retardations across alternating feedback lines.
+        // Depth moves smoothly from the fixed two-sample baseline.
+        const auto desiredPhase = -2*omega-amount*pi*(direction > 0 ? .125 : .25);
+        next1 = -std::cos(omega)-boundedAlpha*std::sin(omega)/std::tan(desiredPhase*.5);
+        const auto limit = 2*std::sqrt(next2)/(1+next2);
+        next1 = std::clamp(next1,-limit,limit);
+        // At zero depth use the pure-delay baseline instead of retaining a
+        // narrow high-delay pole with a vanishingly small phase excursion.
+        next1 *= amount; next2 *= amount;
+        const auto depthLimit = 2*std::sqrt(next2)/(1+next2);
+        next1 = std::clamp(next1,-depthLimit,depthLimit);
     }
-    return coefficient;
+    if (juce::exactlyEqual(target1,next1) && juce::exactlyEqual(target2,next2)) return;
+    target1 = next1; target2 = next2;
+    remaining = std::max(1,juce::roundToInt(rate*transitionSeconds));
+    step1 = (target1-ramp1)/remaining; step2 = (target2-ramp2)/remaining;
+}
+float ReverbEngine::BandPhase::process (float input) noexcept
+{
+    if (remaining > 0)
+    {
+        ramp1 += step1; ramp2 += step2;
+        if (--remaining == 0) { ramp1 = target1; ramp2 = target2; }
+        k2 = std::max(0.,ramp2);
+        // Keep poles complex and inside the radius bound throughout the fade,
+        // not merely at its endpoints. This also bounds frozen group delay.
+        const auto limit = 2*std::sqrt(k2)/(1+k2);
+        k1 = std::clamp(ramp1,-limit,limit);
+        b1 = std::sqrt(std::max(0.,1-k1*k1)); b2 = std::sqrt(std::max(0.,1-k2*k2));
+    }
+    const auto output = k2*input+b2*state2;
+    const auto inner = b2*input-k2*state2;
+    const auto next = k1*inner+b1*state1;
+    state1 = b1*inner-k1*state1; state2 = next;
+    return float(output);
+}
+void ReverbEngine::updatePhaseBands (bool active, float amount)
+{
+    if (!first && phaseRevision == latest.revision && phaseActive == active
+        && juce::exactlyEqual(previousPhase,amount)) return;
+    std::array<Band,maxBands> assigned {};
+    std::array<bool,maxBands> used {};
+    const auto count = active ? std::clamp(latest.count,0,maxBands) : 0;
+    // Preserve section identity when spectral priorities change. Otherwise two
+    // unchanged resonances could sweep across one another on an ordering swap.
+    for (size_t slot = 0; slot < assigned.size(); ++slot)
+    {
+        if (trackedPhaseBands[slot].frequency <= 0) continue;
+        double best = .2; int match = -1;
+        for (int i = 0; i < count; ++i)
+        {
+            const auto& band = latest.bands[size_t(i)];
+            if (used[size_t(i)] || band.frequency <= 0) continue;
+            const auto distance = std::abs(std::log(band.frequency/trackedPhaseBands[slot].frequency));
+            if (distance < best) { best = distance; match = i; }
+        }
+        if (match >= 0) { assigned[slot] = latest.bands[size_t(match)]; used[size_t(match)] = true; }
+    }
+    for (int i = 0; i < count; ++i)
+        if (!used[size_t(i)])
+            for (auto& band : assigned)
+                if (band.frequency <= 0) { band = latest.bands[size_t(i)]; break; }
+    trackedPhaseBands = assigned;
+    for (size_t line = 0; line < lines.size(); ++line)
+        for (size_t band = 0; band < assigned.size(); ++band)
+            lines[line].phaseBands[band].target(assigned[band],sampleRate,amount,(line%2 == 0 ? 1 : -1));
+    phaseRevision = latest.revision; phaseActive = active; previousPhase = amount;
 }
 void ReverbEngine::prepare (double rate, bool worker)
 {
     sampleRate = std::isfinite(rate) && rate >= 8000 ? rate : 48000;
     analysis.prepare(sampleRate,worker); latest = {}; banks = {}; activeBank = 0; pendingBank = 1;
-    warm = 0; bankFade = 1; bankStep = float(1/(sampleRate*.08)); appliedRevision = 0; previousTame = -1; appliedAuto = false; first = true;
+    trackedPhaseBands = {}; phaseRevision = 0; previousPhase = -1; phaseActive = false;
+    warm = 0; bankFade = 1; bankStep = float(1/(sampleRate*transitionSeconds)); appliedRevision = 0; previousTame = -1; appliedAuto = false; first = true;
     for (size_t i = 0; i < lines.size(); ++i)
     {
         auto& line = lines[i]; line = {};
@@ -336,7 +408,10 @@ void ReverbEngine::prepare (double rate, bool worker)
         // during prepare; tempo automation never reallocates on the callback.
         const auto capacitySeconds = maximumTimeMs*.001*std::max(1.f,ratios[i])*1.4;
         line.delay.assign(size_t(std::ceil(sampleRate*capacitySeconds))+4,0);
-        line.phaseMemory.assign(size_t(std::max(1,juce::roundToInt(sampleRate*(.0017+i*.00083)))),0);
+        line.phaseMemory.assign(size_t(std::max(1,juce::roundToInt(sampleRate*(.00025+i*.000075)))),0);
+        const auto manualSamples = basePhaseBudgetSeconds*sampleRate;
+        const auto coefficientLimit = std::max(0.,(manualSamples-line.phaseMemory.size())/(manualSamples+line.phaseMemory.size()));
+        line.phaseTarget = float(std::clamp(double(tapPattern[i]*.45f),-coefficientLimit,coefficientLimit));
         line.tap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
         line.wetTap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
         feedbackGain[i].reset(sampleRate,.05); injectionGain[i].reset(sampleRate,.05);
@@ -345,10 +420,10 @@ void ReverbEngine::prepare (double rate, bool worker)
     { predelay[ch].assign(size_t(std::ceil(sampleRate*.25))+4,0); predelayTap[ch].prepare(sampleRate,float(sampleRate*.02)); }
     predelayPosition = 0;
     for (auto* control : {&mix,&outputGain,&width,&diffusion,&phaseMix,&bypass,&scatterMix}) control->reset(sampleRate,.02);
-    scatterMix.reset(sampleRate,.05);
+    scatterMix.reset(sampleRate,.05); phaseMix.reset(sampleRate,transitionSeconds);
     lowCoefficient = float(1-std::exp(-2*pi*std::min(16000.,sampleRate*.4)/sampleRate));
-    dcCoefficient = float(1-std::exp(-2*pi*18/sampleRate)); phaseSmoothing = float(1-std::exp(-1/(sampleRate*.1)));
-    displayedReduction.store(0); displayedPeak.store(0); lastDiffusion = lastPhaseFrequency = lastScatter = -1;
+    dcCoefficient = float(1-std::exp(-2*pi*18/sampleRate));
+    displayedReduction.store(0); displayedPeak.store(0); lastDiffusion = lastScatter = -1;
 }
 void ReverbEngine::update (const Settings& s)
 {
@@ -364,24 +439,24 @@ void ReverbEngine::update (const Settings& s)
     // gain <=1; 200% cannot make the internal feedback loop hotter.
     set(width,std::clamp(s.width,0.f,2.f)); set(diffusion,std::clamp(s.diffusion,0.f,1.f)); set(phaseMix,std::clamp(s.phase,0.f,1.f));
     set(scatterMix,s.scatter);
+    updatePhaseBands(active,s.phase);
     for (size_t i = 0; i < lines.size(); ++i)
     {
         auto& line = lines[i];
-        const auto autoSpread = active ? latest.strength*s.phase*.09f*std::sin(latest.frequency*.017f+float(i)*2.399963f) : 0.f;
+
         const auto wetSeconds = std::clamp(s.timeMs,1.f,maximumTimeMs)*.001f*(1+s.scatter*(ratios[i]-1));
-        const auto seconds = wetSeconds
-            *(1+std::clamp(s.tap,-1.f,1.f)*.3f*(1+s.scatter*(tapPattern[i]-1))+s.scatter*autoSpread);
+        const auto autoShift = active ? latest.strength*s.phase*float(std::min(autoTapBudgetSeconds,double(wetSeconds)*.09))
+            *std::sin(latest.frequency*.017f+float(i)*2.399963f) : 0.f;
+        const auto seconds = wetSeconds*(1+std::clamp(s.tap,-1.f,1.f)*.3f*(1+s.scatter*(tapPattern[i]-1)))+s.scatter*autoShift;
         if (first) line.wetTap.prepare(sampleRate,float(sampleRate)*wetSeconds);
         else line.wetTap.target(float(sampleRate)*wetSeconds);
         const auto delaySamples = float(sampleRate)*seconds;
         if (first) line.tap.prepare(sampleRate,delaySamples); else line.tap.target(delaySamples);
         // Conservative per-line RT60 gains, always strictly below unity.
-        set(feedbackGain[i],std::min(.9995f,float(std::pow(10.,-3*(seconds+s.scatter*line.phaseMemory.size()/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f)))));
-        const auto sourceGain = std::pow(10.,-3*(wetSeconds+s.scatter*line.phaseMemory.size()/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f));
+        set(feedbackGain[i],std::min(.9995f,float(std::pow(10.,-3*(seconds+s.scatter*(line.phaseMemory.size()+2*maxBands)/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f)))));
+        const auto sourceGain = std::pow(10.,-3*(wetSeconds+s.scatter*(line.phaseMemory.size()+2*maxBands)/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f));
         set(injectionGain[i],.35355339f*float(std::sqrt(std::max(0.,1-sourceGain*sourceGain))));
-        if (first || !juce::exactlyEqual(lastPhaseFrequency,latest.frequency))
-            line.phaseTarget = latest.frequency > 0 && active
-                ? phaseCoefficient(latest.frequency,line.phaseMemory.size(),sampleRate,i) : tapPattern[i]*.45f;
+
     }
     for (size_t ch = 0; ch < 2; ++ch)
     {
@@ -401,7 +476,7 @@ void ReverbEngine::update (const Settings& s)
         displayedReduction.store(reduction); warm = juce::roundToInt(sampleRate*.02); bankFade = 0;
         appliedRevision = latest.revision; appliedAuto = active; previousTame = s.tame;
     }
-    lastPhaseFrequency = latest.frequency; first = false;
+    first = false;
 }
 void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& settings, bool hostBypass)
 {
@@ -455,8 +530,9 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
                 const auto pending = banks[size_t(pendingBank)].process(x,line);
                 if (warm == 0) value += transition*(pending-value);
             }
-            memory.phaseCoefficient += phaseSmoothing*(phaseAmount*memory.phaseTarget-memory.phaseCoefficient);
-            const auto phased = memory.phaseProcess(value);
+            memory.phaseCoefficient = phaseAmount*memory.phaseTarget;
+            auto phased = memory.phaseProcess(value);
+            for (auto& band : memory.phaseBands) phased = band.process(phased);
             value += scatterAmount*(phased-value); // exact phase bypass at the delay endpoint
 
             // Fixed bass/DC and ultrasonic damping remain below unity; they

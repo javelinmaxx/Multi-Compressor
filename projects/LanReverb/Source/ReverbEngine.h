@@ -14,6 +14,10 @@ struct Settings
     bool automatic = true, bypass = false;
 };
 inline constexpr int spectrumBins = 64, maxBands = 3, analysisSize = 4096;
+inline constexpr double phaseDelayLimitSeconds = .005, basePhaseBudgetSeconds = .001;
+inline constexpr double autoTapBudgetSeconds = .001;
+inline constexpr double bandPhaseBudgetSeconds = (phaseDelayLimitSeconds-basePhaseBudgetSeconds-autoTapBudgetSeconds)/maxBands;
+inline constexpr double transitionSeconds = .25;
 struct Band { float frequency = 0, width = 0, gainDb = 0; };
 struct Analysis
 {
@@ -118,16 +122,32 @@ private:
         int count = 0;
         float process (float x, size_t line) noexcept;
     };
+    // A normalized two-junction lattice stays passive while its coefficients
+    // move; a direct-form modulated biquad does not provide that guarantee.
+    struct BandPhase
+    {
+        double k1 = 0, k2 = 0, target1 = 0, target2 = 0, b1 = 1, b2 = 1;
+        double ramp1 = 0, ramp2 = 0, step1 = 0, step2 = 0;
+        int remaining = 0;
+        double state1 = 0, state2 = 0;
+        void target (const Band&, double rate, double depth, double direction);
+        float process (float) noexcept;
+    };
     struct Line
     {
         std::vector<float> delay, phaseMemory;
         size_t position = 0, phasePosition = 0;
         MovingTap tap, wetTap;
+        std::array<BandPhase,maxBands> phaseBands;
         float phaseCoefficient = 0, phaseTarget = 0, low = 0, dc = 0;
         float phaseProcess (float) noexcept;
     };
     void update (const Settings&);
-    static float phaseCoefficient (float frequency, size_t delay, double rate, size_t line);
+    void updatePhaseBands (bool active, float amount);
+    std::array<Band,maxBands> trackedPhaseBands {};
+    uint32_t phaseRevision = 0;
+    float previousPhase = -1;
+    bool phaseActive = false;
     std::array<Line, 8> lines;
     std::array<std::vector<float>, 2> predelay;
     std::array<MovingTap, 2> predelayTap;
@@ -140,8 +160,8 @@ private:
     uint32_t appliedRevision = 0;
     bool appliedAuto = false, first = true;
     double sampleRate = 48000;
-    float lowCoefficient = 0, dcCoefficient = 0, phaseSmoothing = 0;
-    float matrixCos = 1, matrixSin = 0, lastDiffusion = -1, lastPhaseFrequency = -1;
+    float lowCoefficient = 0, dcCoefficient = 0;
+    float matrixCos = 1, matrixSin = 0, lastDiffusion = -1;
     float lastScatter = -1, projectionCos = 0, projectionSin = 1;
     std::array<juce::SmoothedValue<float>, 8> feedbackGain, injectionGain;
     juce::SmoothedValue<float> mix, outputGain, width, diffusion, phaseMix, bypass, scatterMix;

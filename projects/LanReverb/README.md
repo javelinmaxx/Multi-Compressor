@@ -41,7 +41,7 @@ note selection and Sync state are separately automated and saved in sessions.
 The processor reads the DAW's tempo each callback, including while transport is
 stopped. A quarter note is 500 ms at 120 BPM, a dotted quarter 750 ms, and a
 quarter-note triplet about 333.33 ms. Delay times follow host tempo changes
-through the existing queued 50 ms tap crossfades; this follows tempo, rather
+through the existing queued 250 ms tap crossfades; this follows tempo, rather
 than resetting the echo phase to the bar on playback. Scatter 0% gives regular
 note-timed repeats, while higher Scatter uses the selected note as the reference
 for its spread delay lengths. Pre-delay remains an independent millisecond value.
@@ -68,7 +68,7 @@ the output pickups rotate toward the stereo reverb field. **Scatter 100%** uses
 the full spread and phase network. Diffusion fine-tunes feedback mixing from 25%
 to 100% of the full rotation at that endpoint, so its minimum does not disable
 the reverb. Scatter defaults to 100% and is smoothed over 50 ms; tap changes keep
-their queued 50 ms crossfades. Intermediate settings may have additional decay
+their queued 250 ms crossfades. Intermediate settings may have additional decay
 loss from the phase-path blend, so Decay remains a nominal control.
 
 ## Signal path
@@ -99,16 +99,49 @@ buffer length. This describes a nominal RT60, not an exact broadband decay:
 18 Hz DC/bass damping, a high-frequency low-pass, fractional delay interpolation,
 EQ, and time variation change the measured result.
 
-Each phase stage uses a normalized scattering all-pass with a short delay. Its
-junction obeys `y=a*x+sqrt(1−a²)*state`,
-`new_state=sqrt(1−a²)*x−a*state`, preserving the joint input/state energy even
-while `a` changes. Auto evaluates bounded coefficient candidates against the
-tracked peak's phase, using opposing phase offsets across lines. It also shifts
-the feedback taps by a small, peak-dependent amount. These operations scatter
-existing loop modes; EQ provides explicit attenuation rather than assuming phase
-rotation alone can remove their energy.
+The phase branch now has **three independently tracked automatic all-pass
+sections per feedback line**, so all three detected resonance bands can guide
+phase correction simultaneously. Frequency, detected width and resonance
+strength determine each section's target, and the Phase knob scales its depth.
+Sections retain their identities when the detector changes band priority.
+The existing manual diffuser remains ahead of these sections.
 
-**Tap changes take 50 ms** through a convex quintic crossfade between old and new
+Phase processing is deliberately subtle: the combined delay budget is **5 ms**,
+allocated as 1 ms maximum group delay for the manual diffuser, 1 ms for each
+of the three automatic sections, and at most ±1 ms of automatic feedback-tap
+steering. This is independent of the intentional Time, Pre-delay and manual
+Tap Shift settings. Automatic tap offsets no longer grow with long synchronized
+notes. The manual diffuser's underlying delays are now approximately
+0.25–0.775 ms. Its coefficient limit bounds its worst-case group delay.
+
+Each automatic section is a second-order all-pass implemented with two
+normalized scattering junctions. The pole radius and center are constrained
+throughout parameter ramps so each section's frozen group delay stays within
+its 1 ms budget. Frequency focus is broadened where necessary to respect that
+limit; these are not arbitrary narrow filters with unlimited group delay.
+The fixed response has unity magnitude. Normalized junctions preserve joint
+signal/state energy during modulation, avoiding feedback gain from changing
+biquad coefficients. Alternating lines use different modest phase targets.
+The target excursion is at most 22.5° or 45° beyond a two-sample baseline before
+strength scaling and delay constraints; it is not a guarantee of that exact
+angle after constraints or after combining bands.
+
+**Phase coefficient changes ramp over 250 ms**, including release when Auto
+or Phase turns off. Inactive automatic sections settle to two-sample pure
+delays rather than retaining high-Q poles; the three sections' six samples are
+included in the nominal loop-time gain calculation. Phase 0 retains this short
+baseline and the manual diffuser's pure delay. Scatter 0 bypasses the complete
+phase branch. Dry and first wet arrivals still bypass all phase correction.
+
+The 5 ms bound describes the phase branch and automatic tap offsets, not the
+whole reverb delay or EQ/damping group delay. Intermediate Scatter settings and
+tap crossfades combine paths and can introduce combing; they are not a guarantee
+of a flat magnitude or uniformly bounded composite group delay during morphing.
+These operations alter feedback reinforcement; EQ supplies explicit attenuation,
+and automatic phase processing does not yet measure whether each new target
+improves the resulting tail.
+
+**Tap changes take 250 ms** through a convex quintic crossfade between old and new
 read positions, with later requests queued until the current fade finishes.
 Pre-delay uses the same transition. This avoids abrupt read-head jumps and
 continuous Doppler sweeps, although changing a populated delay network can still
@@ -149,7 +182,7 @@ Minimum width is FFT-limited and nominal Q is at most 14. This is not a
 continuous-frequency detector. Held notches release with a **1.2 s** time
 constant, reducing the influence of old decisions.
 
-Two fixed filter banks warm for 20 ms and crossfade over 80 ms, preventing
+Two fixed filter banks warm for 20 ms and crossfade over 250 ms, preventing
 coefficient jumps. The callback neither runs FFTs nor waits for the worker; it
 uses a bounded single job slot and lock-free atomic result publication. Missed
 jobs are dropped rather than queued without bound. Auto Off stops analysis submissions; so does Tame at zero when Phase is zero

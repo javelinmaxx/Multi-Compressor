@@ -13,8 +13,8 @@ constexpr std::array<const char*,11> hints {
     "Morphs aligned delay repeats at zero into a dense stereo reverb at full.",
     "Adjusts the mixing density of the feedback network as Scatter increases.",
     "Sets the stereo spread of the wet signal with a normalized mid and side balance.",
-    "Moves the feedback read taps through a smooth crossfade to scatter existing ringing frequencies.",
-    "Sets feedback phase dispersion and automatic tap scattering as Scatter increases.",
+    "Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies.",
+    "Sets feedback phase dispersion and correction across three resonance bands within a five-millisecond delay budget.",
     "Sets feedback attenuation for persistent peaks and unusually slow frequency decays while protecting incoming notes.",
     "Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent.",
     "Adjusts the final output level after the dry and wet signals are mixed." };
