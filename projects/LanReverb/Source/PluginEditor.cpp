@@ -3,17 +3,18 @@
 using namespace stageStyle;
 namespace
 {
-constexpr std::array<const char*,10> ids {"time","decay","predelay","diffusion","width","tap","phase","tame","mix","output"};
-constexpr std::array<const char*,10> names {"TIME","DECAY","PRE-DELAY","DIFFUSION","WIDTH","TAP SHIFT","PHASE","TAME","DRY / WET","OUTPUT"};
-constexpr std::array<const char*,10> units {" ms"," s"," ms"," %"," %"," %"," %"," %"," %"," dB"};
-constexpr std::array<const char*,10> hints {
-    "Sets the spacing of the eight feedback delays for compact echoes or a larger reverb space.",
+constexpr std::array<const char*,11> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","mix","output"};
+constexpr std::array<const char*,11> names {"TIME","DECAY","PRE-DELAY","SCATTER","DIFFUSION","WIDTH","TAP SHIFT","PHASE","TAME","DRY / WET","OUTPUT"};
+constexpr std::array<const char*,11> units {" ms"," s"," ms"," %"," %"," %"," %"," %"," %"," %"," dB"};
+constexpr std::array<const char*,11> hints {
+    "Sets the repeat time in delay mode and the reference room size in reverb mode.",
     "Sets the nominal time for the feedback tail to fall by sixty decibels before damping and resonance control.",
     "Delays the signal entering the reverb while leaving the dry signal immediate.",
-    "Blends discrete delay recirculation into a dense orthogonal feedback network.",
+    "Morphs aligned delay repeats at zero into a dense stereo reverb at full.",
+    "Adjusts the mixing density of the feedback network as Scatter increases.",
     "Sets the stereo spread of the wet signal with a normalized mid and side balance.",
     "Moves the feedback read taps through a smooth crossfade to scatter existing ringing frequencies.",
-    "Sets phase dispersion and the strength of automatic phase and tap scattering around persistent peaks.",
+    "Sets phase dispersion and automatic phase and tap scattering as Scatter increases.",
     "Sets the depth of automatic attenuation for persistent feedback peaks that stand out beyond the input spectrum.",
     "Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent.",
     "Adjusts the final output level after the dry and wet signals are mixed." };
@@ -52,8 +53,10 @@ void LanReverbEditor::resized()
     titleHint.setBounds(24,30,420,36); automatic.setBounds(526,36,78,26); bypass.setBounds(620,36,96,26);
     for (size_t i = 0; i < sliders.size(); ++i)
     {
-        const auto x = 42+int(i%5)*134, y = i < 5 ? 310 : 422;
-        labels[i].setBounds(x,y,120,16); sliders[i].setBounds(x,y+20,120,76);
+        const auto top = i < 6;
+        const auto x = top ? 45+int(i)*110 : 42+int(i-6)*134;
+        const auto y = top ? 310 : 422, controlWidth = top ? 100 : 120;
+        labels[i].setBounds(x,y,controlWidth,16); sliders[i].setBounds(x,y+20,controlWidth,76);
     }
     const auto transform = editorScaling::transform(*this,designWidth,designHeight);
     titleHint.setTransform(transform); automatic.setTransform(transform); bypass.setTransform(transform);

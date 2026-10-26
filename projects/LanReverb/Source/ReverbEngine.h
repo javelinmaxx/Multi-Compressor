@@ -9,7 +9,7 @@ namespace lan
 struct Settings
 {
     float timeMs = 90, decaySeconds = 10, predelayMs = 20, diffusion = .85f, width = 1.25f;
-    float tap = 0, phase = .6f, tame = .75f, mix = .8f, outputDb = 0;
+    float tap = 0, phase = .6f, tame = .75f, mix = .8f, outputDb = 0, scatter = 1;
     bool automatic = true, bypass = false;
 };
 inline constexpr int spectrumBins = 64, maxBands = 3, analysisSize = 4096;
@@ -130,8 +130,9 @@ private:
     double sampleRate = 48000;
     float lowCoefficient = 0, dcCoefficient = 0, phaseSmoothing = 0;
     float matrixCos = 1, matrixSin = 0, lastDiffusion = -1, lastPhaseFrequency = -1;
+    float lastScatter = -1, projectionCos = 0, projectionSin = 1;
     std::array<juce::SmoothedValue<float>, 8> feedbackGain;
-    juce::SmoothedValue<float> mix, outputGain, width, diffusion, phaseMix, bypass;
+    juce::SmoothedValue<float> mix, outputGain, width, diffusion, phaseMix, bypass, scatterMix;
     std::atomic<float> displayedReduction { 0 }, displayedPeak { 0 };
 };
 }

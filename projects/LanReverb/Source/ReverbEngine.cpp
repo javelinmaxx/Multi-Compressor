@@ -232,14 +232,15 @@ void ReverbEngine::prepare (double rate, bool worker)
     for (size_t ch = 0; ch < 2; ++ch)
     { predelay[ch].assign(size_t(std::ceil(sampleRate*.25))+4,0); predelayTap[ch].prepare(sampleRate,float(sampleRate*.02)); }
     predelayPosition = 0;
-    for (auto* control : {&mix,&outputGain,&width,&diffusion,&phaseMix,&bypass}) control->reset(sampleRate,.02);
+    for (auto* control : {&mix,&outputGain,&width,&diffusion,&phaseMix,&bypass,&scatterMix}) control->reset(sampleRate,.02);
+    scatterMix.reset(sampleRate,.05);
     lowCoefficient = float(1-std::exp(-2*pi*std::min(16000.,sampleRate*.4)/sampleRate));
     dcCoefficient = float(1-std::exp(-2*pi*18/sampleRate)); phaseSmoothing = float(1-std::exp(-1/(sampleRate*.1)));
-    displayedReduction.store(0); displayedPeak.store(0); lastDiffusion = lastPhaseFrequency = -1;
+    displayedReduction.store(0); displayedPeak.store(0); lastDiffusion = lastPhaseFrequency = lastScatter = -1;
 }
 void ReverbEngine::update (const Settings& s)
 {
-    const auto active = s.automatic && (s.tame > .001f || s.phase > .001f);
+    const auto active = s.automatic && (s.tame > .001f || s.phase*s.scatter > .001f);
     analysis.setActive(active);
     Analysis next;
     if (active && analysis.read(next)) latest = next;
@@ -250,16 +251,17 @@ void ReverbEngine::update (const Settings& s)
     // Width is a mid/side rotation whose normalization keeps maximum singular
     // gain <=1; 200% cannot make the internal feedback loop hotter.
     set(width,std::clamp(s.width,0.f,2.f)); set(diffusion,std::clamp(s.diffusion,0.f,1.f)); set(phaseMix,std::clamp(s.phase,0.f,1.f));
+    set(scatterMix,s.scatter);
     for (size_t i = 0; i < lines.size(); ++i)
     {
         auto& line = lines[i];
-        const auto scatter = active ? latest.strength*s.phase*.09f*std::sin(latest.frequency*.017f+float(i)*2.399963f) : 0.f;
-        const auto seconds = std::clamp(s.timeMs,20.f,500.f)*.001f*ratios[i]
-            *(1+std::clamp(s.tap,-1.f,1.f)*.3f*tapPattern[i]+scatter);
+        const auto autoSpread = active ? latest.strength*s.phase*.09f*std::sin(latest.frequency*.017f+float(i)*2.399963f) : 0.f;
+        const auto seconds = std::clamp(s.timeMs,20.f,500.f)*.001f*(1+s.scatter*(ratios[i]-1))
+            *(1+std::clamp(s.tap,-1.f,1.f)*.3f*(1+s.scatter*(tapPattern[i]-1))+s.scatter*autoSpread);
         const auto delaySamples = float(sampleRate)*seconds;
         if (first) line.tap.prepare(sampleRate,delaySamples); else line.tap.target(delaySamples);
         // Conservative per-line RT60 gains, always strictly below unity.
-        set(feedbackGain[i],std::min(.9995f,float(std::pow(10.,-3*(seconds+line.phaseMemory.size()/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f)))));
+        set(feedbackGain[i],std::min(.9995f,float(std::pow(10.,-3*(seconds+s.scatter*line.phaseMemory.size()/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f)))));
         if (first || !juce::exactlyEqual(lastPhaseFrequency,latest.frequency))
             line.phaseTarget = latest.frequency > 0 && active
                 ? phaseCoefficient(latest.frequency,line.phaseMemory.size(),sampleRate,i) : tapPattern[i]*.45f;
@@ -293,8 +295,9 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
     for (auto pair : {std::pair<float*,float>{&safeSettings.timeMs,defaults.timeMs}, {&safeSettings.decaySeconds,defaults.decaySeconds},
                       {&safeSettings.predelayMs,defaults.predelayMs}, {&safeSettings.diffusion,defaults.diffusion}, {&safeSettings.width,defaults.width},
                       {&safeSettings.tap,defaults.tap}, {&safeSettings.phase,defaults.phase}, {&safeSettings.tame,defaults.tame},
-                      {&safeSettings.mix,defaults.mix}, {&safeSettings.outputDb,defaults.outputDb}})
+                      {&safeSettings.mix,defaults.mix}, {&safeSettings.outputDb,defaults.outputDb}, {&safeSettings.scatter,defaults.scatter}})
         if (!std::isfinite(*pair.first)) *pair.first = pair.second;
+    safeSettings.scatter = std::clamp(safeSettings.scatter,0.f,1.f);
     safeSettings.phase = std::clamp(safeSettings.phase,0.f,1.f);
     safeSettings.tame = std::clamp(safeSettings.tame,0.f,1.f);
     const bool initial = first; update(safeSettings);
@@ -311,6 +314,16 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
         predelayPosition = (predelayPosition+1)%predelay[0].size();
         std::array<float,8> raw {}, nodes {}, scattered {};
         float wetLeft = 0, wetRight = 0, probeLeft = 0, probeRight = 0;
+        const auto scatterAmount = scatterMix.getNextValue();
+        if (!juce::exactlyEqual(scatterAmount,lastScatter))
+        {
+            // Rotate between the input-aligned delay pickups and the reverb
+            // pickups. All four vectors are orthogonal, avoiding cancellation
+            // when the eight delays coincide at Scatter zero.
+            projectionCos = scatterAmount >= 1 ? 0.f : std::cos(scatterAmount*float(pi/2));
+            projectionSin = scatterAmount <= 0 ? 0.f : std::sin(scatterAmount*float(pi/2));
+            lastScatter = scatterAmount;
+        }
         const auto phaseAmount = phaseMix.getNextValue();
         const auto transition = smooth(bankFade);
         for (size_t line = 0; line < 8; ++line)
@@ -324,16 +337,20 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
                 if (warm == 0) value += transition*(pending-value);
             }
             memory.phaseCoefficient += phaseSmoothing*(phaseAmount*memory.phaseTarget-memory.phaseCoefficient);
-            value = memory.phaseProcess(value);
+            const auto phased = memory.phaseProcess(value);
+            value += scatterAmount*(phased-value); // exact phase bypass at the delay endpoint
+
             // Fixed bass/DC and ultrasonic damping remain below unity; they
             // also keep very long tails away from numerical/DC accumulation.
             memory.dc += dcCoefficient*(value-memory.dc); value -= memory.dc;
             memory.low += lowCoefficient*(value-memory.low); nodes[line] = memory.low;
             const auto signLeft = (line&2u) != 0 ? -1.f : 1.f;
             const auto signRight = (line&4u) != 0 ? -1.f : 1.f;
-            wetLeft += .35355339f*nodes[line]*signLeft;
-            wetRight += .35355339f*nodes[line]*signRight;
-            probeLeft += .35355339f*raw[line]*signLeft; probeRight += .35355339f*raw[line]*signRight;
+            const auto pickupLeft = projectionCos+projectionSin*signLeft;
+            const auto pickupRight = projectionCos*((line&1u) != 0 ? -1.f : 1.f)+projectionSin*signRight;
+            wetLeft += .35355339f*nodes[line]*pickupLeft;
+            wetRight += .35355339f*nodes[line]*pickupRight;
+            probeLeft += .35355339f*raw[line]*pickupLeft; probeRight += .35355339f*raw[line]*pickupRight;
         }
         if (warm > 0) --warm;
         else if (bankFade < 1)
@@ -342,7 +359,9 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
         // Three stages of Givens butterflies are orthogonal at every
         // diffusion setting, including while it moves. A blend of identity and
         // a Hadamard matrix would shorten long tails at intermediate settings.
-        const auto diffuse = diffusion.getNextValue();
+        // A nonzero density floor makes full Scatter a reverb even when the
+        // finer Diffusion control is at minimum; zero Scatter is identity.
+        const auto diffuse = scatterAmount*(.25f+.75f*diffusion.getNextValue());
         if (!juce::exactlyEqual(diffuse,lastDiffusion))
         { matrixCos = std::cos(diffuse*float(pi/4)); matrixSin = std::sin(diffuse*float(pi/4)); lastDiffusion = diffuse; }
         for (size_t stride = 1; stride < 8; stride *= 2)

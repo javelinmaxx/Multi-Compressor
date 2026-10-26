@@ -2,6 +2,28 @@
 
 Version 0.5.0. These are reproducible synthetic engineering tests, not listening results or a claim that every resonance can be removed.
 
+## Scatter: delay to reverb
+
+![Scatter impulse responses](scatter.png)
+
+The new 0–100% Scatter knob is measured at 0%, 50%, and 100% with Time 80 ms, Pre-delay 0, Decay 3 s, Diffusion 100%, Phase 100%, Width 100%, Mix 100%, Output 0 dB, and Auto Off. Input is the same 0.8 impulse in both channels. At zero, phase spreading and inter-line mixing are bypassed and every line uses the same delay, even though Phase and Diffusion are at maximum. Input-aligned pickups prevent the coincident lines cancelling at the output. Full Scatter spreads the delays and activates the dense reverb network.
+
+| Rate (kHz) | Scatter | First return (ms) | Energy in repeat windows | Active tail samples |
+|---|---:|---:|---:|---:|
+| 44.1 | 0% | 80.00 | 99.99% | 4.68% |
+| 44.1 | 50% | 58.55 | 12.74% | 57.54% |
+| 44.1 | 100% | 37.10 | 9.42% | 82.09% |
+| 48 | 0% | 80.00 | 99.99% | 4.58% |
+| 48 | 50% | 58.54 | 14.96% | 62.33% |
+| 48 | 100% | 37.08 | 8.96% | 84.48% |
+| 96 | 0% | 80.00 | 99.99% | 3.81% |
+| 96 | 50% | 58.54 | 16.22% | 44.69% |
+| 96 | 100% | 37.09 | 8.58% | 74.87% |
+
+Repeat windows are the first 12 ms after each multiple of 80 ms. Their energy fraction uses the whole one-second stereo render. Active-tail fraction counts left-channel samples above 0.1% of that render's own peak between 0.2 and 0.8 s; it measures reflection density, not loudness or decay quality. Tests require zero Scatter to return within one sample of Time and place over 98% of impulse energy in regular repeat windows, while full Scatter produces more than twice the active-tail density. A left-only impulse also verifies that zero Scatter preserves independent channels at Width 100%. Further checks cover 50 ms-smoothed endpoint automation and stopping phase-only FFT work when Scatter zero makes that work inaudible.
+
+All remaining measurements below use Scatter 100%. Intermediate settings can introduce additional decay loss; the morph is not a claim of constant RMS or identical RT60 at every position. The input-aligned and reverb output vectors rotate smoothly, while feedback taps retain their queued crossfades.
+
 ## Long, fully wet tails
 
 ![Decay settings](decay.png)
@@ -18,10 +40,10 @@ The input contains 220 Hz and 997 Hz tones at amplitudes 0.14 and 0.10 for one s
 
 | Condition | Mean late-tail power, 3–8 s | Change from Off |
 |---|---:|---:|
-| Auto Off | 7.050502e-06 | +0.00 dB |
-| EQ only | 1.2158653e-08 | -27.63 dB |
-| Phase / tap only | 2.2812698e-05 | +5.10 dB |
-| Combined (Tame 75 / Phase 60) | 1.0532674e-08 | -28.26 dB |
+| Auto Off | 1.7974783e-05 | +0.00 dB |
+| EQ only | 1.3252657e-08 | -31.32 dB |
+| Phase / tap only | 1.740306e-05 | -0.14 dB |
+| Combined (Tame 75 / Phase 60) | 1.4188665e-08 | -31.03 dB |
 
 The deepest requested single-band cut was **9.00 dB**. Tests require a genuine correction request and at least 10% less late energy with EQ and with the combined controls on this deliberately tonal fixture. The spectrum uses overlapping 4,096-sample Hann windows with 2,048-sample hops over 3–8 s, averaging both channel powers. No output matching conceals attenuation. Phase/tap processing redistributes loop modes and may move energy between frequencies; its result is reported independently rather than required to beat EQ or reduce total energy.
 
@@ -45,11 +67,11 @@ Seeded uniform mono noise (MT19937 seed 72463, amplitude ±0.25) plays for two s
 
 ![Automation and detector release](automation.png)
 
-At 8/44.1/48/96/192 kHz, two seconds of mono noise feed a full-wet 40 s-decay engine while Time alternates between 20/500 ms, Tap Shift between −100/+100%, Phase between 0/100%, and Diffusion across five settings. New settings arrive every 17 blocks of 128 samples, so their rate varies with sample rate. Four seconds are rendered. Every sample must remain finite and bounded, and the late tail must remain bounded after the source stops. This is a stress test, not proof against every automation schedule.
+At 8/44.1/48/96/192 kHz, two seconds of mono noise feed a full-wet 40 s-decay engine while Time alternates between 20/500 ms, Tap Shift between −100/+100%, Phase between 0/100%, and Diffusion and Scatter across five settings. New settings arrive every 17 blocks of 128 samples, so their rate varies with sample rate. Four seconds are rendered. Every sample must remain finite and bounded, and the late tail must remain bounded after the source stops. This is a stress test, not proof against every automation schedule.
 
 A separate read-head test changes the requested tap every 31 samples while a 50 ms fade is in progress. It verifies exact DC unity and no abrupt discontinuity on a stationary periodic tone. New requests wait for the current fade endpoint. Spectral tests verify persistence, detection of anti-phase feedback without mid cancellation, protection of a matching input partial, no cuts on seeded broadband noise, and release of held bands during silence. The displayed release curve follows a previously detected tone; it illustrates the approximately 2.5 s release constant, not onset latency.
 
-Host checks cover all twelve parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover control bindings, title information, one-sentence hints and 50%–120% bounds.
+Host checks cover all thirteen parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover all eleven control bindings, title information, one-sentence hints and 50%–120% bounds.
 
 ## Reproduce
 

@@ -2,13 +2,14 @@
 
 | Control | Hint |
 |---|---|
-| Time | Sets the spacing of the eight feedback delays for compact echoes or a larger reverb space. |
+| Time | Sets the repeat time in delay mode and the reference room size in reverb mode. |
 | Decay | Sets the nominal time for the feedback tail to fall by sixty decibels before damping and resonance control. |
 | Pre-delay | Delays the signal entering the reverb while leaving the dry signal immediate. |
-| Diffusion | Blends discrete delay recirculation into a dense orthogonal feedback network. |
+| Scatter | Morphs aligned delay repeats at zero into a dense stereo reverb at full. |
+| Diffusion | Adjusts the mixing density of the feedback network as Scatter increases. |
 | Width | Sets the stereo spread of the wet signal with a normalized mid and side balance. |
 | Tap Shift | Moves the feedback read taps through a smooth crossfade to scatter existing ringing frequencies. |
-| Phase | Sets phase dispersion and the strength of automatic phase and tap scattering around persistent peaks. |
+| Phase | Sets phase dispersion and automatic phase and tap scattering as Scatter increases. |
 | Tame | Sets the depth of automatic attenuation for persistent feedback peaks that stand out beyond the input spectrum. |
 | Dry / Wet | Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent. |
 | Output | Adjusts the final output level after the dry and wet signals are mixed. |

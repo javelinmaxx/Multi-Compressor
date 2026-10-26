@@ -9,10 +9,11 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 
 | Control | Range / default | Function |
 |---|---|---|
-| Time | 20–500 ms / 90 ms | Reference spacing for eight differently sized delay lines |
+| Time | 20–500 ms / 90 ms | Repeat time at zero Scatter; reference room size at full Scatter |
 | Decay | 0.3–40 s / 10 s | Nominal RT60, with further loss from damping, interpolation and automatic EQ |
 | Pre-delay | 0–200 ms / 20 ms | Delay before the wet network; dry remains immediate |
-| Diffusion | 0–100% / 85% | From largely independent echoes to dense orthogonal mixing |
+| Scatter | 0–100% / 100% | Morphs regular stereo delay into a dense stereo reverb |
+| Diffusion | 0–100% / 85% | Fine mixing density as Scatter increases |
 | Width | 0–200% / 125% | Normalized wet mid/side balance; zero is mono |
 | Tap Shift | −100–100% / 0% | Offsets feedback read positions by different amounts per line |
 | Phase | 0–100% / 60% | All-pass phase dispersion and automatic phase/tap steering |
@@ -28,6 +29,23 @@ and version. The plot compares input and feedback power spectra; gold markers
 indicate tracked resonance bands. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
 
+## Delay to reverb with Scatter
+
+**Scatter 0%** aligns all delay lines to Time, disables inter-line mixing and
+phase spreading, and reads them through input-aligned stereo pickups. This gives
+regular, independent left/right delay repeats rather than eight unrelated echoes.
+Pre-delay still offsets the first repeat; Tap Shift moves their common feedback
+delay, and automatic EQ can still tame ringing. Phase and Diffusion introduce no
+spreading at this endpoint. Mono input stays mono before intentional Width changes.
+
+As Scatter rises, delay lengths separate, phase spreading enters the loop, and
+the output pickups rotate toward the stereo reverb field. **Scatter 100%** uses
+the full spread and phase network. Diffusion fine-tunes feedback mixing from 25%
+to 100% of the full rotation at that endpoint, so its minimum does not disable
+the reverb. Scatter defaults to 100% and is smoothed over 50 ms; tap changes keep
+their queued 50 ms crossfades. Intermediate settings may have additional decay
+loss from the phase-path blend, so Decay remains a nominal control.
+
 ## Signal path
 
 `input → optional wet pre-delay → 8 delay lines → feedback EQ → phase dispersion → damping → orthogonal mixing → per-line feedback gains → delay-line writes`
@@ -39,7 +57,7 @@ Stereo input is retained, and matched mono input/output is also supported.
 Three stages of Givens rotations mix the feedback lines orthogonally at every
 Diffusion setting. This avoids the loss of tail energy caused by interpolating
 between identity and a fixed matrix. Per-line gains use
-`min(0.9995, 10^(−3 × nominal_loop_seconds / Decay))`, including the phase-delay
+`min(0.9995, 10^(−3 × nominal_loop_seconds / Decay))`, including the Scatter-scaled phase-delay
 buffer length. This describes a nominal RT60, not an exact broadband decay:
 18 Hz DC/bass damping, a high-frequency low-pass, fractional delay interpolation,
 EQ, and time variation change the measured result.
@@ -74,9 +92,9 @@ Notches release over roughly 2.5 s, avoiding immediate removal of a successful
 cut. Two fixed filter banks warm for 20 ms and crossfade over 80 ms, preventing
 coefficient jumps. The callback neither runs FFTs nor waits for the worker; it
 uses a bounded single job slot and lock-free atomic result publication. Missed
-jobs are dropped rather than queued without bound. Auto Off, or both Tame and
-Phase at zero, stops analysis submissions. Phase still supplies its static
-manual dispersion when Auto is off.
+jobs are dropped rather than queued without bound. Auto Off stops analysis submissions; so does Tame at zero when Phase is zero
+or Scatter is zero. Phase still supplies its static
+manual dispersion when Auto is off and Scatter is above zero.
 
 The output stage is linear at normal levels. A smooth, bounded feedback-write
 guard activates only above magnitude 2, with an asymptotic limit of 3 per delay

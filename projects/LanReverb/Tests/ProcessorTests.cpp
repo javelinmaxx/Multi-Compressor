@@ -28,6 +28,7 @@ Audio render (lan::Settings settings, double seconds, double rate, int signal, i
         {
             const auto step = (at/blockSize)/17;
             settings.tap = step%2 == 0 ? -1.f : 1.f; settings.timeMs = step%3 == 0 ? 20.f : 500.f;
+            settings.scatter = float(step%5)*.25f;
             settings.phase = step%2 == 0 ? 0.f : 1.f; settings.diffusion = float(step%5)*.25f;
             settings.mix = 1; settings.decaySeconds = 40;
         }
@@ -124,7 +125,7 @@ void tapTests()
 }
 void processorTests()
 {
-    stateTests<LanReverbProcessor>(12);
+    stateTests<LanReverbProcessor>(13);
     LanReverbProcessor p; set(p,"mix",0); set(p,"automatic",0); p.prepareToPlay(48000,128);
     check(p.getLatencySamples() == 0,"reverb introduces no dry-path latency");
     juce::MidiBuffer midi; juce::AudioBuffer<float> b(2,128);
@@ -174,6 +175,66 @@ std::vector<double> spectrum (const Audio& audio)
         }
     for (auto& p : power) p /= frames;
     return power;
+}
+void scatterTests (const juce::File& directory)
+{
+    std::ofstream summary(directory.getChildFile("scatter-summary.csv").getFullPathName().toStdString());
+    summary << "rate,scatter,first_return_ms,echo_window_share,active_fraction,side_mid_rms\n";
+    std::ofstream waveform(directory.getChildFile("scatter.csv").getFullPathName().toStdString()); waveform << "scatter,time_s,left,right\n";
+    for (double rate : {44100.,48000.,96000.})
+    {
+        double delayDensity = 0, reverbDensity = 0;
+        for (float amount : {0.f,.5f,1.f})
+        {
+            lan::Settings s; s.scatter = amount; s.automatic = false; s.mix = 1; s.width = 1; s.predelayMs = 0;
+            s.timeMs = 80; s.decaySeconds = 3; s.phase = 1; s.diffusion = 1;
+            const auto audio = render(s,1,rate,0);
+            double total = 0, focused = 0, maximum = 0; int first = -1, active = 0;
+            for (size_t i = 0; i < audio.left.size(); ++i)
+            {
+                maximum = std::max(maximum,double(std::abs(audio.left[i])));
+                if (first < 0 && std::abs(audio.left[i]) > 1e-7) first = int(i);
+                const auto t = i/rate; const auto e = .5*(audio.left[i]*audio.left[i]+audio.right[i]*audio.right[i]);
+                total += e;
+                if (std::fmod(t+.5/rate,.08) < .012) focused += e;
+                if (juce::exactlyEqual(float(rate),48000.f) && i%8 == 0) waveform << amount << ',' << t << ',' << audio.left[i] << ',' << audio.right[i] << '\n';
+            }
+            for (size_t i = size_t(.2*rate); i < size_t(.8*rate); ++i) if (std::abs(audio.left[i]) > maximum*.001) ++active;
+            const auto density = active/(.6*rate), share = focused/std::max(1e-30,total);
+            summary << rate << ',' << amount << ',' << first*1000/rate << ',' << share << ',' << density << ',' << ratio(audio,.2,.8,rate) << '\n';
+            if (amount < .01f)
+            {
+                delayDensity = density;
+                check(std::abs(first/rate-.08) <= 1.1/rate,"Scatter zero returns its first repeat at Time with no hidden phase delay");
+                check(share > .98,"Scatter zero concentrates impulse energy in regular delay repeats");
+                check(ratio(audio,.2,.8,rate) < 1e-6,"Scatter zero does not create artificial stereo spread from mono");
+            }
+            if (amount > .99f) { reverbDensity = density; check(share < .8,"full Scatter spreads reflections beyond the delay-repeat windows"); }
+        }
+        check(reverbDensity > delayDensity*2,"full Scatter produces a substantially denser reverb tail");
+        lan::Settings sparse; sparse.scatter = 1; sparse.phase = 0; sparse.diffusion = 0;
+        sparse.timeMs = 80; sparse.decaySeconds = 3; sparse.predelayMs = 0; sparse.mix = 1; sparse.width = 1; sparse.automatic = false;
+        const auto minimum = render(sparse,1,rate,0);
+        double minimumPeak = 0; int minimumActive = 0;
+        for (auto x : minimum.left) minimumPeak = std::max(minimumPeak,double(std::abs(x)));
+        for (size_t i = size_t(.2*rate); i < size_t(.8*rate); ++i) if (std::abs(minimum.left[i]) > minimumPeak*.001) ++minimumActive;
+        check(minimumActive/(.6*rate) > delayDensity*2,"full Scatter remains a reverb with Diffusion and Phase at minimum");
+    }
+    lan::ReverbEngine delay; delay.prepare(48000,false); lan::Settings s; s.scatter = 0; s.tame = 0; s.phase = 1; s.mix = 1; s.width = 1; s.predelayMs = 0;
+    juce::AudioBuffer<float> impulse(2,24000); impulse.clear(); impulse.setSample(0,0,.8f); delay.process(impulse,s);
+    check(impulse.getMagnitude(1,0,24000) < 1e-7,"zero Scatter preserves independent stereo delay channels");
+    check(delay.analysisJobs() == 0,"phase-only automatic analysis sleeps when Scatter zero bypasses phase spreading");
+    lan::ReverbEngine moving; moving.prepare(48000,false); s.automatic = false; s.decaySeconds = 3;
+    double jump = 0; float previous = 0;
+    for (int at = 0; at < 96000; at += 128)
+    {
+        juce::AudioBuffer<float> block(2,128);
+        for (int i = 0; i < 128; ++i)
+        { const auto x = float(.05*std::cos(2*pi*330*(at+i)/48000)); block.setSample(0,i,x); block.setSample(1,i,x); }
+        s.scatter = at >= 33600 && at < 67200 ? 1.f : 0.f; moving.process(block,s);
+        for (int i = 0; i < 128; ++i) { const auto value = block.getSample(0,i); jump = std::max(jump,double(std::abs(value-previous))); previous = value; }
+    }
+    check(jump < .05,"Scatter endpoint automation avoids abrupt output steps on a low-level sustained tone");
 }
 void measurements (const juce::File& directory)
 {
@@ -249,7 +310,7 @@ void editorTests (const juce::File& destination)
     std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor()); editor->addToDesktop(0); editor->setVisible(true);
     check(editor->getWidth() == 740 && editor->getHeight() == 540,"editor uses intended dimensions");
     int sliders = 0;
-    constexpr std::array<const char*,10> ids {"time","decay","predelay","diffusion","width","tap","phase","tame","mix","output"};
+    constexpr std::array<const char*,11> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","mix","output"};
     for (auto* child : editor->getChildren())
     {
         if (auto* slider = dynamic_cast<juce::Slider*>(child))
@@ -266,7 +327,7 @@ void editorTests (const juce::File& destination)
         if (auto* hint = dynamic_cast<editorTooltips::TitleHint*>(child))
             check(hint->getTooltip().contains("J-Sonic Team") && hint->getTooltip().contains(JucePlugin_VersionString),"title hover shows release information");
     }
-    check(sliders == 10,"all ten controls are present");
+    check(sliders == 11,"all eleven controls are present");
     for (auto* parameter : p.getParameters()) parameter->setValueNotifyingHost(parameter->getDefaultValue());
     juce::MidiBuffer midi;
     for (int at = 0; at < 28800; at += 128)
@@ -303,7 +364,7 @@ int main (int argc, char** argv)
             : juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("lan-reverb-report");
         directory.createDirectory();
         if (argc > 2 && juce::String(argv[1]) == "--editor") editorTests(juce::File(argv[2]));
-        else { analyserTests(directory); tapTests(); processorTests(); measurements(directory); }
+        else { analyserTests(directory); tapTests(); processorTests(); scatterTests(directory); measurements(directory); }
         std::cout << checks << " Lan Reverb checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

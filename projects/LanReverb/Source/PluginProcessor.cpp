@@ -11,6 +11,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout LanReverbProcessor::createPa
     add("time","Time",20,500,.1f,90,"ms",.55f);
     add("decay","Decay",.3f,40,.1f,10,"s",.5f);
     add("predelay","Pre-delay",0,200,.1f,20,"ms");
+    add("scatter","Scatter",0,100,.1f,100,"%");
     add("diffusion","Diffusion",0,100,.1f,85,"%");
     add("width","Width",0,200,.1f,125,"%");
     add("tap","Tap shift",-100,100,.1f,0,"%");
@@ -31,7 +32,7 @@ lan::Settings LanReverbProcessor::settings() const
     lan::Settings s;
     const auto get = [this] (const char* id) { return parameters.getRawParameterValue(id)->load(); };
     s.timeMs = get("time"); s.decaySeconds = get("decay"); s.predelayMs = get("predelay");
-    s.diffusion = get("diffusion")*.01f; s.width = get("width")*.01f; s.tap = get("tap")*.01f;
+    s.scatter = get("scatter")*.01f; s.diffusion = get("diffusion")*.01f; s.width = get("width")*.01f; s.tap = get("tap")*.01f;
     s.phase = get("phase")*.01f; s.tame = get("tame")*.01f; s.mix = get("mix")*.01f; s.outputDb = get("output");
     s.automatic = get("automatic") >= .5f; s.bypass = get("bypass") >= .5f; return s;
 }

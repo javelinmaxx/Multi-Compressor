@@ -18,10 +18,10 @@ private:
     editorTooltips::TitleHint titleHint { JucePlugin_VersionString };
     StageBypassButton bypass;
     juce::TextButton automatic { "AUTO" };
-    std::array<juce::Slider,10> sliders;
-    std::array<juce::Label,10> labels;
+    std::array<juce::Slider,11> sliders;
+    std::array<juce::Label,11> labels;
     using State = juce::AudioProcessorValueTreeState;
-    std::array<std::unique_ptr<State::SliderAttachment>,10> attachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,11> attachments;
     std::unique_ptr<State::ButtonAttachment> autoAttachment, bypassAttachment;
     lan::Analysis analysis;
     float reduction = 0, outputPeak = 0;

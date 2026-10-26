@@ -152,11 +152,11 @@ bands red, with white left-channel and gold right-channel traces for applied pha
 
 ### Lan Reverb
 
-![Lan Reverb with feedback spectrum and ten controls](projects/LanReverb/Previews/lan-reverb.png)
+![Lan Reverb with feedback spectrum and eleven controls](projects/LanReverb/Previews/lan-reverb.png)
 
 Create long, wide tails at high wet settings with an eight-line stereo feedback
-network. **Time**, **Decay**, and **Diffusion** move from discrete echoes to dense
-reverb; **Tap Shift** crossfades feedback read positions while audio is ringing.
+network. **Scatter** moves from regular delay repeats at zero to dense stereo reverb at full;
+**Time**, **Decay**, and **Diffusion** shape the result; **Tap Shift** crossfades feedback read positions while audio is ringing.
 **Auto** tracks persistent spectral peaks, applies attenuation-only feedback EQ,
 and guides phase and tap scattering. **Tame** and **Phase** set their strengths.
 The dry path has zero added latency, and Mix reaches 100% wet for sends.
