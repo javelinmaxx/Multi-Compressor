@@ -10,7 +10,7 @@ struct ReverbEngineTestAccess
     static void forceCorrection (ReverbEngine& engine)
     {
         engine.latest = {}; engine.latest.count = maxBands; engine.latest.frequency = 1100; engine.latest.strength = 1; engine.latest.revision = 2;
-        engine.latest.bands = {{{1100,80,-9},{3300,240,-12},{7200,520,-18}}};
+        engine.latest.bands = {{{1100,80,-2},{3300,240,-2},{7200,520,-2}}};
         for (auto& bank : engine.banks)
         {
             bank.count = maxBands;
@@ -29,7 +29,7 @@ struct ReverbEngineTestAccess
     static void multiPhaseTests (const juce::File& directory)
     {
         constexpr auto pi = juce::MathConstants<double>::pi;
-        const std::array<Band,maxBands> bands {{{300,300.f/14,-18},{1400,100,-12},{6500,6500.f/14,-9}}};
+        const std::array<Band,maxBands> bands {{{300,300.f/14,-6},{1400,100,-4},{6500,6500.f/14,-3}}};
         std::ofstream report(directory.getChildFile("multiband-phase.csv").getFullPathName().toStdString());
         report << "rate,line,frequency_hz,phase_0_deg,phase_1_deg,phase_2_deg,total_phase_deg,magnitude_db,total_delay_bound_ms\n";
         for (double rate : {44100.,48000.,96000.})
@@ -153,6 +153,80 @@ struct ReverbEngineTestAccess
             }
         }
     }
+    static void eqTests (const juce::File& directory)
+    {
+        std::ofstream report(directory.getChildFile("feedback-eq.csv").getFullPathName().toStdString());
+        report << "frequency_hz,narrow_db,previous_width_db,three_band_db,low_shelf_db,high_shelf_db\n";
+        ReverbEngine::Filter narrow, previous, low, high;
+        narrow.configure({1000,1000.f/14,-6},48000,1);
+        previous.configure({1000,2000.f/14,-6},48000,1);
+        low.shelf(false,200,-9,48000); high.shelf(true,8000,-9,48000);
+        Analysis overlapping; overlapping.count = 3; overlapping.bands = {{{1000,100,-6},{1050,100,-6},{1100,100,-6}}};
+        Settings settings; settings.tame = 1;
+        int narrowWidth = 0, oldWidth = 0;
+        for (int hz = 800; hz <= 1200; ++hz)
+        {
+            narrowWidth += 20*std::log10(narrow.magnitude(hz,48000)) < -3 ? 1 : 0;
+            oldWidth += 20*std::log10(previous.magnitude(hz,48000)) < -3 ? 1 : 0;
+        }
+        check(narrowWidth < oldWidth*.65 && narrowWidth > oldWidth*.35,"tamer half-depth bandwidth is approximately half its previous width");
+        check(std::abs(20*std::log10(narrow.magnitude(1000,48000))+6) < 1e-5,"single-band maximum cut remains exactly six dB");
+        for (int i = 0; i < 4096; ++i)
+        {
+            const auto hz = 30*std::pow(18000./30,i/4095.);
+            const auto db = ReverbEngine::responseDb(settings,overlapping,hz,48000);
+            check(db >= -6.0001f && db <= .0001f,"overlapping tamer bands cannot exceed six dB combined attenuation");
+            report << hz << ',' << 20*std::log10(narrow.magnitude(hz,48000)) << ',' << 20*std::log10(previous.magnitude(hz,48000)) << ',' << db << ','
+                   << 20*std::log10(low.magnitude(hz,48000)) << ',' << 20*std::log10(high.magnitude(hz,48000)) << '\n';
+        }
+        check(low.magnitude(30,48000) < .4 && low.magnitude(5000,48000) > .99,"low shelf changes bass while preserving the upper band");
+        check(high.magnitude(17000,48000) < .4 && high.magnitude(100,48000) > .99,"high shelf changes treble while preserving the lower band");
+        // Exhaust endpoints including overlapping shelf transitions and boosts.
+        for (double rate : {8000.,44100.,48000.,96000.,192000.})
+            for (float lf : {40.f,2000.f}) for (float hf : {2000.f,16000.f})
+                for (float lg : {-12.f,0.f,6.f}) for (float hg : {-12.f,0.f,6.f})
+                {
+                    Settings s; s.automatic = false; s.lowShelfHz = lf; s.highShelfHz = hf; s.lowShelfDb = lg; s.highShelfDb = hg;
+                    for (int point = 0; point < 128; ++point)
+                    {
+                        const auto hz = 20*std::pow(rate*.45/20,point/127.);
+                        check(ReverbEngine::responseDb(s,{},hz,rate) <= .001f,"shelf boost headroom compensation keeps the feedback transfer below unity");
+                    }
+                }
+        // Exercise actual feedback filter state, not only coefficient formulas.
+        ReverbEngine::Bank bank; bank.count = 1; bank.shelfCount = 2;
+        bank.filters[0][0].configure({1000,1000.f/14,-6},48000,1);
+        bank.shelves[0][0].shelf(false,200,-9,48000); bank.shelves[0][1].shelf(true,8000,6,48000);
+        bank.shelfNormalization = juce::Decibels::decibelsToGain(-6.f);
+        std::array<double,3> frequencies {100,1000,10000}; std::array<std::complex<double>,3> measured {};
+        for (int i = 0; i < 32768; ++i)
+        {
+            const auto y = bank.process(i == 0 ? 1.f : 0.f,0);
+            for (size_t j = 0; j < frequencies.size(); ++j) measured[j] += double(y)*std::polar(1.,-juce::MathConstants<double>::twoPi*frequencies[j]*i/48000);
+        }
+        Settings s; s.tame = 1; s.lowShelfDb = -9; s.highShelfDb = 6;
+        Analysis single; single.count = 1; single.bands[0] = {1000,1000.f/14,-6};
+        for (size_t i = 0; i < frequencies.size(); ++i)
+            check(std::abs(20*std::log10(std::abs(measured[i]))-ReverbEngine::responseDb(s,single,frequencies[i],48000)) < .001,
+                  "rendered feedback shelves and tamer agree with the displayed response curve");
+    }
+    static void shimmerBypassTests()
+    {
+        ReverbEngine engine; engine.prepare(48000,false); Settings s; s.shimmer = 1;
+        juce::AudioBuffer<float> audio(2,128); audio.clear(); engine.process(audio,s,true);
+        check(engine.shimmer.processedHighSamples() == 256,"Shimmer continues running at twice the host rate during bypass");
+        for (int at = 0; at < 48000; at += 128)
+        {
+            for (int i = 0; i < 128; ++i)
+            { const auto x = float(.2*std::sin(juce::MathConstants<double>::twoPi*440*(at+i)/48000)); audio.setSample(0,i,x); audio.setSample(1,i,x); }
+            engine.process(audio,s);
+        }
+        Analysis a; check(engine.readAnalysis(a),"Shimmer source protection receives a live analysis frame");
+        const auto row = size_t(std::round(std::log(880./30)/std::log(18000./30)*(spectrumBins-1)));
+        check(a.input[row] > -45,"intentional shimmer octave is included in the protected source spectrum");
+        for (int i = 0; i < a.count; ++i)
+            check(std::abs(a.bands[size_t(i)].frequency-880) > 100,"the tamer does not mistake the intentional shimmer octave for resonance");
+    }
     static void checkTapCapacity (const ReverbEngine& engine)
     {
         for (const auto& line : engine.lines)
@@ -194,6 +268,7 @@ Audio render (lan::Settings settings, double seconds, double rate, int signal, i
             if (signal == 0 && at+i == 0) x = .8f;
             if (signal == 1 && t < 1) x = float(.14*std::sin(2*pi*220*t)+.1*std::sin(2*pi*997*t));
             if (signal == 2 && t < 2) x = noise(rng);
+            if (signal == 3 && t < 1) x = float(.08*std::sin(2*pi*220*t)+.06*std::sin(2*pi*330*t)+.04*std::sin(2*pi*440*t));
             b.setSample(0,i,x); b.setSample(1,i,x);
         }
         if (tapSwitch && at >= 2*rate) settings.tap = .7f;
@@ -252,7 +327,7 @@ void analyserTests (const juce::File& directory)
     lan::ResonanceAnalyser analyser; lan::Analysis result;
     for (int i = 0; i < 5; ++i) result = analyser.analyse(*frame);
     check(result.count > 0 && std::abs(result.frequency-frequency) < 15,"persistent anti-phase feedback peak is detected without mid cancellation");
-    check(result.bands[0].gainDb < -1 && result.bands[0].gainDb >= -18,"resonance correction requests bounded attenuation");
+    check(result.bands[0].gainDb < -1 && result.bands[0].gainDb >= -6,"resonance correction requests bounded attenuation");
     std::ofstream response(directory.getChildFile("detector.csv").getFullPathName().toStdString());
     response << "time_s,cut_db,frequency_hz\n";
     for (int i = 0; i < 4; ++i) frame->audio[size_t(i)].fill(0);
@@ -391,7 +466,7 @@ void relativeDecayTests (const juce::File& directory)
                     const auto& b = a.bands[size_t(band)];
                     if (std::abs(b.frequency-target) < 2*rate/lan::analysisSize)
                     { cut = std::max(cut,-double(b.gainDb)); detected = true; }
-                    check(b.gainDb >= -18 && b.gainDb <= 0,"aggressive decay correction stays within its attenuation-only limit");
+                    check(b.gainDb >= -6 && b.gainDb <= 0,"aggressive decay correction stays within its attenuation-only limit");
                     if (scenario == 0 || scenario == 5)
                         check(std::abs(b.frequency-target) < 2*rate/lan::analysisSize,"decay comparison selects the slow tail rather than louder normally decaying notes");
                 }
@@ -400,7 +475,7 @@ void relativeDecayTests (const juce::File& directory)
                 report << rate << ',' << scenario << ',' << t << ',' << targetSlope << ',' << referenceSlope << ',' << cut << ',' << target << '\n';
             }
             if (scenario == 0 || scenario == 5)
-                check(detected && deepest > 9,"relative decay overrides long source memory and permits stronger than 9 dB correction");
+                check(detected && deepest > 3 && deepest <= 6,"relative decay overrides long source memory and permits correction within the six-dB limit");
             else
                 check(!detected,"equal decay, active source, rising energy and single-tone tails do not masquerade as relative decay resonance");
         }
@@ -412,7 +487,7 @@ void feedbackRoutingTests (const juce::File& directory)
     for (double rate : {44100.,48000.,96000.})
     {
         lan::Settings normal; normal.automatic = false; normal.predelayMs = 0; normal.timeMs = 80; normal.mix = 1; normal.width = 1; normal.phase = 0;
-        auto corrected = normal; corrected.automatic = true; corrected.phase = 1; corrected.tame = 1;
+        auto corrected = normal; corrected.automatic = true; corrected.phase = 1; corrected.tame = 1; corrected.lowShelfDb = -9; corrected.highShelfDb = 3;
         lan::ReverbEngine reference, processing; reference.prepare(rate,false); processing.prepare(rate,false);
         lan::ReverbEngineTestAccess::forceCorrection(processing);
         const auto count = juce::roundToInt(rate*.5); double earlyError = 0, laterDifference = 0; float earlyPeak = 0;
@@ -544,7 +619,7 @@ void tempoSyncTests (const juce::File& directory)
 }
 void processorTests()
 {
-    stateTests<LanReverbProcessor>(15);
+    stateTests<LanReverbProcessor>(20);
     LanReverbProcessor p; set(p,"mix",0); set(p,"automatic",0); p.prepareToPlay(48000,128);
     check(p.getLatencySamples() == 0,"reverb introduces no dry-path latency");
     juce::MidiBuffer midi; juce::AudioBuffer<float> b(2,128);
@@ -731,13 +806,73 @@ void measurements (const juce::File& directory)
         for (int i = 0; i < 40; ++i) stress << rate << ',' << i*.1 << ',' << std::sqrt(energy(out,i*.1,(i+1)*.1,rate)) << '\n';
     }
 }
+void shimmerTests (const juce::File& directory)
+{
+    std::ofstream report(directory.getChildFile("shimmer.csv").getFullPathName().toStdString());
+    report << "rate,frequency_hz,left_power,right_power,alias_power\n";
+    for (double rate : {44100.,48000.,96000.})
+    {
+        lan::Shimmer shifted, alias; shifted.prepare(rate); alias.prepare(rate);
+        Audio out, rejected; const auto count = juce::roundToInt(rate);
+        for (int i = 0; i < count; ++i)
+        {
+            const auto x = shifted.process(float(.2*std::sin(2*pi*440*i/rate)),float(.2*std::sin(2*pi*660*i/rate)),true);
+            const auto y = alias.process(float(.2*std::sin(2*pi*rate*.3*i/rate)),0,true);
+            out.left.push_back(x[0]); out.right.push_back(x[1]); rejected.left.push_back(y[0]); rejected.right.push_back(y[1]);
+            check(std::isfinite(x[0]) && std::isfinite(x[1]) && std::isfinite(y[0]),"2x shimmer remains finite");
+        }
+        check(shifted.processedHighSamples() == uint64_t(count)*2,"octave pitch shifting actually executes at twice the host sample rate");
+        // DFT the steady output directly so frequency accuracy is independent
+        // of the report FFT's coarse bin spacing.
+        const auto power = [rate] (const std::vector<float>& audio, double hz)
+        {
+            std::complex<double> sum {}; const auto begin = size_t(rate*.25), end = size_t(rate*.85);
+            for (size_t i = begin; i < end; ++i) sum += double(audio[i])*std::polar(1.,-2*pi*hz*i/rate);
+            return std::norm(sum)/std::pow(double(end-begin),2);
+        };
+        const auto targetL = power(out.left,880), targetR = power(out.right,1320);
+        std::cout << "Shimmer rate=" << rate << " target powers=" << targetL << ',' << targetR << " energy=" << energy(out,.25,.85,rate) << '\n';
+
+        check(targetL > 1e-4 && targetR > 1e-4,"both stereo channels contain the expected octave-up notes");
+        check(power(out.left,440) < targetL*.01 && power(out.right,660) < targetR*.01,"wet pitch path rejects the original pitches");
+        if (rate < 50000)
+            check(energy(rejected,.25,.85,rate) < energy(out,.25,.85,rate)*.01,"2x conversion suppresses out-of-band octave content rather than folding it back");
+        for (int hz = 200; hz <= int(std::min(20000.,rate*.45)); hz += 20)
+            report << rate << ',' << hz << ',' << power(out.left,hz) << ',' << power(out.right,hz) << ',' << power(rejected.left,hz) << '\n';
+        if (std::abs(rate-48000) < .1) writeWav(directory.getChildFile("shimmer-octave.wav"),out,48000,count);
+    }
+    lan::Shimmer idle; idle.prepare(48000);
+    for (int i = 0; i < 12000; ++i) idle.process(.1f,.1f,false);
+    check(idle.processedHighSamples() == 0,"zero Shimmer suspends both the FIR converter and the phase vocoder");
+    for (int i = 0; i < 12000; ++i) idle.process(.1f,.1f,true);
+    idle.process(0,0,false); double stale = 0;
+    for (int i = 0; i < 12000; ++i) { const auto out = idle.process(0,0,true); stale += out[0]*out[0]+out[1]*out[1]; }
+    check(stale < 1e-12,"reenabling Shimmer cannot replay stale pitch audio");
+    lan::ReverbEngineTestAccess::shimmerBypassTests();
+    lan::Settings reverb; reverb.mix = 1; reverb.lowShelfDb = -3; reverb.highShelfDb = -3;
+    const auto ordinary = render(reverb,4,48000,3); reverb.shimmer = .75f;
+    const auto enhanced = render(reverb,4,48000,3);
+    writeWav(directory.getChildFile("shimmer-reverb.wav"),enhanced,48000,4*48000);
+    std::ofstream tail(directory.getChildFile("shimmer-reverb.csv").getFullPathName().toStdString());
+    tail << "time_s,off_rms,shimmer_rms\n";
+    double difference = 0;
+    for (size_t i = 0; i < enhanced.left.size(); ++i) difference += std::pow(enhanced.left[i]-ordinary.left[i],2);
+    check(difference > .001,"the oversampled octave is actually injected into the rendered reverb");
+    for (int i = 0; i < 40; ++i) tail << i*.1 << ',' << std::sqrt(energy(ordinary,i*.1,(i+1)*.1,48000)) << ',' << std::sqrt(energy(enhanced,i*.1,(i+1)*.1,48000)) << '\n';
+    LanReverbProcessor dry; set(dry,"mix",0); set(dry,"shimmer",100); set(dry,"lowShelfDb",6); dry.prepareToPlay(48000,128);
+    juce::AudioBuffer<float> block(2,128); juce::MidiBuffer midi;
+    for (int i = 0; i < 128; ++i) { block.setSample(0,i,.1f); block.setSample(1,i,-.1f); }
+    dry.processBlock(block,midi);
+    for (int i = 0; i < 128; ++i) check(std::abs(block.getSample(0,i)-.1f) < 1e-7 && std::abs(block.getSample(1,i)+.1f) < 1e-7,"shelves and shimmer leave zero-wet dry output unchanged");
+    check(dry.getLatencySamples() == 0,"oversampled shimmer adds no dry-path latency");
+}
 void editorTests (const juce::File& destination)
 {
     LanReverbProcessor p; p.prepareToPlay(48000,128);
     std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor()); editor->addToDesktop(0); editor->setVisible(true);
     check(editor->getWidth() == 740 && editor->getHeight() == 540,"editor uses intended dimensions");
     int sliders = 0;
-    constexpr std::array<const char*,11> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","mix","output"};
+    constexpr std::array<const char*,12> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","shimmer","mix","output"};
     for (auto* child : editor->getChildren())
     {
         if (auto* slider = dynamic_cast<juce::Slider*>(child))
@@ -754,7 +889,7 @@ void editorTests (const juce::File& destination)
         if (auto* hint = dynamic_cast<editorTooltips::TitleHint*>(child))
             check(hint->getTooltip().contains("J-Sonic Team") && hint->getTooltip().contains(JucePlugin_VersionString),"title hover shows release information");
     }
-    check(sliders == 11,"all eleven controls are present");
+    check(sliders == 12,"all twelve controls are present");
     juce::Slider* timeControl = nullptr; juce::Button* syncControl = nullptr;
     for (auto* child : editor->getChildren())
     {
@@ -772,6 +907,23 @@ void editorTests (const juce::File& destination)
     set(p,"note",11); pump(); check(timeControl->getTextFromValue(timeControl->getValue()) == "1/4 T","host note automation updates the visible Time knob");
     syncControl->setToggleState(false,juce::sendNotificationSync); pump();
     check(p.parameters.getRawParameterValue("sync")->load() < .5f && std::abs(timeControl->getValue()-freeTime) < .01,"clicking Sync off restores the free Time knob and value");
+    int shelves = 0;
+    for (auto* child : editor->getChildren())
+        if (auto* handle = dynamic_cast<SpectrumShelfHandle*>(child))
+        {
+            const auto high = handle->getName() == "High shelf";
+            const auto hz = high ? 5000.f : 300.f;
+            const juce::Point<float> position {float(42+656*std::log(hz/30)/std::log(18000./30)),181};
+            const auto now = juce::Time::getCurrentTime();
+            juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(),position,juce::ModifierKeys::leftButtonModifier,1,0,0,0,0,editor.get(),editor.get(),now,position,now,1,true);
+            handle->mouseDown(event); handle->mouseDrag(event);
+            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfHz" : "lowShelfHz")->load()-hz) < 2,"shelf horizontal drag updates the host frequency");
+            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load()+6) < .11,"shelf vertical drag updates the host gain");
+            handle->mouseDoubleClick(event); handle->mouseUp(event);
+            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load()) < .01,"double-click restores a neutral shelf");
+            check(handle->getTooltip().endsWithChar('.'),"draggable shelf has a one-sentence hint"); ++shelves;
+        }
+    check(shelves == 2,"both draggable shelf handles are present");
     for (auto* parameter : p.getParameters()) parameter->setValueNotifyingHost(parameter->getDefaultValue());
     juce::MidiBuffer midi;
     for (int at = 0; at < 28800; at += 128)
@@ -789,7 +941,7 @@ void editorTests (const juce::File& destination)
     {
         editor->setSize(juce::roundToInt(740*factor),juce::roundToInt(540*factor));
         for (auto* child : editor->getChildren())
-            if (dynamic_cast<juce::Slider*>(child) != nullptr || dynamic_cast<juce::Button*>(child) != nullptr)
+            if (dynamic_cast<juce::Slider*>(child) != nullptr || dynamic_cast<juce::Button*>(child) != nullptr || dynamic_cast<SpectrumShelfHandle*>(child) != nullptr)
             {
                 const auto bounds = editor->getLocalArea(child,child->getLocalBounds());
                 auto* hit = editor->getComponentAt(bounds.getCentre());
@@ -803,12 +955,13 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
-        const auto directory = argc > 2 && juce::String(argv[1]) == "--report"
+        const auto directory = argc > 2 && (juce::String(argv[1]) == "--report" || juce::String(argv[1]) == "--shimmer")
             ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[2])
             : juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("lan-reverb-report");
         directory.createDirectory();
         if (argc > 2 && juce::String(argv[1]) == "--editor") editorTests(juce::File(argv[2]));
-        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); lan::ReverbEngineTestAccess::multiPhaseTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); }
+        else if (argc > 2 && juce::String(argv[1]) == "--shimmer") shimmerTests(directory);
+        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); lan::ReverbEngineTestAccess::multiPhaseTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); lan::ReverbEngineTestAccess::eqTests(directory); shimmerTests(directory); }
         std::cout << checks << " Lan Reverb checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_dsp/juce_dsp.h>
 #include "DelayTiming.h"
+#include "Shimmer.h"
 #include <array>
 #include <atomic>
 #include <vector>
@@ -11,9 +12,11 @@ struct Settings
 {
     float timeMs = 90, decaySeconds = 10, predelayMs = 20, diffusion = .85f, width = 1.25f;
     float tap = 0, phase = .6f, tame = .75f, mix = .8f, outputDb = 0, scatter = 1;
+    float lowShelfHz = 200, lowShelfDb = 0, highShelfHz = 8000, highShelfDb = 0, shimmer = 0;
     bool automatic = true, bypass = false;
 };
 inline constexpr int spectrumBins = 64, maxBands = 3, analysisSize = 4096;
+inline constexpr float tameLimitDb = 6;
 inline constexpr double phaseDelayLimitSeconds = .005, basePhaseBudgetSeconds = .001;
 inline constexpr double autoTapBudgetSeconds = .001;
 inline constexpr double bandPhaseBudgetSeconds = (phaseDelayLimitSeconds-basePhaseBudgetSeconds-autoTapBudgetSeconds)/maxBands;
@@ -101,6 +104,7 @@ private:
 class ReverbEngine
 {
 public:
+    static float responseDb (const Settings&, const Analysis&, double hz, double rate);
     void prepare (double rate, bool worker = true);
     void release() { analysis.release(); }
     void process (juce::AudioBuffer<float>&, const Settings&, bool hostBypass = false);
@@ -114,12 +118,16 @@ private:
     {
         double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
         void configure (const Band&, double rate, float amount);
+        void shelf (bool high, double hz, double gainDb, double rate);
+        double magnitude (double hz, double rate) const;
         float process (float) noexcept;
     };
     struct Bank
     {
         std::array<std::array<Filter, maxBands>, 8> filters;
-        int count = 0;
+        std::array<std::array<Filter,2>,8> shelves;
+        int count = 0, shelfCount = 0;
+        float shelfNormalization = 1;
         float process (float x, size_t line) noexcept;
     };
     // A normalized two-junction lattice stays passive while its coefficients
@@ -142,6 +150,7 @@ private:
         float phaseCoefficient = 0, phaseTarget = 0, low = 0, dc = 0;
         float phaseProcess (float) noexcept;
     };
+    static float tameScale (const Analysis&, float amount);
     void update (const Settings&);
     void updatePhaseBands (bool active, float amount);
     std::array<Band,maxBands> trackedPhaseBands {};
@@ -154,6 +163,9 @@ private:
     size_t predelayPosition = 0;
     AnalysisService analysis;
     Analysis latest;
+    Shimmer shimmer;
+    juce::SmoothedValue<float> shimmerMix;
+    std::array<float,4> appliedShelves {-1,-100,-1,-100};
     std::array<Bank, 2> banks;
     int activeBank = 0, pendingBank = 1, warm = 0;
     float bankFade = 1, bankStep = 1, previousTame = -1;

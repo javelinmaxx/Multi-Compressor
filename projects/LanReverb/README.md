@@ -18,7 +18,10 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 | Width | 0–200% / 125% | Normalized wet mid/side balance; zero is mono |
 | Tap Shift | −100–100% / 0% | Offsets feedback read positions by different amounts per line |
 | Phase | 0–100% / 60% | All-pass phase dispersion and automatic phase/tap steering |
-| Tame | 0–100% / 75% | Strength of automatic, attenuation-only feedback EQ |
+| Tame | 0–100% / 75% | Strength of narrow automatic feedback EQ, sharing a 6 dB total cut budget |
+| Shimmer | 0–100% / Off | Adds a +12-semitone, 2× oversampled layer to the source feeding the delay network |
+| Low shelf handle | 40–2,000 Hz / 200 Hz; −12–+6 dB / 0 dB | Drag its L node horizontally for frequency and vertically for gain |
+| High shelf handle | 2,000–16,000 Hz / 8,000 Hz; −12–+6 dB / 0 dB | Drag its H node horizontally for frequency and vertically for gain |
 | Dry / Wet | 0–100% / 80% | Linear mix, including true full-wet operation for sends |
 | Output | −24–12 dB / 0 dB | Final output gain |
 | Auto | On | Enables input-aware spectral peak analysis and automatic correction |
@@ -27,7 +30,7 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 The ebony-and-gold editor matches the collection, scales from 50% to 120%, and
 provides one-sentence control hints. Hover over its title for developer, year,
 and version. The plot compares input and feedback power spectra; gold markers
-indicate tracked resonance bands. The reduction readout shows the deepest
+indicate tracked resonance bands. A pale target EQ curve combines the narrow tamer filters with the two shelves and their headroom compensation. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
 
 ## Tempo-synchronized Time
@@ -73,11 +76,11 @@ loss from the phase-path blend, so Decay remains a nominal control.
 
 ## Signal path
 
-`input → wet pre-delay → input injection → delay-line writes`
+`input → wet pre-delay → original + Shimmer octave layer → input injection → delay-line writes`
 
 `delay-line wet taps → stereo pickups → Width → dry/wet mix → Output`
 
-`separate feedback taps → EQ → phase dispersion → damping → orthogonal mixing → feedback gains → delay-line writes`
+`separate feedback taps → narrow tamer EQ → shelves + loop headroom → phase dispersion → damping → orthogonal mixing → feedback gains → delay-line writes`
 
 The wet return is read **before** EQ, phase processing and loop damping. Those
 stages process only the recirculated signal, which is added to the independent
@@ -147,6 +150,46 @@ Pre-delay uses the same transition. This avoids abrupt read-head jumps and
 continuous Doppler sweeps, although changing a populated delay network can still
 produce audible coloration or modulation.
 
+## Draggable feedback shelves
+
+Drag the **L** and **H** handles on the spectrum horizontally to choose each
+shelf's transition frequency and vertically to set its gain. Double-click a
+handle to restore its default frequency and 0 dB. Both axes support host
+automation and session recall, and remain usable at 50%–120% UI scaling.
+The curve shows the requested response; the feedback filter banks follow it
+through their existing 20 ms warm-up and 250 ms crossfade.
+
+Shelves process **feedback only**, including when Auto is off. They do not
+filter the dry signal or the first wet arrivals. Boosts are relative coloration:
+the loop reserves headroom equal to the sum of positive shelf gains, keeping
+the fixed shelf transfer at or below unity at every frequency. For example,
+a +6 dB high shelf includes 6 dB of overall loop attenuation; this favors high
+frequencies without creating a growing feedback loop. It can shorten the decay
+of other frequencies. The target EQ curve includes this compensation.
+
+## Shimmer input layer
+
+**Shimmer** feeds the incoming wet source into a +12-semitone phase vocoder
+running at **2× the host sample rate**, with FIR anti-imaging and anti-aliasing
+filters around the pitch shifter. The knob adds 0–100% of that octave-up signal
+to the original source at the feedback-network injection. The original source
+is retained at its existing level. The recirculating feedback is not repeatedly
+pitch shifted, so this is one added octave rather than a recursively rising
+pitch staircase. Shimmer follows wet Pre-delay, then adds its own STFT timing.
+
+The stereo vocoder uses a 2,048-sample FFT and 512-sample hop at the oversampled
+rate, with instantaneous-frequency phase tracking for off-bin notes and four
+Hann-window overlaps. Its wet layer has intentional analysis/conversion delay
+and can soften transients; the dry path still reports zero latency. Source
+protection and the grey input spectrum include the generated octave so that
+the tamer does not mistake it for an unintended resonance.
+
+The send changes over 250 ms. At Off, both the phase vocoder and its FIR
+converter stop to save CPU; reenabling clears stale pitch buffers. Host or
+plugin bypass keeps an enabled Shimmer running with the rest of the network.
+Adding the octave can raise wet levels, so Output remains available for gain
+adjustment. No automatic output normalization is applied.
+
 ## Automatic resonance control
 
 A background worker transforms a 4,096-sample Hann-windowed frame at up to
@@ -173,12 +216,17 @@ reference do not supply evidence to override source memory. The remembered
 identity expires after Decay + 1.25 s; source notes still present in the input
 remain guarded. A stream gap above 300 ms clears slope history.
 
-Up to three separated bands receive attenuation-only cuts capped at **18 dB**
-before Tame scaling (13.5 dB at the default 75%). Without comparative decay
+Up to three separated bands receive attenuation-only cuts capped at **6 dB**
+before Tame scaling (4.5 dB for one band at the default 75%). The stages share
+a 6 dB total attenuation budget: if their requested cuts sum above that value,
+they are scaled together. This guarantees a static combined tamer response no
+deeper than −6 dB, even if bands overlap; shelf cuts are separate from this limit. Without comparative decay
 evidence, a feedback peak must exceed its neighborhood by 8 dB beyond input
 prominence and persist for about 300 ms. Strong slow-decay evidence lowers this
-to 6 dB and about 200 ms, raises priority, and adds up to 6 dB of requested cut.
-Minimum width is FFT-limited and nominal Q is at most 14. This is not a
+to 6 dB and about 200 ms, raises priority and increases the requested cut within the same 6 dB cap.
+The EQ bandwidth is half the detector's tracked width, with Q up to 28 rather
+than 14. The source-protection/detection widths remain unchanged. Filtering
+is still limited by the accuracy of the FFT-derived center frequencies. This is not a
 continuous-frequency detector. Held notches release with a **1.2 s** time
 constant, reducing the influence of old decisions.
 

@@ -176,7 +176,7 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
         if (ages[index] < (slowDecay > 0 ? .18f : .25f)) continue;
         // Three separated, attenuation-only bands; FFT resolution limits their
         // minimum width. Preserve original input peaks while the source plays.
-        Candidate candidate {{float(hz),bandwidth,-float(std::min(18.,(excess-4)*.9+slowDecay*6))},
+        Candidate candidate {{float(hz),bandwidth,-float(std::min(double(tameLimitDb),(excess-4)*.9+slowDecay*6))},
                              (excess+slowDecay*12)*std::sqrt(feedback[index])};
         bool duplicate = false;
         for (const auto& existing : selected)
@@ -200,7 +200,7 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
         band.gainDb *= std::exp(-elapsed/1.2f);
         if (!found && result.count < maxBands && band.gainDb < -.2f) result.bands[size_t(result.count++)] = band;
     }
-    if (result.count > 0) { result.frequency = result.bands[0].frequency; result.strength = std::clamp(-result.bands[0].gainDb/18,0.f,1.f); }
+    if (result.count > 0) { result.frequency = result.bands[0].frequency; result.strength = std::clamp(-result.bands[0].gainDb/tameLimitDb,0.f,1.f); }
     held = result; return result;
 }
 AnalysisService::AnalysisService() : Thread("Lan resonance analysis") {}
@@ -289,18 +289,58 @@ float MovingTap::read (const std::vector<float>& buffer, size_t position) noexce
 void ReverbEngine::Filter::configure (const Band& band, double rate, float amount)
 {
     const auto omega = 2*pi*std::clamp(double(band.frequency),30.,rate*.45)/rate;
-    const auto gain = std::pow(10.,band.gainDb*amount/40.);
-    const auto alpha = std::sin(omega)/(2*std::max(1.,double(band.frequency)/std::max(1.f,band.width)));
+    const auto gain = std::pow(10.,std::clamp(band.gainDb,-tameLimitDb,0.f)*amount/40.);
+    const auto alpha = std::sin(omega)/(2*std::clamp(double(band.frequency)/std::max(1.f,band.width*.5f),1.,28.));
     const auto denominator = 1+alpha/gain;
     b0 = (1+alpha*gain)/denominator; b1 = -2*std::cos(omega)/denominator; b2 = (1-alpha*gain)/denominator;
     a1 = b1; a2 = (1-alpha/gain)/denominator; z1 = z2 = 0;
+}
+void ReverbEngine::Filter::shelf (bool high, double hz, double gainDb, double rate)
+{
+    const auto a = std::pow(10.,std::clamp(gainDb,-12.,6.)/40);
+    const auto omega = 2*pi*std::clamp(hz,20.,rate*.4)/rate;
+    const auto c = std::cos(omega), beta = std::sqrt(2*a)*std::sin(omega);
+    const auto sign = high ? 1. : -1.;
+    const auto denominator = (a+1)-sign*(a-1)*c+beta;
+    b0 = a*((a+1)+sign*(a-1)*c+beta)/denominator;
+    b1 = -sign*2*a*((a-1)+sign*(a+1)*c)/denominator;
+    b2 = a*((a+1)+sign*(a-1)*c-beta)/denominator;
+    a1 = sign*2*((a-1)-sign*(a+1)*c)/denominator;
+    a2 = ((a+1)-sign*(a-1)*c-beta)/denominator; z1 = z2 = 0;
+}
+double ReverbEngine::Filter::magnitude (double hz, double rate) const
+{
+    const auto z = std::polar(1.,-2*pi*hz/rate);
+    return std::abs((b0+b1*z+b2*z*z)/(1.+a1*z+a2*z*z));
+}
+float ReverbEngine::tameScale (const Analysis& a, float amount)
+{
+    float total = 0;
+    for (int i = 0; i < std::clamp(a.count,0,maxBands); ++i) total += std::clamp(-a.bands[size_t(i)].gainDb,0.f,tameLimitDb)*amount;
+    // Sharing a six-dB budget guarantees the entire attenuation cascade, even
+    // overlapping bands, can never exceed six dB at any frequency.
+    return amount*(total > tameLimitDb ? tameLimitDb/total : 1.f);
+}
+float ReverbEngine::responseDb (const Settings& s, const Analysis& a, double hz, double rate)
+{
+    double magnitude = 1; Filter filter;
+    if (s.automatic)
+        for (int i = 0; i < std::clamp(a.count,0,maxBands); ++i)
+        { filter.configure(a.bands[size_t(i)],rate,tameScale(a,s.tame)); magnitude *= filter.magnitude(hz,rate); }
+    filter.shelf(false,s.lowShelfHz,s.lowShelfDb,rate); magnitude *= filter.magnitude(hz,rate);
+    filter.shelf(true,s.highShelfHz,s.highShelfDb,rate); magnitude *= filter.magnitude(hz,rate);
+    return float(20*std::log10(std::max(1e-12,magnitude))-std::max(0.f,s.lowShelfDb)-std::max(0.f,s.highShelfDb));
 }
 float ReverbEngine::Filter::process (float x) noexcept
 {
     const auto y = b0*x+z1; z1 = b1*x-a1*y+z2; z2 = b2*x-a2*y; return float(y);
 }
 float ReverbEngine::Bank::process (float x, size_t line) noexcept
-{ for (int i = 0; i < count; ++i) x = filters[line][size_t(i)].process(x); return x; }
+{
+    for (int i = 0; i < count; ++i) x = filters[line][size_t(i)].process(x);
+    for (int i = 0; i < shelfCount; ++i) x = shelves[line][size_t(i)].process(x);
+    return x*shelfNormalization;
+}
 float ReverbEngine::Line::phaseProcess (float x) noexcept
 {
     const auto state = phaseMemory[phasePosition];
@@ -313,7 +353,7 @@ float ReverbEngine::Line::phaseProcess (float x) noexcept
 }
 void ReverbEngine::BandPhase::target (const Band& band, double rate, double depth, double direction)
 {
-    const auto amount = std::clamp(depth*double(-band.gainDb)/18,0.,1.);
+    const auto amount = std::clamp(depth*double(-band.gainDb)/tameLimitDb,0.,1.);
     double next1 = 0, next2 = 0; // a two-sample all-pass baseline
     if (band.frequency > 0 && amount >= 1e-6)
     {
@@ -399,6 +439,7 @@ void ReverbEngine::prepare (double rate, bool worker)
 {
     sampleRate = std::isfinite(rate) && rate >= 8000 ? rate : 48000;
     analysis.prepare(sampleRate,worker); latest = {}; banks = {}; activeBank = 0; pendingBank = 1;
+    shimmer.prepare(sampleRate); shimmerMix.reset(sampleRate,transitionSeconds); appliedShelves = {-1,-100,-1,-100};
     trackedPhaseBands = {}; phaseRevision = 0; previousPhase = -1; phaseActive = false;
     warm = 0; bankFade = 1; bankStep = float(1/(sampleRate*transitionSeconds)); appliedRevision = 0; previousTame = -1; appliedAuto = false; first = true;
     for (size_t i = 0; i < lines.size(); ++i)
@@ -438,7 +479,7 @@ void ReverbEngine::update (const Settings& s)
     // Width is a mid/side rotation whose normalization keeps maximum singular
     // gain <=1; 200% cannot make the internal feedback loop hotter.
     set(width,std::clamp(s.width,0.f,2.f)); set(diffusion,std::clamp(s.diffusion,0.f,1.f)); set(phaseMix,std::clamp(s.phase,0.f,1.f));
-    set(scatterMix,s.scatter);
+    set(scatterMix,s.scatter); set(shimmerMix,s.shimmer);
     updatePhaseBands(active,s.phase);
     for (size_t i = 0; i < lines.size(); ++i)
     {
@@ -463,16 +504,29 @@ void ReverbEngine::update (const Settings& s)
         const auto samples = std::clamp(s.predelayMs,0.f,200.f)*.001f*float(sampleRate);
         if (first) predelayTap[ch].prepare(sampleRate,samples); else predelayTap[ch].target(samples);
     }
-    if (bankFade >= 1 && warm == 0 && (latest.revision != appliedRevision || active != appliedAuto || std::abs(s.tame-previousTame) > .005f))
+    const std::array<float,4> shelfSettings {s.lowShelfHz,s.lowShelfDb,s.highShelfHz,s.highShelfDb};
+    if (bankFade >= 1 && warm == 0 && (shelfSettings != appliedShelves || latest.revision != appliedRevision || active != appliedAuto || std::abs(s.tame-previousTame) > .005f))
     {
         pendingBank = 1-activeBank; auto& bank = banks[size_t(pendingBank)]; bank = {};
         bank.count = active && s.tame > 0 ? latest.count : 0;
+        const auto amount = tameScale(latest,s.tame);
         float reduction = 0;
         for (int k = 0; k < bank.count; ++k)
         {
-            for (size_t line = 0; line < 8; ++line) bank.filters[line][size_t(k)].configure(latest.bands[size_t(k)],sampleRate,s.tame);
-            reduction = std::max(reduction,-latest.bands[size_t(k)].gainDb*s.tame);
+            for (size_t line = 0; line < 8; ++line) bank.filters[line][size_t(k)].configure(latest.bands[size_t(k)],sampleRate,amount);
+            reduction = std::max(reduction,std::clamp(-latest.bands[size_t(k)].gainDb,0.f,tameLimitDb)*amount);
         }
+        for (int shelf = 0; shelf < 2; ++shelf)
+        {
+            const auto gain = shelf == 0 ? s.lowShelfDb : s.highShelfDb;
+            if (std::abs(gain) < .001f) continue;
+            for (auto& line : bank.shelves) line[size_t(bank.shelfCount)].shelf(shelf != 0,shelf == 0 ? s.lowShelfHz : s.highShelfHz,gain,sampleRate);
+            ++bank.shelfCount;
+        }
+        // A shelf boost is relative coloration: reserve its worst-case gain
+        // inside this feedback bank so no new loop gain exceeds unity.
+        bank.shelfNormalization = juce::Decibels::decibelsToGain(-std::max(0.f,s.lowShelfDb)-std::max(0.f,s.highShelfDb));
+        appliedShelves = shelfSettings;
         displayedReduction.store(reduction); warm = juce::roundToInt(sampleRate*.02); bankFade = 0;
         appliedRevision = latest.revision; appliedAuto = active; previousTame = s.tame;
     }
@@ -487,11 +541,16 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
     for (auto pair : {std::pair<float*,float>{&safeSettings.timeMs,defaults.timeMs}, {&safeSettings.decaySeconds,defaults.decaySeconds},
                       {&safeSettings.predelayMs,defaults.predelayMs}, {&safeSettings.diffusion,defaults.diffusion}, {&safeSettings.width,defaults.width},
                       {&safeSettings.tap,defaults.tap}, {&safeSettings.phase,defaults.phase}, {&safeSettings.tame,defaults.tame},
-                      {&safeSettings.mix,defaults.mix}, {&safeSettings.outputDb,defaults.outputDb}, {&safeSettings.scatter,defaults.scatter}})
+                      {&safeSettings.mix,defaults.mix}, {&safeSettings.outputDb,defaults.outputDb}, {&safeSettings.scatter,defaults.scatter},
+                      {&safeSettings.lowShelfHz,defaults.lowShelfHz}, {&safeSettings.lowShelfDb,defaults.lowShelfDb},
+                      {&safeSettings.highShelfHz,defaults.highShelfHz}, {&safeSettings.highShelfDb,defaults.highShelfDb}, {&safeSettings.shimmer,defaults.shimmer}})
         if (!std::isfinite(*pair.first)) *pair.first = pair.second;
     safeSettings.scatter = std::clamp(safeSettings.scatter,0.f,1.f);
     safeSettings.phase = std::clamp(safeSettings.phase,0.f,1.f);
     safeSettings.tame = std::clamp(safeSettings.tame,0.f,1.f);
+    safeSettings.shimmer = std::clamp(safeSettings.shimmer,0.f,1.f);
+    safeSettings.lowShelfHz = std::clamp(safeSettings.lowShelfHz,40.f,2000.f); safeSettings.lowShelfDb = std::clamp(safeSettings.lowShelfDb,-12.f,6.f);
+    safeSettings.highShelfHz = std::clamp(safeSettings.highShelfHz,2000.f,16000.f); safeSettings.highShelfDb = std::clamp(safeSettings.highShelfDb,-12.f,6.f);
     const bool initial = first; update(safeSettings);
     const auto bypassed = safeSettings.bypass || hostBypass;
     if (initial) bypass.setCurrentAndTargetValue(bypassed ? 1.f : 0.f); else bypass.setTargetValue(bypassed ? 1.f : 0.f);
@@ -504,6 +563,9 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
         const auto inputLeft = predelayTap[0].read(predelay[0],predelayPosition);
         const auto inputRight = predelayTap[1].read(predelay[1],predelayPosition);
         predelayPosition = (predelayPosition+1)%predelay[0].size();
+        const auto shimmerAmount = shimmerMix.getNextValue();
+        const auto shifted = shimmer.process(inputLeft,inputRight,shimmerAmount > 1e-6f || shimmerMix.getTargetValue() > 1e-6f);
+        const auto sourceLeft = inputLeft+shimmerAmount*shifted[0], sourceRight = inputRight+shimmerAmount*shifted[1];
         std::array<float,8> raw {}, nodes {}, scattered {};
         float wetLeft = 0, wetRight = 0, probeLeft = 0, probeRight = 0;
         const auto scatterAmount = scatterMix.getNextValue();
@@ -570,14 +632,14 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
             // The source feed is independent of automatic feedback tap/gain
             // changes; only recirculated audio receives EQ and phase processing.
             const auto injection = injectionGain[line].getNextValue()
-                *(inputLeft+((line&1u) != 0 ? -inputRight : inputRight));
+                *(sourceLeft+((line&1u) != 0 ? -sourceRight : sourceRight));
             auto value = gain*feedback+injection;
             // Last-resort smooth bounded feedback write, idle at normal levels.
             if (std::abs(value) > 2) value = std::copysign(2+std::tanh(std::abs(value)-2),value);
             auto& memory = lines[line]; memory.delay[memory.position] = std::isfinite(value) ? value : 0;
             memory.position = (memory.position+1)%memory.delay.size();
         }
-        analysis.push(inputLeft,inputRight,probeLeft,probeRight);
+        analysis.push(sourceLeft,sourceRight,probeLeft,probeRight);
         const auto stereoWidth = width.getNextValue();
         const auto normalization = 1/std::max(1.f,stereoWidth);
         const auto mid = .5f*(wetLeft+wetRight)*normalization, side = .5f*(wetLeft-wetRight)*stereoWidth*normalization;

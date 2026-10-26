@@ -26,6 +26,30 @@ def main():
     source = args.results
     destination = Path(__file__).resolve().parent/"Reports" if args.publish else source/"report"
     destination.mkdir(parents=True, exist_ok=True)
+    feedback_eq = load(source,"feedback-eq.csv")
+    fig,axes = plt.subplots(2,1,figsize=(10,6),constrained_layout=True)
+    for name,label in [("previous_width_db","Previous bandwidth, same 6 dB depth"),("narrow_db","New half-width tamer"),("three_band_db","Three overlapping bands sharing 6 dB")]:
+        axes[0].plot(feedback_eq["frequency_hz"],feedback_eq[name],label=label)
+    axes[0].set(xlabel="Frequency (Hz)",ylabel="Gain (dB)",xlim=(800,1250),ylim=(-6.5,.3)); axes[0].legend(fontsize=8)
+    for name,label in [("low_shelf_db","200 Hz low shelf, −9 dB"),("high_shelf_db","8 kHz high shelf, −9 dB")]:
+        axes[1].semilogx(feedback_eq["frequency_hz"],feedback_eq[name],label=label)
+    axes[1].set(xlabel="Frequency (Hz)",ylabel="Gain (dB)",ylim=(-10,.3)); axes[1].legend(fontsize=8)
+    for ax in axes: ax.grid(alpha=.25)
+    fig.savefig(destination/"feedback-eq.png",dpi=160); plt.close(fig)
+    shimmer = load(source,"shimmer.csv"); shimmer_tail = load(source,"shimmer-reverb.csv")
+    fig,axes = plt.subplots(3,1,figsize=(10,9),constrained_layout=True)
+    measured = shimmer[shimmer["rate"] == 48000]
+    for name,label in [("left_power","Left: 440 Hz → 880 Hz"),("right_power","Right: 660 Hz → 1,320 Hz")]:
+        axes[0].plot(measured["frequency_hz"],10*np.log10(np.maximum(measured[name],1e-15)),label=label)
+    axes[0].set(xlabel="Frequency (Hz)",ylabel="DFT component power (dBFS)",xlim=(200,2000),ylim=(-120,-10)); axes[0].legend(fontsize=8)
+    axes[1].plot(measured["frequency_hz"],10*np.log10(np.maximum(measured["alias_power"],1e-15)),color="green",label="14.4 kHz input → octave above Nyquist")
+    axes[1].axvline(19200,ls="--",color="gray",label="Unfiltered foldback: 19.2 kHz")
+    axes[1].set(xlabel="Frequency (Hz)",ylabel="DFT component power (dBFS)",ylim=(-160,-40)); axes[1].legend(fontsize=8)
+    for name,label in [("off_rms","Shimmer Off"),("shimmer_rms","Shimmer 75%")]:
+        axes[2].plot(shimmer_tail["time_s"],20*np.log10(np.maximum(shimmer_tail[name],1e-12)),label=label)
+    axes[2].set(xlabel="Time (s)",ylabel="Full-wet RMS (dBFS)"); axes[2].legend(fontsize=8)
+    for ax in axes: ax.grid(alpha=.25)
+    fig.savefig(destination/"shimmer.png",dpi=160); plt.close(fig)
     phase = load(source,"multiband-phase.csv")
     fig,axes = plt.subplots(3,1,figsize=(10,8),constrained_layout=True,sharex=True)
     selected = phase[(phase["rate"] == 48000)&(phase["line"] == 0)]
@@ -136,13 +160,13 @@ Three-rate spectral tests (44.1/48/96 kHz) use a 220/329.7/997.3 Hz chord with a
 
 Strong source peaks use a median neighborhood to avoid loud neighboring notes masking a quiet partial. Their absolute guard is now only 4% of (Decay + 1.25 s), clamped to 250–650 ms; weaker peaks use 200 ms. Afterwards, soft source identity prevents cuts unless the relative decay comparison supplies evidence. Filter-band overlap is vetoed as well as exact-bin matches while the guard is active. The report's protection trace shows selected targets, not output gain. Its stationary tail supplies no relative-decay evidence, so remembered notes stay protected even after the short guard expires.
 
-For routing, a test-only friend preloads actual feedback filters at 1,100/3,300/7,200 Hz (−9/−12/−18 dB) and forces a phase/automatic-tap target before rendering an impulse. The ordinary reference has no correction. At Time 80 ms, Scatter 100%, Pre-delay 0 and Width 100%, the first arrivals before 65 ms must agree within 2e−7 at all three sample rates; later returns must differ. This verifies that the correction is active **inside the feedback return**, rather than proving equality with an accidentally bypassed processor. Separate wet and feedback read heads, plus independent source injection gain, prevent automatic tap/gain changes from altering the first arrivals. Recirculated audio naturally carries the corrections on subsequent repeats; there is no EQ or phase insert on the wet output.
+For routing, a test-only friend preloads actual feedback filters at 1,100/3,300/7,200 Hz (−2/−2/−2 dB) and requests low/high shelf gains of −9/+3 dB, then forces a phase/automatic-tap target before rendering an impulse. The ordinary reference has no correction. At Time 80 ms, Scatter 100%, Pre-delay 0 and Width 100%, the first arrivals before 65 ms must agree within 2e−7 at all three sample rates; later returns must differ. This verifies that the correction is active **inside the feedback return**, rather than proving equality with an accidentally bypassed processor. Separate wet and feedback read heads, plus independent source injection gain, prevent automatic tap/gain changes from altering the first arrivals. Recirculated audio naturally carries the corrections on subsequent repeats; there is no EQ or phase insert on the wet output.
 
 ## Relative frequency decay and stronger taming
 
 ![Relative decay and negative controls](relative-decay.png)
 
-At 44.1/48/96 kHz, seven bin-centered tones near 187.5/375/750/937.5/1,500/3,000/6,000 Hz are first observed in the stereo input. The 187.5 Hz tone starts at amplitude 0.3; all others start at 0.03, so the loudest note is not the intended target. Soft source memory is set to 30 s, but its absolute guard is only 650 ms. After input stops, the target near 937.5 Hz decays at −2 dB/s while the others decay at −12 dB/s. A second positive case uses −0.2 versus −1.5 dB/s to represent a long reverb tail. Both must acquire the target and request more than 9 dB attenuation, well before the old 30 s protection would expire. Other originally observed notes must remain untargeted. The requested cap is now 18 dB before Tame scaling.
+At 44.1/48/96 kHz, seven bin-centered tones near 187.5/375/750/937.5/1,500/3,000/6,000 Hz are first observed in the stereo input. The 187.5 Hz tone starts at amplitude 0.3; all others start at 0.03, so the loudest note is not the intended target. Soft source memory is set to 30 s, but its absolute guard is only 650 ms. After input stops, the target near 937.5 Hz decays at −2 dB/s while the others decay at −12 dB/s. A second positive case uses −0.2 versus −1.5 dB/s to represent a long reverb tail. Both must acquire the target and request more than 3 dB attenuation within the 6 dB limit, well before the old 30 s protection would expire. Other originally observed notes must remain untargeted. The requested per-band cap is now 6 dB before Tame scaling; the engine also shares a 6 dB total budget across simultaneously active cuts.
 
 Negative controls use equal −12 dB/s decay, continuously present input notes, a rising +8 dB/s target, a single tone without reference bands, and a faster −18 dB/s target. None may acquire the target. These are direct production-analyser tests with controlled spectral envelopes, not full reverb renders or acoustic decay estimates. Each regression uses up to eight frames and actual sample timestamps; the reference is the median of at least three populated logarithmic frequency bands excluding the target and its immediate neighboring bands. The input guard and persistence still delay acquisition. All cases are written to `relative-decay.csv.gz`.
 
@@ -160,11 +184,29 @@ Repeat windows are the first 12 ms after each multiple of 80 ms. Their energy fr
 
 All remaining measurements below use Scatter 100%. Intermediate settings can introduce additional decay loss; the morph is not a claim of constant RMS or identical RT60 at every position. The input-aligned and reverb output vectors rotate smoothly, while feedback taps retain their queued crossfades.
 
+## Narrower tamer, six-decibel cap and feedback shelves
+
+![Narrow tamer and shelves](feedback-eq.png)
+
+A single 1 kHz tamer band at maximum strength must measure −6 dB at its center and approximately half the previous half-depth bandwidth. The comparison holds depth at −6 dB in both conditions to isolate width, rather than comparing the old 18 dB depth. The EQ uses half the detector's width and allows Q 28; the source-protection and detection widths are unchanged. Three deliberately overlapping test bands at 1,000/1,050/1,100 Hz must never exceed 6 dB of combined attenuation across 4,096 sampled frequencies. The shared cut budget provides the corresponding static bound even between sampled points.
+
+Direct production shelf filters verify bass/treble selectivity. Exhaustive corner tests span 8/44.1/48/96/192 kHz, both frequency endpoints, gains −12/0/+6 dB, and 128 spectral points for every combination. The sum of positive gains is reserved as feedback headroom; every tested shelf cascade must stay at or below unity. A rendered impulse through the actual feedback bank (tamer plus both shelves and compensation) must match the display curve at 100/1,000/10,000 Hz. The source-routing test above enables shelves too and still requires unchanged first wet arrivals. Native editor tests exercise both drag axes, host parameter updates, double-click reset and scaled hit testing. The pale curve shows target settings; audio follows through the 250 ms bank transition.
+
+## Oversampled octave Shimmer
+
+![Octave pitch and full reverb](shimmer.png)
+
+At 44.1/48/96 kHz, the actual stereo Shimmer receives 440 Hz left and 660 Hz right, amplitude 0.2, for one second. The wet outputs must contain 880/1,320 Hz, reject their original pitches by at least 20 dB in component power, and remain finite. An internal sample counter verifies two pitch-processing samples per host sample. The plot uses direct DFT measurements over 0.25–0.85 s in 20 Hz steps, rather than an FFT-bin-center approximation. At 44.1/48 kHz, a second input at 0.3 × sample rate shifts above the host Nyquist; its downsampled output power must remain at least 20 dB below the audible test output, demonstrating rejection rather than alias folding. The 48 kHz example is 14.4 kHz → 28.8 kHz. These are limited synthetic cases, not a complete pitch-shifter quality or alias bound over arbitrary material.
+
+The phase vocoder uses a 2,048-point STFT with 512-sample hops at the doubled rate and Hann overlap-add, between FIR up/down converters. Further checks confirm that Off suspends expensive processing, reenabling cannot replay stale audio, enabled Shimmer stays hot during host bypass, and the generated octave enters the source-protection spectrum without being misidentified as resonance. Zero Mix must preserve immediate dry samples and report zero host latency even with Shimmer and shelf boost enabled. The added octave layer has its own intentional analysis/conversion timing.
+
+The lower graph and [four-second Shimmer reverb example](shimmer-reverb.wav) use a one-second mono 220/330/440 Hz chord at amplitudes 0.08/0.06/0.04, followed by a tail. The production engine uses default Time 90 ms, Decay 10 s, Pre-delay 20 ms, Scatter 100%, Diffusion 85%, Width 125%, Phase 60%, Auto On and Tame 75%; Mix is 100%, Output 0 dB, and both shelves are −3 dB at their default 200/8,000 Hz frequencies. Shimmer Off and 75% receive identical input, and their outputs must differ measurably. This layer is added to the incoming source, not repeatedly shifted on each feedback pass. The [isolated stereo octave example](shimmer-octave.wav) contains the direct pitch-shifter test output, without the reverb.
+
 ## Multiband phase correction, five-millisecond limit and longer fades
 
 ![Three-band phase response and delay budget](multiband-phase.png)
 
-The production analyser must detect simultaneous anti-phase feedback tones at 300/1,400/6,500 Hz at 44.1/48/96 kHz, and all three detections must engage their automatic phase sections. Controlled targets then use those frequencies at strengths 1, 2/3 and 1/2 (requested cuts 18/12/9 dB, independent of Tame). Each section must change phase beyond its inactive two-sample baseline. An impulse rendered through the three actual normalized lattice sections must agree with the analytical all-pass response and preserve energy; the static cascade must remain within 1e−8 of unity magnitude across the sampled spectrum. The top graph converts unwrapped section phase to equivalent delay; it isolates automatic sections, excluding the manual diffuser and the rest of the reverb.
+The production analyser must detect simultaneous anti-phase feedback tones at 300/1,400/6,500 Hz at 44.1/48/96 kHz, and all three detections must engage their automatic phase sections. Controlled targets then use those frequencies at strengths 1, 2/3 and 1/2 (requested cuts 6/4/3 dB, independent of Tame). Each section must change phase beyond its inactive two-sample baseline. An impulse rendered through the three actual normalized lattice sections must agree with the analytical all-pass response and preserve energy; the static cascade must remain within 1e−8 of unity magnitude across the sampled spectrum. The top graph converts unwrapped section phase to equivalent delay; it isolates automatic sections, excluding the manual diffuser and the rest of the reverb.
 
 The lower graph sums the measured three-section group delay with the manual diffuser's conservative worst-case bound and the full 1 ms automatic tap allowance. This must remain below 5 ms. Separate checks constrain pole radii throughout 250 ms coefficient ramps, verify the fade endpoint, and ensure moving, populated lattice states do not generate energy. Both alternating-line target patterns are checked. Input tones stop after 12,000 samples in the modulation fixture, while targets continue changing every 137 samples for 48,000 samples total. This is a passivity test, not a listening test.
 
@@ -226,7 +268,7 @@ At 8/44.1/48/96/192 kHz, two seconds of mono noise feed a full-wet 40 s-decay en
 
 A separate read-head test changes the requested tap every 31 samples while a 250 ms fade is in progress. It verifies exact DC unity and no abrupt discontinuity on a stationary periodic tone. New requests wait for the current fade endpoint. Spectral tests verify persistence, detection of anti-phase feedback without mid cancellation, protection of a matching input partial, no cuts on seeded broadband noise, and release of held bands during silence. The displayed release curve follows a previously detected tone; it illustrates the approximately 1.2 s release constant, not onset latency.
 
-Host checks cover all fifteen parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover all eleven knob bindings, the Sync button, note-label display and free/synced Time rebinding, title information, one-sentence hints and 50%–120% bounds.
+Host checks cover all twenty parameters and state recall, mono/stereo layouts, zero dry latency, exact dry output at zero Mix and initial host bypass, static DSP invariance at 1/127/512-sample blocks, FFT submission Off/On, analysis staying hot during bypass, and containment of nonfinite input. Native editor checks cover all twelve knob bindings, the two shelf handles (XY drag and double-click reset), the Sync button, note-label display and free/synced Time rebinding, title information, one-sentence hints and 50%–120% bounds.
 
 ## Reproduce
 

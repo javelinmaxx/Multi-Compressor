@@ -3,10 +3,10 @@
 using namespace stageStyle;
 namespace
 {
-constexpr std::array<const char*,11> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","mix","output"};
-constexpr std::array<const char*,11> names {"TIME","DECAY","PRE-DELAY","SCATTER","DIFFUSION","WIDTH","TAP SHIFT","PHASE","TAME","DRY / WET","OUTPUT"};
-constexpr std::array<const char*,11> units {" ms"," s"," ms"," %"," %"," %"," %"," %"," %"," %"," dB"};
-constexpr std::array<const char*,11> hints {
+constexpr std::array<const char*,12> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","shimmer","mix","output"};
+constexpr std::array<const char*,12> names {"TIME","DECAY","PRE-DELAY","SCATTER","DIFFUSION","WIDTH","TAP SHIFT","PHASE","TAME","SHIMMER","DRY / WET","OUTPUT"};
+constexpr std::array<const char*,12> units {" ms"," s"," ms"," %"," %"," %"," %"," %"," %"," %"," %"," dB"};
+constexpr std::array<const char*,12> hints {
     "Sets the repeat time or room size in milliseconds, or selects a musical note length when Sync is on.",
     "Sets the nominal time for the feedback tail to fall by sixty decibels before damping and resonance control.",
     "Delays the signal entering the reverb while leaving the dry signal immediate.",
@@ -15,7 +15,8 @@ constexpr std::array<const char*,11> hints {
     "Sets the stereo spread of the wet signal with a normalized mid and side balance.",
     "Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies.",
     "Sets feedback phase dispersion and correction across three resonance bands within a five-millisecond delay budget.",
-    "Sets feedback attenuation for persistent peaks and unusually slow frequency decays while protecting incoming notes.",
+    "Sets narrow feedback resonance attenuation within a shared six-decibel limit while protecting incoming notes.",
+    "Adds an octave-up input layer to the feedback-loop injection using a twice-oversampled pitch shifter; Saves CPU when Off.",
     "Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent.",
     "Adjusts the final output level after the dry and wet signals are mixed." };
 }
@@ -51,6 +52,26 @@ LanReverbEditor::LanReverbEditor (LanReverbProcessor& p) : AudioProcessorEditor(
         attachments[i] = std::make_unique<State::SliderAttachment>(p.parameters,ids[i],slider);
         editorTooltips::setHint(slider,labels[i],hints[i]);
     }
+    for (int i = 0; i < 2; ++i)
+    {
+        auto& handle = shelfHandles[size_t(i)]; addAndMakeVisible(handle);
+        const auto frequencyId = i == 0 ? "lowShelfHz" : "highShelfHz";
+        const auto gainId = i == 0 ? "lowShelfDb" : "highShelfDb";
+        handle.begin = [this,frequencyId,gainId]
+        { processor.parameters.getParameter(frequencyId)->beginChangeGesture(); processor.parameters.getParameter(gainId)->beginChangeGesture(); };
+        handle.end = [this,frequencyId,gainId]
+        { processor.parameters.getParameter(frequencyId)->endChangeGesture(); processor.parameters.getParameter(gainId)->endChangeGesture(); };
+        handle.drag = [this,i] (const juce::MouseEvent& e)
+        { moveShelf(i,e.getEventRelativeTo(this).position.transformedBy(editorScaling::transform(*this,designWidth,designHeight).inverted())); };
+        handle.reset = [this,frequencyId,gainId]
+        {
+            for (const auto* id : {frequencyId,gainId})
+            { auto* parameter = processor.parameters.getParameter(id); parameter->beginChangeGesture(); parameter->setValueNotifyingHost(parameter->getDefaultValue()); parameter->endChangeGesture(); }
+            updateShelves(); repaint();
+        };
+    }
+    sliders[9].textFromValueFunction = [] (double value) { return value < .05 ? juce::String("OFF") : juce::String(value,1)+" %"; };
+    sliders[9].setTextValueSuffix("");
     updateTimeMode();
     editorScaling::enable(*this,designWidth,designHeight); startTimerHz(20);
 }
@@ -64,25 +85,51 @@ void LanReverbEditor::updateTimeMode()
     sliders[0].setTextValueSuffix(enabled ? "" : " ms");
     attachments[0] = std::make_unique<State::SliderAttachment>(processor.parameters,enabled ? "note" : "time",sliders[0]);
 }
+void LanReverbEditor::moveShelf (int which, juce::Point<float> position)
+{
+    const auto rate = processor.getSampleRate() > 0 ? processor.getSampleRate() : 48000.;
+    const auto ceiling = std::min(18000.,rate*.43);
+    const auto frequency = 30*std::pow(ceiling/30,std::clamp((position.x-42)/656.f,0.f,1.f));
+    const auto gain = std::clamp((160-position.y)/3.5f,-12.f,6.f);
+    auto* frequencyParameter = processor.parameters.getParameter(which == 0 ? "lowShelfHz" : "highShelfHz");
+    auto* gainParameter = processor.parameters.getParameter(which == 0 ? "lowShelfDb" : "highShelfDb");
+    frequencyParameter->setValueNotifyingHost(frequencyParameter->convertTo0to1(float(frequency)));
+    gainParameter->setValueNotifyingHost(gainParameter->convertTo0to1(gain));
+    updateShelves(); repaint();
+}
+void LanReverbEditor::updateShelves()
+{
+    const auto s = processor.settings(); const auto rate = processor.getSampleRate() > 0 ? processor.getSampleRate() : 48000.;
+    const auto ceiling = std::min(18000.,rate*.43);
+    for (int i = 0; i < 2; ++i)
+    {
+        const auto hz = std::clamp(double(i == 0 ? s.lowShelfHz : s.highShelfHz),30.,ceiling);
+        const auto gain = i == 0 ? s.lowShelfDb : s.highShelfDb;
+        const auto x = 42+656*std::log(hz/30)/std::log(ceiling/30); const auto y = 160-gain*3.5f;
+        shelfHandles[size_t(i)].setBounds(juce::roundToInt(x)-8,juce::roundToInt(y)-8,16,16);
+    }
+}
 void LanReverbEditor::resized()
 {
     titleHint.setBounds(24,30,420,36); automatic.setBounds(526,36,78,26); bypass.setBounds(620,36,96,26);
     for (size_t i = 0; i < sliders.size(); ++i)
     {
         const auto top = i < 6;
-        const auto x = top ? 45+int(i)*110 : 42+int(i-6)*134;
-        const auto y = top ? 310 : 422, controlWidth = top ? 100 : 120;
+        const auto x = 45+int(top ? i : i-6)*110;
+        const auto y = top ? 310 : 422, controlWidth = 100;
         labels[i].setBounds(x,y,controlWidth,16); sliders[i].setBounds(x,y+20,controlWidth,76);
     }
+    updateShelves();
     labels[0].setBounds(45,310,46,16); sync.setBounds(98,307,47,20);
     const auto transform = editorScaling::transform(*this,designWidth,designHeight);
     titleHint.setTransform(transform); automatic.setTransform(transform); bypass.setTransform(transform); sync.setTransform(transform);
     for (auto& slider : sliders) slider.setTransform(transform);
     for (auto& label : labels) label.setTransform(transform);
+    for (auto& handle : shelfHandles) handle.setTransform(transform);
 }
 void LanReverbEditor::timerCallback()
 {
-    updateTimeMode();
+    updateTimeMode(); updateShelves();
     if (!isShowing()) return;
     if (!processor.readAnalysis(analysis)) analysis = {};
     reduction = processor.reductionDb(); outputPeak = processor.peakLevel();
@@ -97,7 +144,7 @@ void LanReverbEditor::paint (juce::Graphics& g)
     drawPanel(g,{24,88,692,190}); drawPanel(g,{24,292,692,232});
     g.setColour(foreground); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("FEEDBACK FIELD",40,100,230,20,juce::Justification::centredLeft);
-    const auto active = processor.settings().automatic;
+    const auto settings = processor.settings(); const auto active = settings.automatic;
     g.setColour(amber); g.setFont(juce::FontOptions(10.f));
     const auto status = active ? "TAMING "+juce::String(reduction,1)+" dB" : juce::String("AUTO OFF");
     g.drawText(status,478,102,150,16,juce::Justification::centredRight);
@@ -135,6 +182,24 @@ void LanReverbEditor::paint (juce::Graphics& g)
         }
     }
     else { g.setColour(secondary); g.drawText(active ? "Listening to the feedback tail" : "Resonance analysis is off",plot,juce::Justification::centred); }
+    // The target curve uses the same coefficients and gain budget as the
+    // feedback banks; the live bank follows it through its 250 ms crossfade.
+    juce::Path eq;
+    for (int i = 0; i < 768; ++i)
+    {
+        const auto hz = 30*std::pow(ceiling/30,i/767.);
+        const auto db = lan::ReverbEngine::responseDb(settings,analysis,hz,rate);
+        const auto x = plot.getX()+plot.getWidth()*i/767.f;
+        const auto y = std::clamp(160-db*3.5f,plot.getY(),plot.getBottom());
+        if (i == 0) eq.startNewSubPath(x,y); else eq.lineTo(x,y);
+    }
+    g.setColour(foreground.withAlpha(.8f)); g.strokePath(eq,juce::PathStrokeType(1.2f));
+    g.setColour(secondary); g.setFont(juce::FontOptions(8.f));
+    g.drawText("TARGET EQ / 0 dB",48,149,110,10,juce::Justification::centredLeft);
+    const auto shelfText = [] (const char* name, float hz, float db)
+    { return juce::String(name)+" "+(hz >= 1000 ? juce::String(hz/1000,1)+"k" : juce::String(hz,0))+" Hz / "+juce::String(db,1)+" dB"; };
+    g.drawText(shelfText("LO",settings.lowShelfHz,settings.lowShelfDb),42,119,230,11,juce::Justification::centredLeft);
+    g.drawText(shelfText("HI",settings.highShelfHz,settings.highShelfDb),468,119,230,11,juce::Justification::centredRight);
     g.setColour(secondary); g.setFont(juce::FontOptions(9.f));
     g.drawText("INPUT / GOLD: FEEDBACK",40,258,230,16,juce::Justification::centredLeft);
     g.drawText("OUT "+juce::String(juce::Decibels::gainToDecibels(outputPeak,-100.f),1)+" dBFS",500,258,198,16,juce::Justification::centredRight);
