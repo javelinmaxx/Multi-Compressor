@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 import numpy as np
-from generate_audio_spectrograms import load, phase_pair, stft
+from generate_audio_spectrograms import kuo, zao, load, phase_pair, stft
 
 
 class SpectrogramCalibration(unittest.TestCase):
@@ -42,6 +42,20 @@ class SpectrogramCalibration(unittest.TestCase):
         np.testing.assert_allclose(powers[2]+powers[3],(powers[0]+powers[1])/2,rtol=1e-12)
         self.assertTrue(np.all(stft((left-left)/2,48000,1024,256)[3] == 0))
 
+    def test_reject_nonisolated_academic_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            settings = path/"audio-settings.csv"
+            settings.write_text("rate,velvet_width_pct\n48000,100\n48000,0\n")
+            with self.assertRaisesRegex(AssertionError,"Velvet off"):
+                kuo(path,path)
+            fields = ["clear","auto_compensate","transformer","bypass","capture_smart"]
+            for enabled in fields:
+                values = ",".join("1" if field == enabled else "0" for field in fields)
+                settings.write_text("rate,"+",".join(fields)+"\n48000,"+values+"\n48000,"+values+"\n")
+                with self.subTest(enabled=enabled), self.assertRaisesRegex(AssertionError,enabled+" off"):
+                    zao(path,path)
+
     def test_reject_invalid_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/"capture.csv"
@@ -51,6 +65,7 @@ class SpectrogramCalibration(unittest.TestCase):
             with self.assertRaises(ValueError): load(path)
             path.write_text("sample,rate,input\n0,48000,0\n1,44100,0\n")
             with self.assertRaises(ValueError): load(path)
+            self.assertEqual(len(load(path, constant_rate=False)),2)
         with self.assertRaises(ValueError): stft(np.zeros(5),48000)
 
 

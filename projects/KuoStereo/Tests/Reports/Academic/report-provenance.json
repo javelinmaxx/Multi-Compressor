@@ -1,10 +1,11 @@
 {
-  "generator_sha256": "796fdc843b7233f18dc4b692f8cc8a6b73f865a5bad4657f003940d21fbd9534",
-  "audio_generator_sha256": "f231f02f73de88df2cd3c5a9b361c2dc453cceb56016fa276df48a5b21132d50",
+  "generator_sha256": "a5aedeaec63b52e4af94399b9538e14c164d0af542311eaf7b9b68ea37125479",
+  "audio_generator_sha256": "9330b431598b199fe437108e1379cc4ee1d80738249dad41b61744d48a4c79e0",
   "input_sha256": {
     "audio-neutral.csv": "bb767fd976c6aa0606baf3faa8b371c27f4f916dacd6208625965a9603c0eb23",
-    "audio-wide.csv": "d4d01abab0801ce69b672ea34a1dfeb8844c5c1d86a34e9eb61e01a427d9d132",
-    "haas.csv": "256dbc7f09b80ff98fbe521595eca8930e2b2eed60fdf2a48bc05840950849ca",
+    "audio-settings.csv": "9a3886fa077ebfacdd3dfcb25332739dcb9c7a98bdff6627b4d4f32a14768025",
+    "audio-wide.csv": "c30529bc2209e2e644d3259ef62bee1ae6a1f1bf428fca4dd2207bdce080c633",
+    "haas.csv": "4fa63043e4648c306236320cc3f0d402c9cd9539f6027a2363c968db795d094a",
     "manifest.csv": "0a04d219223e241d4bc747dcd8f434d72d89eae12675a8569f790e2d25b72210"
   },
   "matplotlib_version": "3.10.8",

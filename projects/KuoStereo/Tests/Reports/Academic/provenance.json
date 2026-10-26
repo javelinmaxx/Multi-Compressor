@@ -1,5 +1,5 @@
 {
-  "source_revision": "62d4db7de975605cfd5f85b33e9904c8a7810c1c",
+  "source_revision": "2c202cfb8e0ed1b16f03b8c1ea1d81306c310bd5",
   "source_dirty": true,
   "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
   "python": "3.12.14",
@@ -22,8 +22,8 @@
     "projects/AcademicTestUtils.h": "94ea4d51a82359229e6281f17db90f7eb61476630d99e53f084f9ab0c53c6566",
     "projects/AcademicTests.cmake": "aeda21354622398c6af28ccf115941fce8b66e74ebc66a4f5a47d722c5700672",
     "projects/run_academic_tests.py": "ff855a8218dd6e1dbd3daba940230161c34bbdc06e1ae732c883c0c40c7f2f7b",
-    "projects/generate_academic_reports.py": "8de21e8dbae125b8b5d1623921abcf37b7d3c50136a8cf0ec2a8c7fc42de9d57",
-    "projects/generate_audio_spectrograms.py": "c689692cac8965eb9e46df15bd0656ea235492c56513cf7baf7bb1398b498674",
+    "projects/generate_academic_reports.py": "a5aedeaec63b52e4af94399b9538e14c164d0af542311eaf7b9b68ea37125479",
+    "projects/generate_audio_spectrograms.py": "8fc8a513973f6f172ee438066cd4ea4b89ca01318282bd6d2e83bbc7ed249b69",
     "projects/test_audio_spectrograms.py": "340225cc4671e8dc1a36e19cd9da9bda8d1b4a77a78cae3911f54b87ecad1369",
     "projects/KuoStereo/Measurements/SynthPad.h": "8213e2048aa964cb85ab98a93d7c4024d385be52272e455396f5b87fb2703ddf",
     "projects/KuoStereo/Source/PluginEditor.cpp": "4b8d1b8d624028f46816b23d8b5c009bb78b258fe83653775baeab709147ecbc",
@@ -31,7 +31,7 @@
     "projects/KuoStereo/Source/PluginProcessor.cpp": "5d57d5efb128365afbce4abb2345a3f5ed9e903356967658d5892663211022f8",
     "projects/KuoStereo/Source/PluginProcessor.h": "7813d1f93c19bec3d64c2d34d7a08a7f7bb61f8da7038c0027241469c8087dd9",
     "projects/KuoStereo/Source/VelvetStage.h": "2a5893beb56729019e783b75ede4c6c128d6179d02ea0f6ccea05d9825ddbcfe",
-    "projects/KuoStereo/Tests/AblationTests.cpp": "f096fd322994780b00911e24863f165b151b7b90000eea132b5f3891bf18b36b",
+    "projects/KuoStereo/Tests/AblationTests.cpp": "746207e612e5813aa8163eb0b9a03bbf248749b0839a1a6181c05b47f90eb6b7",
     "projects/YinyangCompressor/Source/CompressorDSP.h": "b62dc5b418a36ad5a2dfe95ac29394153f61c4e35571d7ea987b0e99e9154f34",
     "projects/YinyangCompressor/Source/GainReductionHistory.h": "4349edb4e5273e2d30c2e8b20a42a90f3904be080f69499d463f930335ace6ed",
     "projects/YinyangCompressor/Source/HighTilt.h": "10641c8d8b732fd63c9096eae60d9d1e758ee20af1648ecf57cdf4bcdc0045a8",
@@ -44,6 +44,6 @@
     "projects/YinyangCompressor/Source/TransformerCore.h": "f24f1e8a6151476e3e9483f1dc4a42765ef0da1ec842e7606425540df8b2b303",
     "projects/YinyangCompressor/Source/TransformerResponse.h": "b8ab069e598442b7c5146849f62bcfb0ba777ed28f2b962c87b3b38800ce23c8"
   },
-  "cmake_cache_sha256": "df9ce9352459c8b85b8d1c7c2adfa34472d1e1e8c98f3cb8b324e935d10b671e",
+  "cmake_cache_sha256": "9d06cee4c0c29c3086548ab59f72f71df351210064b34922f85f6fed7e804326",
   "build_config": "Release"
 }

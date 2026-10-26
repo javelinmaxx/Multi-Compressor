@@ -1,6 +1,6 @@
 {
-  "generator_sha256": "796fdc843b7233f18dc4b692f8cc8a6b73f865a5bad4657f003940d21fbd9534",
-  "audio_generator_sha256": "f231f02f73de88df2cd3c5a9b361c2dc453cceb56016fa276df48a5b21132d50",
+  "generator_sha256": "a5aedeaec63b52e4af94399b9538e14c164d0af542311eaf7b9b68ea37125479",
+  "audio_generator_sha256": "9330b431598b199fe437108e1379cc4ee1d80738249dad41b61744d48a4c79e0",
   "input_sha256": {
     "audio-attack_over_sustain-bypass.csv": "90a59b000467cc77729d84b4d7c3ae4248a6ad16b8bb3e6b422ca4099fa64cb7",
     "audio-attack_over_sustain-current.csv": "f9c6ed68de3852794287f10d4582bbb05cfab51506135adb0215732b19b2867d",

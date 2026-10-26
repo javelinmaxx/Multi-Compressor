@@ -136,7 +136,7 @@ With spectral-error weight fixed at 1, λ spans **0, 0.05, 0.10, 0.175, 0.35, 0.
 
 ## Limits
 
-The snapshot ablations above isolate target selection. Their score metrics do **not** render delay slew, the Dynamic transient envelope, Velvet, the 1.5 ms lookahead, or final mono fold-down. The separate audio experiment below renders fixed Haas and Velvet through the full path; adaptive delay slew remains outside that experiment. An exact zero delay can remain suitable for already-stereo input with enough side energy. Magnitude deviation is not waveform or phase preservation. `switching.csv` measures target changes; it does not call those changes perceptually useful. `search_us` is a single synchronous wall-clock observation including FFT work and research instrumentation, not an audio-thread CPU benchmark or a portable timing threshold. No loudness normalization is applied.
+The snapshot ablations above isolate target selection. Their score metrics do **not** render delay slew, the Dynamic transient envelope, Velvet, the 1.5 ms lookahead, or final mono fold-down. The separate audio experiment below renders fixed Haas with Velvet off through the full path; adaptive delay slew remains outside that experiment. An exact zero delay can remain suitable for already-stereo input with enough side energy. Magnitude deviation is not waveform or phase preservation. `switching.csv` measures target changes; it does not call those changes perceptually useful. `search_us` is a single synchronous wall-clock observation including FFT work and research instrumentation, not an audio-thread CPU benchmark or a portable timing threshold. No loudness normalization is applied.
 """
 
 

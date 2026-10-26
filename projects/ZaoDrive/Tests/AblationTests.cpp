@@ -48,6 +48,7 @@ int main (int argc, char** argv)
     {
         const std::filesystem::path directory = argc > 1 ? argv[1] : "academic-results";
         manifest (directory,"ZaoDrive");
+        auto audioSettings = csv(directory,"audio-settings.csv", "rate,model,corpus,clear,auto_compensate,transformer,bypass,input_db,output_db,mix,capture_smart");
         auto out = csv (directory,"smart.csv","rate,model,corpus,drive_db,variant,confidence,targets,weak_wet_targets,protected_targets,wet_rms_db,total_rms_db,estimated_cost_before,estimated_cost_after,measured_target_power_ratio");
         auto partials = csv (directory,"partials.csv","rate,model,corpus,variant,frequency_hz,wet_change_db,total_change_db");
         auto targets = csv (directory,"targets.csv","rate,model,corpus,variant,frequency_hz,bandwidth_hz,gain_db,order,wet_power_before,wet_power_after");
@@ -65,7 +66,11 @@ int main (int argc, char** argv)
                         if (corpus == 4) source[i] = noise (random);
                         else for (int bin : bins) source[i] += float (.25/bins.size()*std::sin (2*zao::pi*bin*i/source.size()));
                     zao::Settings settings; settings.model = model; settings.driveDb = 24; settings.outputDb = 0;
-                    settings.clear = settings.transformer = settings.smart = settings.autoCompensate = false; settings.toneHz = 16000;
+                    settings.clear = settings.transformer = settings.smart = settings.autoCompensate = settings.bypass = false;
+                    settings.inputDb = settings.outputDb = 0; settings.mix = 1; settings.toneHz = 16000;
+                    check(!settings.clear && !settings.autoCompensate && !settings.transformer && !settings.bypass && !settings.smart,
+                          "academic Zao capture disables all auxiliary processing switches");
+                    audioSettings << rate << ',' << model << ',' << corpus << ",0,0,0,0,0,0,1,0\n";
                     zao::DriveEngine engine; engine.prepare (rate,128,false);
                     captureIndex = 0; captured = {}; captured.sampleRate = rate; captured.settings = settings;
                     smartTap = tap;

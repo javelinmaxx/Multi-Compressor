@@ -75,3 +75,10 @@ ctest --test-dir build-kuo-stereo --output-on-failure
 
 The Linux and macOS build requirements are the same as the other plug-ins in
 the root [README](../../README.md).
+
+## Academic test settings
+
+Academic tests always keep **Velvet OFF (Width 0%)**. Both the neutral and
+12 ms Haas audio spectrogram renders disable Velvet; any measured side energy
+comes from Haas. The test verifies the actual output against the expected delay
+taps and records settings in `Tests/Reports/Academic/audio-settings.csv.gz`.

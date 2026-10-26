@@ -181,6 +181,15 @@ Xuan Phase, including machine-readable results and reproducible figures. See the
 [test review](projects/ACADEMIC_TEST_REVIEW.md) for implemented experiments,
 measured limitations and the remaining research requirements.
 
+### Academic test isolation settings
+
+Kuo academic tests always keep **Velvet OFF (Width 0%)**; the mid/side audio
+spectrogram tests isolate Haas widening. Zao academic tests always keep **Clear,
+Auto compensation, Transformer and Bypass OFF**, with Input/Output at 0 dB and
+Mix at 100%. Only Smart is switched on/off for its paired comparison. The test
+harnesses save these conditions in `audio-settings.csv` and validate them before
+generating reports.
+
 ## Build and install
 
 Use **CMake 3.22+**, a **C++17 compiler**, and the platform's JUCE dependencies.

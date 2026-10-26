@@ -85,7 +85,7 @@ and the final phase cap; its report preserves the unfavorable measurements.
 ## Sample-derived audio spectrogram tests
 
 The native ablation executables now export real audio samples at 48 kHz for
-Kuo's neutral and fixed-Haas/Velvet renders, Zao's paired Smart Off/On wet and
+Kuo's neutral and fixed-Haas renders with Velvet always off, Zao's paired Smart Off/On wet and
 total outputs, and Xuan's three transient fixtures before/after automatic phase
 processing. `generate_academic_reports.py` validates and publishes the resulting
 spectrograms alongside each existing report. Kuo shows **mid and side energy**;
@@ -106,3 +106,17 @@ energy conservation, and silence masking. Python figures/tests require NumPy
 and Matplotlib; native ablations still need neither. The usual two-command
 reproduction workflow above includes all three sets of figures. CSV sample
 captures and frequency weights are archived with deterministic gzip headers.
+
+### Required isolation settings
+
+All academic Kuo measurements must keep **Velvet OFF (Width = 0%)**, including
+neutral and widened audio spectrogram renders. Widening in those renders comes
+from Haas alone. The native test checks Width and verifies both output channels
+against the expected fixed-delay taps; report generation also checks the saved
+`audio-settings.csv`.
+
+All academic Zao measurements must keep **Clear, Auto compensation, Transformer
+and Bypass OFF**, Input/Output at 0 dB and Mix at 100%. Smart is the only switch
+varied for the Smart on/off comparison; circuit/analysis ablations remain as
+documented. The settings are explicit in the native harness and exported to
+`audio-settings.csv`, which report generation checks.

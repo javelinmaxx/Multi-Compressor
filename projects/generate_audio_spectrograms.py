@@ -6,13 +6,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def load(path):
+def load(path, *, constant_rate=True):
     data = np.genfromtxt(path, delimiter=",", names=True, dtype=float)
     if data.ndim != 1 or len(data) < 2 or not all(np.isfinite(data[n]).all() for n in data.dtype.names):
         raise ValueError(f"Invalid or nonfinite audio data: {path}")
     if "sample" in data.dtype.names and not np.array_equal(data["sample"], np.arange(len(data))):
         raise ValueError(f"Non-contiguous capture: {path}")
-    if "rate" in data.dtype.names and (data["rate"][0] <= 0 or not np.all(data["rate"] == data["rate"][0])):
+    if "rate" in data.dtype.names and (np.any(data["rate"] <= 0) or (constant_rate and not np.all(data["rate"] == data["rate"][0]))):
         raise ValueError(f"Inconsistent or nonpositive sample rate: {path}")
     return data
 
@@ -61,6 +61,8 @@ def save(fig, destination, name):
 
 
 def kuo(source, destination):
+    settings = load(source/"audio-settings.csv")
+    assert np.all(settings["velvet_width_pct"] == 0), "Academic Kuo audio requires Velvet off"
     neutral, wide = load(source/"audio-neutral.csv"), load(source/"audio-wide.csv")
     if not np.array_equal(neutral["input_left"], wide["input_left"]):
         raise AssertionError("Kuo renders must have identical input")
@@ -83,7 +85,7 @@ def kuo(source, destination):
     ratio = db(spectra[3][3].sum(axis=0)/np.maximum(spectra[2][3].sum(axis=0),1e-16))
     ratio = np.ma.array(ratio, mask=spectra[2][3].sum(axis=0) < 1e-8)
     axes[2,1].plot(t,ratio); axes[2,1].set(xlabel="Time (s)",ylabel="Side / mid energy (dB)",ylim=(-60,30))
-    fig.suptitle("Kuo Stereo • mono transient pad → fixed 12 ms Haas + 100% Velvet")
+    fig.suptitle("Kuo Stereo • mono transient pad → fixed 12 ms Haas • Velvet OFF")
     save(fig,destination,"audio-mid-side-spectrogram.png")
     mid = (wide["output_left"]+wide["output_right"])/2
     side = (wide["output_left"]-wide["output_right"])/2
@@ -91,13 +93,17 @@ def kuo(source, destination):
 
 ![Input and output mid/side spectrograms](audio-mid-side-spectrogram.png)
 
-Six seconds of the deterministic mono C→Am pad plus 400 ms-spaced bursts pass through the **full production audio path** at 48 kHz, in 128-sample blocks. A neutral 0 ms Haas/0% Velvet render must reproduce the latency-aligned input and have silent side. The illustrated condition uses fixed 12 ms Haas, zero Variability, 100% Velvet, 80% Transient protection, zero Dynamic and Attack, all Velvet bands 100%, Output 0 dB. Only the declared 72-sample host latency is removed; the intentional Haas delay remains. The render includes a 100 ms zero-input tail. The cyan line marks the 3 s chord change.
+Six seconds of the deterministic mono C→Am pad plus 400 ms-spaced bursts pass through the **full production audio path** at 48 kHz, in 128-sample blocks. A neutral 0 ms Haas/0% Velvet render must reproduce the latency-aligned input and have silent side. The illustrated condition uses fixed 12 ms Haas, zero Variability, **Velvet OFF (Width 0%)**, 80% Transient protection, zero Dynamic and Attack, all Velvet bands 100%, Output 0 dB. Only the declared 72-sample host latency is removed; the intentional Haas delay remains. The render includes a 100 ms zero-input tail. The cyan line marks the 3 s chord change.
 
-`M=(L+R)/2`, `S=(L−R)/2`; no channel or image normalization is applied. The ratio trace is hidden where mid energy is below −80 dBFS. Integrated rendered mid energy is {db(np.mean(mid**2)):.2f} dBFS and side energy {db(np.mean(side**2)):.2f} dBFS (side/mid {db(np.sum(side**2)/np.sum(mid**2)):.2f} dB). This full-path example complements the search snapshots: it does not evaluate adaptive worker scheduling or claim exact mid preservation with Haas enabled. Raw aligned samples are in `audio-neutral.csv.gz` and `audio-wide.csv.gz`.
+`M=(L+R)/2`, `S=(L−R)/2`; no channel or image normalization is applied. The ratio trace is hidden where mid energy is below −80 dBFS. Integrated rendered mid energy is {db(np.mean(mid**2)):.2f} dBFS and side energy {db(np.mean(side**2)):.2f} dBFS (side/mid {db(np.sum(side**2)/np.sum(mid**2)):.2f} dB). This Haas-only full-path example complements the search snapshots: it does not evaluate adaptive worker scheduling or claim exact mid preservation with Haas enabled. Raw aligned samples are in `audio-neutral.csv.gz` and `audio-wide.csv.gz`.
 """
 
 
 def zao(source, destination):
+    settings = load(source/"audio-settings.csv", constant_rate=False)
+    for switch in ["clear","auto_compensate","transformer","bypass","capture_smart"]:
+        assert np.all(settings[switch] == 0), f"Academic Zao capture requires {switch} off"
+    assert np.all(settings["input_db"] == 0) and np.all(settings["output_db"] == 0) and np.all(settings["mix"] == 1)
     lines = ["## Rendered Smart on/off spectrograms", "", "| Fixture | Whole wet clash-energy Δ dB | Targeted clash-energy Δ dB |", "|---|---:|---:|"]
     images = []
     for corpus in ["C_chord","harmonic_collision"]:
@@ -136,7 +142,7 @@ def zao(source, destination):
         images.append(f"![Smart spectral difference: {corpus}]({filename})")
     return "\n".join(lines)+"\n\n"+"\n\n".join(images)+"""
 
-The paired inputs are the existing 48 kHz op-amp **C-like chord and harmonic-collision fixtures**, not hand-picked output bins. At 24 dB drive, Clear/Auto/Transformer off, Tone 16 kHz and Mix 100%, the real oversampled circuit supplies an aligned dry reference and post-tone wet residual. The captured periodic 4,096-sample frame feeds the real Smart filter bank continuously for 20 cycles; discard four settling cycles and show the remaining 16 (~1.37 s). Off is that same unfiltered wet capture; total output is dry+wet. The frozen production selection removes worker/crossfade timing from this comparison. Repeated material intentionally yields horizontal spectral lines, not a musical passage.
+The paired inputs are the existing 48 kHz op-amp **C-like chord and harmonic-collision fixtures**, not hand-picked output bins. **Clear, Auto compensation, Transformer and Bypass always stay OFF** in these academic tests; Smart alone is varied for the comparison. Input and Output are explicitly 0 dB. At 24 dB drive, Tone 16 kHz and Mix 100%, the real oversampled circuit supplies an aligned dry reference and post-tone wet residual. The captured periodic 4,096-sample frame feeds the real Smart filter bank continuously for 20 cycles; discard four settling cycles and show the remaining 16 (~1.37 s). Off is that same unfiltered wet capture; total output is dry+wet. The frozen production selection removes worker/crossfade timing from this comparison. Repeated material intentionally yields horizontal spectral lines, not a musical passage.
 
 Blue in the difference maps means attenuation, red enhancement, both computed from **actual samples**. Wet and total changes are separate because phase cancellation can increase some dry+wet bins even when the wet bank cuts. Difference bins below −80 dB of the off image maximum are hidden. All on/off levels use identical scales and no gain matching.
 

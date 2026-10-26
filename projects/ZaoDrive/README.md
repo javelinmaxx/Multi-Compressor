@@ -206,3 +206,10 @@ python3 projects/ZaoDrive/Tests/generate_report.py
 ```
 
 Report plotting needs NumPy, SciPy, and Matplotlib; building the plugin does not.
+
+## Academic test settings
+
+Academic tests always keep **Clear, Auto compensation, Transformer and Bypass
+OFF**, Input/Output at 0 dB and Mix at 100%. Only Smart is toggled for the paired
+on/off comparison. The native harness explicitly sets these conditions, and
+report generation validates `Tests/Reports/Academic/audio-settings.csv.gz`.
