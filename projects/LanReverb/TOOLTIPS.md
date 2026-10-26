@@ -10,8 +10,8 @@
 | Diffusion | Adjusts the mixing density of the feedback network as Scatter increases. |
 | Width | Sets the stereo spread of the wet signal with a normalized mid and side balance. |
 | Tap Shift | Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies. |
-| Phase | Sets feedback phase dispersion and correction across three resonance bands within a five-millisecond delay budget. |
-| Tame | Sets narrow feedback resonance attenuation within a shared six-decibel limit while protecting incoming notes. |
+| Phase | Sets feedback phase dispersion and correction across sixteen resonance bands within a five-millisecond delay budget. |
+| Tame | Sets narrow feedback attenuation across up to sixteen resonance bands within a shared six-decibel limit while protecting incoming notes. |
 | Shimmer | Adds an octave-up input layer to the feedback-loop injection using a twice-oversampled pitch shifter; Saves CPU when Off. |
 | Low shelf handle | Drag across the full frequency range and vertically for up to +3 dB shelf gain, or double-click to reset. |
 | High shelf handle | Drag across the full frequency range and vertically for up to +3 dB shelf gain, or double-click to reset. |

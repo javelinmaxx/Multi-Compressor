@@ -15,7 +15,7 @@ struct Settings
     float lowShelfHz = 200, lowShelfDb = 0, highShelfHz = 8000, highShelfDb = 0, shimmer = 0;
     bool automatic = true, bypass = false;
 };
-inline constexpr int spectrumBins = 64, maxBands = 3, analysisSize = 4096;
+inline constexpr int spectrumBins = 64, maxBands = 16, analysisSize = 4096;
 inline constexpr float tameLimitDb = 6;
 inline constexpr float shelfMinHz = 20, shelfMaxHz = 20000, shelfMaxBoostDb = 3;
 inline double shelfFrequencyCeiling (double rate) { return std::min(double(shelfMaxHz),rate*.49); }
@@ -23,6 +23,11 @@ inline constexpr double feedbackKnee = .5, feedbackCeiling = 1;
 inline constexpr double phaseDelayLimitSeconds = .005, basePhaseBudgetSeconds = .001;
 inline constexpr double autoTapBudgetSeconds = .001;
 inline constexpr double bandPhaseBudgetSeconds = (phaseDelayLimitSeconds-basePhaseBudgetSeconds-autoTapBudgetSeconds)/maxBands;
+// Reserve at least 2.1 samples per second-order section at low sample rates.
+// Share the remaining 5 ms between the manual diffuser and automatic tap.
+inline double phaseBandBudget (double rate) { return std::max(bandPhaseBudgetSeconds,2.1/rate); }
+inline double phaseAccessoryBudget (double rate)
+{ return std::min(basePhaseBudgetSeconds,(phaseDelayLimitSeconds-maxBands*phaseBandBudget(rate))*.5); }
 inline constexpr double transitionSeconds = .25;
 struct Band { float frequency = 0, width = 0, gainDb = 0; };
 struct Analysis

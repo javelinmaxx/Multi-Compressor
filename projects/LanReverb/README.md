@@ -103,25 +103,28 @@ buffer length. This describes a nominal RT60, not an exact broadband decay:
 18 Hz DC/bass damping, a high-frequency low-pass, fractional delay interpolation,
 EQ, and time variation change the measured result.
 
-The phase branch now has **three independently tracked automatic all-pass
-sections per feedback line**, so all three detected resonance bands can guide
+The phase branch now has **sixteen independently tracked automatic all-pass
+sections per feedback line**, so all sixteen detected resonance bands can guide
 phase correction simultaneously. Frequency, detected width and resonance
 strength determine each section's target, and the Phase knob scales its depth.
 Sections retain their identities when the detector changes band priority.
 The existing manual diffuser remains ahead of these sections.
 
 Phase processing is deliberately subtle: the combined delay budget is **5 ms**,
-allocated as 1 ms maximum group delay for the manual diffuser, 1 ms for each
-of the three automatic sections, and at most ±1 ms of automatic feedback-tap
+allocated as 1 ms maximum group delay for the manual diffuser, 0.1875 ms for each
+of the sixteen automatic sections, and at most ±1 ms of automatic feedback-tap
 steering. This is independent of the intentional Time, Pre-delay and manual
 Tap Shift settings. Automatic tap offsets no longer grow with long synchronized
 notes. The manual diffuser's underlying delays are now approximately
 0.25–0.775 ms. Its coefficient limit bounds its worst-case group delay.
+At low sample rates each automatic section reserves at least 2.1 samples;
+the manual diffuser and automatic tap share the remaining budget equally
+(up to 1 ms each), keeping the combined limit at 5 ms even at 8 kHz.
 
 Each automatic section is a second-order all-pass implemented with two
 normalized scattering junctions. The pole radius and center are constrained
 throughout parameter ramps so each section's frozen group delay stays within
-its 1 ms budget. Frequency focus is broadened where necessary to respect that
+its per-section budget. Frequency focus is broadened where necessary to respect that
 limit; these are not arbitrary narrow filters with unlimited group delay.
 The fixed response has unity magnitude. Normalized junctions preserve joint
 signal/state energy during modulation, avoiding feedback gain from changing
@@ -132,7 +135,7 @@ angle after constraints or after combining bands.
 
 **Phase coefficient changes ramp over 250 ms**, including release when Auto
 or Phase turns off. Inactive automatic sections settle to two-sample pure
-delays rather than retaining high-Q poles; the three sections' six samples are
+delays rather than retaining high-Q poles; the sixteen sections' 32 samples are
 included in the nominal loop-time gain calculation. Phase 0 retains this short
 baseline and the manual diffuser's pure delay. Scatter 0 bypasses the complete
 phase branch. Dry and first wet arrivals still bypass all phase correction.
@@ -222,7 +225,7 @@ reference do not supply evidence to override source memory. The remembered
 identity expires after Decay + 1.25 s; source notes still present in the input
 remain guarded. A stream gap above 300 ms clears slope history.
 
-Up to three separated bands receive attenuation-only cuts capped at **6 dB**
+Up to sixteen separated bands receive attenuation-only cuts capped at **6 dB**
 before Tame scaling (4.5 dB for one band at the default 75%). The stages share
 a 6 dB total attenuation budget: if their requested cuts sum above that value,
 they are scaled together. This guarantees a static combined tamer response no

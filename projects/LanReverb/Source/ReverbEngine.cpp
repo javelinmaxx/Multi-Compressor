@@ -174,7 +174,7 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
             || (overlaps(rememberedBins,hz,bandwidth) && slowDecay <= 0)) continue;
         ages[index] = std::min(2.f,std::min(elapsed,.15f)+std::max({previousAges[index-1],previousAges[index],previousAges[index+1]}));
         if (ages[index] < (slowDecay > 0 ? .18f : .25f)) continue;
-        // Three separated, attenuation-only bands; FFT resolution limits their
+        // Up to sixteen separated, attenuation-only bands; FFT resolution limits their
         // minimum width. Preserve original input peaks while the source plays.
         Candidate candidate {{float(hz),bandwidth,-float(std::min(double(tameLimitDb),(excess-4)*.9+slowDecay*6))},
                              (excess+slowDecay*12)*std::sqrt(feedback[index])};
@@ -361,9 +361,9 @@ void ReverbEngine::BandPhase::target (const Band& band, double rate, double dept
         const auto q = std::clamp(double(band.frequency)/std::max(1.f,band.width),1.,14.);
         const auto alpha = std::sin(omega)/(2*q);
         // The sum of the two pole-delay peaks is <= this section's budget.
-        // Together, three sections plus the manual diffuser stay within 4 ms;
-        // automatic tap steering uses the remaining 1 ms.
-        const auto budgetSamples = bandPhaseBudgetSeconds*rate;
+        // All sixteen sections, the manual diffuser and automatic tap share
+        // five milliseconds, with sample-aware allocation at low rates.
+        const auto budgetSamples = phaseBandBudget(rate)*rate;
         const auto maximumRadius = (budgetSamples-2)/(budgetSamples+2);
         next2 = std::min((1-alpha)/(1+alpha),maximumRadius*maximumRadius);
         const auto boundedAlpha = (1-next2)/(1+next2);
@@ -412,18 +412,22 @@ void ReverbEngine::updatePhaseBands (bool active, float amount)
     const auto count = active ? std::clamp(latest.count,0,maxBands) : 0;
     // Preserve section identity when spectral priorities change. Otherwise two
     // unchanged resonances could sweep across one another on an ordering swap.
-    for (size_t slot = 0; slot < assigned.size(); ++slot)
+    // Match the closest pair globally before considering weaker matches. A
+    // removed band must not steal a neighbor's section before its exact match.
+    for (int pair = 0; pair < count; ++pair)
     {
-        if (trackedPhaseBands[slot].frequency <= 0) continue;
-        double best = .2; int match = -1;
-        for (int i = 0; i < count; ++i)
-        {
-            const auto& band = latest.bands[size_t(i)];
-            if (used[size_t(i)] || band.frequency <= 0) continue;
-            const auto distance = std::abs(std::log(band.frequency/trackedPhaseBands[slot].frequency));
-            if (distance < best) { best = distance; match = i; }
-        }
-        if (match >= 0) { assigned[slot] = latest.bands[size_t(match)]; used[size_t(match)] = true; }
+        double best = .2; int match = -1, matchedSlot = -1;
+        for (size_t slot = 0; slot < assigned.size(); ++slot)
+            if (assigned[slot].frequency <= 0 && trackedPhaseBands[slot].frequency > 0)
+                for (int i = 0; i < count; ++i)
+                {
+                    const auto& band = latest.bands[size_t(i)];
+                    if (used[size_t(i)] || band.frequency <= 0) continue;
+                    const auto distance = std::abs(std::log(band.frequency/trackedPhaseBands[slot].frequency));
+                    if (distance < best) { best = distance; match = i; matchedSlot = int(slot); }
+                }
+        if (match < 0) break;
+        assigned[size_t(matchedSlot)] = latest.bands[size_t(match)]; used[size_t(match)] = true;
     }
     for (int i = 0; i < count; ++i)
         if (!used[size_t(i)])
@@ -449,8 +453,8 @@ void ReverbEngine::prepare (double rate, bool worker)
         // during prepare; tempo automation never reallocates on the callback.
         const auto capacitySeconds = maximumTimeMs*.001*std::max(1.f,ratios[i])*1.4;
         line.delay.assign(size_t(std::ceil(sampleRate*capacitySeconds))+4,0);
-        line.phaseMemory.assign(size_t(std::max(1,juce::roundToInt(sampleRate*(.00025+i*.000075)))),0);
-        const auto manualSamples = basePhaseBudgetSeconds*sampleRate;
+        const auto manualSamples = phaseAccessoryBudget(sampleRate)*sampleRate;
+        line.phaseMemory.assign(size_t(std::max(1,std::min(juce::roundToInt(sampleRate*(.00025+i*.000075)),int(std::floor(manualSamples))))),0);
         const auto coefficientLimit = std::max(0.,(manualSamples-line.phaseMemory.size())/(manualSamples+line.phaseMemory.size()));
         line.phaseTarget = float(std::clamp(double(tapPattern[i]*.45f),-coefficientLimit,coefficientLimit));
         line.tap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
@@ -486,7 +490,7 @@ void ReverbEngine::update (const Settings& s)
         auto& line = lines[i];
 
         const auto wetSeconds = std::clamp(s.timeMs,1.f,maximumTimeMs)*.001f*(1+s.scatter*(ratios[i]-1));
-        const auto autoShift = active ? latest.strength*s.phase*float(std::min(autoTapBudgetSeconds,double(wetSeconds)*.09))
+        const auto autoShift = active ? latest.strength*s.phase*float(std::min(phaseAccessoryBudget(sampleRate),double(wetSeconds)*.09))
             *std::sin(latest.frequency*.017f+float(i)*2.399963f) : 0.f;
         const auto seconds = wetSeconds*(1+std::clamp(s.tap,-1.f,1.f)*.3f*(1+s.scatter*(tapPattern[i]-1)))+s.scatter*autoShift;
         if (first) line.wetTap.prepare(sampleRate,float(sampleRate)*wetSeconds);
