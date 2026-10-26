@@ -297,7 +297,7 @@ void ReverbEngine::Filter::configure (const Band& band, double rate, float amoun
 }
 void ReverbEngine::Filter::shelf (bool high, double hz, double gainDb, double rate)
 {
-    const auto a = std::pow(10.,std::clamp(gainDb,-12.,0.)/40);
+    const auto a = std::pow(10.,std::clamp(gainDb,-12.,6.)/40);
     const auto omega = 2*pi*std::clamp(hz,20.,rate*.4)/rate;
     const auto c = std::cos(omega), beta = std::sqrt(2*a)*std::sin(omega);
     const auto sign = high ? 1. : -1.;
@@ -493,7 +493,7 @@ void ReverbEngine::update (const Settings& s)
         else line.wetTap.target(float(sampleRate)*wetSeconds);
         const auto delaySamples = float(sampleRate)*seconds;
         if (first) line.tap.prepare(sampleRate,delaySamples); else line.tap.target(delaySamples);
-        // Conservative per-line RT60 gains, always strictly below unity.
+        // Nominal decay gains; the complete loop may exceed unity with shelf boost.
         set(feedbackGain[i],std::min(.9995f,float(std::pow(10.,-3*(seconds+s.scatter*(line.phaseMemory.size()+2*maxBands)/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f)))));
         const auto sourceGain = std::pow(10.,-3*(wetSeconds+s.scatter*(line.phaseMemory.size()+2*maxBands)/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f));
         set(injectionGain[i],.35355339f*float(std::sqrt(std::max(0.,1-sourceGain*sourceGain))));
@@ -546,8 +546,8 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
     safeSettings.phase = std::clamp(safeSettings.phase,0.f,1.f);
     safeSettings.tame = std::clamp(safeSettings.tame,0.f,1.f);
     safeSettings.shimmer = std::clamp(safeSettings.shimmer,0.f,1.f);
-    safeSettings.lowShelfHz = std::clamp(safeSettings.lowShelfHz,40.f,2000.f); safeSettings.lowShelfDb = std::clamp(safeSettings.lowShelfDb,-12.f,0.f);
-    safeSettings.highShelfHz = std::clamp(safeSettings.highShelfHz,2000.f,16000.f); safeSettings.highShelfDb = std::clamp(safeSettings.highShelfDb,-12.f,0.f);
+    safeSettings.lowShelfHz = std::clamp(safeSettings.lowShelfHz,40.f,2000.f); safeSettings.lowShelfDb = std::clamp(safeSettings.lowShelfDb,-12.f,6.f);
+    safeSettings.highShelfHz = std::clamp(safeSettings.highShelfHz,2000.f,16000.f); safeSettings.highShelfDb = std::clamp(safeSettings.highShelfDb,-12.f,6.f);
     const bool initial = first; update(safeSettings);
     const auto bypassed = safeSettings.bypass || hostBypass;
     if (initial) bypass.setCurrentAndTargetValue(bypassed ? 1.f : 0.f); else bypass.setTargetValue(bypassed ? 1.f : 0.f);
@@ -631,8 +631,8 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
             const auto injection = injectionGain[line].getNextValue()
                 *(sourceLeft+((line&1u) != 0 ? -sourceRight : sourceRight));
             auto value = gain*feedback+injection;
-            // Last-resort smooth bounded feedback write, idle at normal levels.
-            if (std::abs(value) > 2) value = std::copysign(2+std::tanh(std::abs(value)-2),value);
+            // Deliberately no level limiter: uncompensated shelf boosts may
+            // produce growing feedback. Reject nonfinite writes only.
             auto& memory = lines[line]; memory.delay[memory.position] = std::isfinite(value) ? value : 0;
             memory.position = (memory.position+1)%memory.delay.size();
         }

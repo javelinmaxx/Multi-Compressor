@@ -26,6 +26,16 @@ def main():
     source = args.results
     destination = Path(__file__).resolve().parent/"Reports" if args.publish else source/"report"
     destination.mkdir(parents=True, exist_ok=True)
+    unstable = load(source,"unstable-feedback.csv")
+    fig,ax = plt.subplots(figsize=(10,4),constrained_layout=True)
+    for rate in np.unique(unstable["rate"]):
+        for boost in [0,6]:
+            rows = unstable[(unstable["rate"] == rate)&(unstable["boost_db"] == boost)]
+            ax.plot(rows["time_s"],20*np.log10(np.maximum(rows["rms"],1e-15)),ls="--" if boost == 0 else "-",label=f"{rate/1000:g} kHz / +{boost:g} dB shelf")
+    ax.axhline(0,color="gray",lw=.7); ax.axvline(.27,color="gray",ls=":",label="Shelf transition complete")
+    ax.set(xlabel="Time after impulse (s)",ylabel="Wet RMS (dBFS)",title="Uncompensated boost: tail grows beyond the former limiter")
+    ax.legend(fontsize=8,ncol=2); ax.grid(alpha=.25)
+    fig.savefig(destination/"unstable-feedback.png",dpi=160); plt.close(fig)
     feedback_eq = load(source,"feedback-eq.csv")
     fig,axes = plt.subplots(2,1,figsize=(10,6),constrained_layout=True)
     for name,label in [("previous_width_db","Previous bandwidth, same 6 dB depth"),("narrow_db","New half-width tamer"),("three_band_db","Three overlapping bands sharing 6 dB")]:
@@ -190,7 +200,15 @@ All remaining measurements below use Scatter 100%. Intermediate settings can int
 
 A single 1 kHz tamer band at maximum strength must measure −6 dB at its center and approximately half the previous half-depth bandwidth. The comparison holds depth at −6 dB in both conditions to isolate width, rather than comparing the old 18 dB depth. The EQ uses half the detector's width and allows Q 28; the source-protection and detection widths are unchanged. Three deliberately overlapping test bands at 1,000/1,050/1,100 Hz must never exceed 6 dB of combined attenuation across 4,096 sampled frequencies. The shared cut budget provides the corresponding static bound even between sampled points.
 
-Direct production shelf filters verify bass/treble selectivity. Exhaustive corner tests span 8/44.1/48/96/192 kHz, both frequency endpoints, gains −12/0 dB plus invalid +6 dB requests, and 128 spectral points for every combination. Both shelves are attenuation-only; positive requests clamp to neutral, without compensating attenuation elsewhere, and every tested shelf cascade must stay at or below unity. A rendered impulse through the actual feedback bank (tamer plus both shelves) must match the display curve at 100/1,000/10,000 Hz. The source-routing test above enables shelves too and still requires unchanged first wet arrivals. Native editor tests exercise both drag axes, host parameter updates, rejection of dragging above 0 dB, double-click reset and scaled hit testing. The pale curve shows target settings; audio follows through the 250 ms bank transition.
+Direct production shelf filters verify bass/treble selectivity. Exhaustive corner tests span 8/44.1/48/96/192 kHz, both frequency endpoints, gains −12/0/+6 dB, and 128 spectral points for every combination. Each raw shelf cascade must remain between the sums of its negative and positive gain endpoints. Separate tests require actual low/high boost near +6 dB while the opposite band remains neutral, verifying that no compensation is applied. A rendered impulse through the actual feedback bank (tamer plus both shelves) must match the display curve at 100/1,000/10,000 Hz. The source-routing test above enables shelves too and still requires unchanged first wet arrivals. Native editor tests exercise both drag axes, host parameter updates, positive dragging above 0 dB, double-click reset and scaled hit testing. The pale curve shows target settings; audio follows through the 250 ms bank transition.
+
+## Intentionally unstable feedback
+
+![Feedback growth with uncompensated boost](unstable-feedback.png)
+
+At 44.1/48/96 kHz, a stereo 0.001-amplitude impulse feeds Time 20 ms, Decay 40 s, Pre-delay 0, Scatter 0%, Phase 0%, Width 100%, Mix 100%, Output 0 dB and Auto Off. The low shelf is at 2 kHz, either neutral or +6 dB, and the high shelf remains neutral. Eight hundred milliseconds are rendered. The boost enters through the existing 20 ms warm-up and 250 ms fade; the late growth must exceed neutral late-tail power by a factor of 1,000, and the wet peak must exceed magnitude 32. That explicitly verifies the old magnitude-3 per-line soft limiter is absent. Samples must remain numerically representable during this short measurement, not bounded for arbitrarily long boosted feedback. The plotted values use floating-point audio, not a clipped PCM audio example.
+
+No gain compensation is applied to shelf boosts. The normal decay coefficients, tamer and phase controls remain operational, but cannot guarantee a stable loop. Nonfinite delay writes are still rejected; finite feedback is neither soft-clipped nor limited. The host tail-report tests require infinity with either shelf boosted and the ordinary finite report at neutral settings. Default unboosted stability tests remain separate from this intentional-growth fixture.
 
 ## Oversampled octave Shimmer
 

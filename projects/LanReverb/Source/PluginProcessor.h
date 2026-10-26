@@ -20,7 +20,12 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 120; }
+    double getTailLengthSeconds() const override
+    {
+        return parameters.getRawParameterValue("lowShelfDb")->load() > 0
+            || parameters.getRawParameterValue("highShelfDb")->load() > 0
+            ? std::numeric_limits<double>::infinity() : 120.;
+    }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram (int) override {}

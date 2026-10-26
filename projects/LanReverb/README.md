@@ -20,8 +20,8 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 | Phase | 0–100% / 60% | All-pass phase dispersion and automatic phase/tap steering |
 | Tame | 0–100% / 75% | Strength of narrow automatic feedback EQ, sharing a 6 dB total cut budget |
 | Shimmer | 0–100% / Off | Adds a +12-semitone, 2× oversampled layer to the source feeding the delay network |
-| Low shelf handle | 40–2,000 Hz / 200 Hz; −12–0 dB / 0 dB | Drag its L node horizontally for frequency and vertically for gain |
-| High shelf handle | 2,000–16,000 Hz / 8,000 Hz; −12–0 dB / 0 dB | Drag its H node horizontally for frequency and vertically for gain |
+| Low shelf handle | 40–2,000 Hz / 200 Hz; −12–+6 dB / 0 dB | Drag its L node horizontally for frequency and vertically for gain |
+| High shelf handle | 2,000–16,000 Hz / 8,000 Hz; −12–+6 dB / 0 dB | Drag its H node horizontally for frequency and vertically for gain |
 | Dry / Wet | 0–100% / 80% | Linear mix, including true full-wet operation for sends |
 | Output | −24–12 dB / 0 dB | Final output gain |
 | Auto | On | Enables input-aware spectral peak analysis and automatic correction |
@@ -30,7 +30,7 @@ feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
 The ebony-and-gold editor matches the collection, scales from 50% to 120%, and
 provides one-sentence control hints. Hover over its title for developer, year,
 and version. The plot compares input and feedback power spectra; gold markers
-indicate tracked resonance bands. A pale target EQ curve combines the narrow tamer filters with the two cut-only shelves. The reduction readout shows the deepest
+indicate tracked resonance bands. A pale target EQ curve combines the narrow tamer filters with the two uncompensated shelves. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
 
 ## Tempo-synchronized Time
@@ -55,7 +55,8 @@ The longest choice is a dotted whole note (18 s at 20 BPM). Delay buffers are
 reserved during prepare so tempo automation never allocates memory on the audio
 thread. This increases reserved delay memory to roughly 42 MB at 48 kHz and
 scales with sample rate, independent of the current Time setting. Host latency
-remains zero; the conservative reported tail is 120 s.
+remains zero; the reported tail is 120 s with neutral/cut shelves and potentially
+infinite with either shelf boosted.
 
 ## Delay to reverb with Scatter
 
@@ -80,7 +81,7 @@ loss from the phase-path blend, so Decay remains a nominal control.
 
 `delay-line wet taps → stereo pickups → Width → dry/wet mix → Output`
 
-`separate feedback taps → narrow tamer EQ → cut-only shelves → phase dispersion → damping → orthogonal mixing → feedback gains → delay-line writes`
+`separate feedback taps → narrow tamer EQ → uncompensated shelves → phase dispersion → damping → orthogonal mixing → feedback gains → delay-line writes`
 
 The wet return is read **before** EQ, phase processing and loop damping. Those
 stages process only the recirculated signal, which is added to the independent
@@ -160,11 +161,12 @@ The curve shows the requested response; the feedback filter banks follow it
 through their existing 20 ms warm-up and 250 ms crossfade.
 
 Shelves process **feedback only**, including when Auto is off. They do not
-filter the dry signal or the first wet arrivals. Both shelves are attenuation-only,
-from −12 dB to 0 dB: upward dragging stops at zero, and host automation exposes
-the same range. Invalid positive values are clamped to neutral in the DSP and
-display. No boost headroom compensation is applied; unaffected frequencies keep
-their existing loop gain.
+filter the dry signal or the first wet arrivals. Both shelves range from
+−12 dB to +6 dB, with the same limits for dragging and host automation.
+Positive gain is applied directly, with **no compensation** or reduction of
+other frequencies. Boosted bands can exceed unity around the feedback loop
+and grow after the input stops, even though the nominal Decay gains remain
+below unity. Auto/Tame remain available, but do not guarantee stabilization.
 
 ## Shimmer input layer
 
@@ -242,12 +244,16 @@ the same frequency. Sparse or ambiguous tails retain source protection. Source h
 retained across Auto toggles and aged by stream time; preparing a new stream
 clears it. Source peaks must have been observed while analysis was enabled.
 
-The output stage is linear at normal levels. A smooth, bounded feedback-write
-guard activates only above magnitude 2, with an asymptotic limit of 3 per delay
-line. Invalid input samples are replaced with zero. These safeguards and
-sub-unity feedback gains protect against runaway numerical behavior; this plugin
-cannot guarantee the absence of resonances on arbitrary material, distinguish
-all intentional tones from unwanted ringing, or control external routing feedback.
+The feedback-write soft limiter has been removed. The loop can build levels
+above the previous magnitude-3 per-line ceiling and produce unstable tails;
+there is no feedback or output level limiter. Nonfinite host inputs and delay
+writes are still replaced with zero as numerical housekeeping, rather than
+limiting finite audio amplitudes. The plugin cannot guarantee resonance removal
+or bounded levels on arbitrary material or external feedback arrangements.
+
+With either shelf boosted, the processor reports a **potentially infinite tail**
+to the host, including VST3's infinite-tail flag. With both shelves neutral or
+cut, it retains its ordinary 120 s tail report.
 
 ## Build and verify
 
@@ -266,7 +272,7 @@ minimal Xvfb environments. Plot generation needs Python `numpy` and `matplotlib`
 macOS also provides `LanReverb_AU`; the root `build-macos-all.sh` discovers this
 project automatically. Windows workflows are unchanged. The latency reported to
 the host is **zero samples**; wet pre-delay and feedback delay remain intentional
-effect timing. A conservative 120 s tail is reported to the host.
+effect timing. The tail report is 120 s with neutral/cut shelves and potentially infinite with shelf boost.
 
 See the [test report](Tests/Reports/README.md) for reproducible measurements and
 scope, and [TOOLTIPS.md](TOOLTIPS.md) for the complete hover text.

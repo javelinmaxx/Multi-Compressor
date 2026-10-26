@@ -90,7 +90,7 @@ void LanReverbEditor::moveShelf (int which, juce::Point<float> position)
     const auto rate = processor.getSampleRate() > 0 ? processor.getSampleRate() : 48000.;
     const auto ceiling = std::min(18000.,rate*.43);
     const auto frequency = 30*std::pow(ceiling/30,std::clamp((position.x-42)/656.f,0.f,1.f));
-    const auto gain = std::clamp((160-position.y)/3.5f,-12.f,0.f);
+    const auto gain = std::clamp((160-position.y)/3.5f,-12.f,6.f);
     auto* frequencyParameter = processor.parameters.getParameter(which == 0 ? "lowShelfHz" : "highShelfHz");
     auto* gainParameter = processor.parameters.getParameter(which == 0 ? "lowShelfDb" : "highShelfDb");
     frequencyParameter->setValueNotifyingHost(frequencyParameter->convertTo0to1(float(frequency)));
