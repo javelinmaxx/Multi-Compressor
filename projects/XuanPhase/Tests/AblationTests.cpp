@@ -142,14 +142,14 @@ void captureNoveltyHandoff(const std::filesystem::path& directory)
               << selectedTrace.spectrum[k-1].real() << ',' << selectedTrace.spectrum[k-1].imag() << ','
               << selectedTrace.spectrum[k].real() << ',' << selectedTrace.spectrum[k].imag() << ','
               << selectedTrace.spectrum[k+1].real() << ',' << selectedTrace.spectrum[k+1].imag() << ','
-              << target.angle << ',' << target.delay << ',' << xuan::PhaseEngine::bandValue(target.frequency,selected,false)*180/pi << ','
-              << xuan::PhaseEngine::phaseAt(target.frequency,settings,selected)*180/pi << '\n';
+              << target.angle << ',' << target.delay << ',' << xuan::PhaseEngine::bandValue(target.frequency,selected,false)*(180/pi) << ','
+              << xuan::PhaseEngine::phaseAt(target.frequency,settings,selected)*(180/pi) << '\n';
     }
     for (int i = 0; i <= 1024; ++i)
     {
         const auto hz = 60*std::pow(20000./60,i/1024.);
-        curve << hz << ',' << xuan::PhaseEngine::bandValue(hz,selected,false)*180/pi << ','
-              << xuan::PhaseEngine::phaseAt(hz,settings,selected)*180/pi << '\n';
+        curve << hz << ',' << xuan::PhaseEngine::bandValue(hz,selected,false)*(180/pi) << ','
+              << xuan::PhaseEngine::phaseAt(hz,settings,selected)*(180/pi) << '\n';
     }
 }
 
@@ -168,7 +168,7 @@ int main (int argc, char** argv)
         auto targetFile = csv(directory,"phase-targets.csv","rate,corpus,variant,frequency_hz,angle_deg,delay_ms");
         kernels.precision(17); ideal.precision(17); peaks.precision(17);
         constexpr std::array<const char*,3> names {"dispersed_packets","broadband_attack","attack_over_sustain"};
-        int anchorWitness = 0, slopeWitness = 0, peakWitness = 0;
+        int anchorWitness = 0, slopeWitness = 0, peakWitness = 0, uncappedWitness = 0;
         for (double rate : {44100.,48000.,96000.})
             for (int corpus = 0; corpus < 3; ++corpus)
             {
@@ -262,9 +262,9 @@ int main (int argc, char** argv)
                             check(hz >= 20 && hz <= upper,"selected peak lies within the plotted frequency range");
                             frequencies.push_back(hz);
                             peaks << rate << ',' << names[size_t(corpus)] << ',' << hz << ','
-                                  << analysis.targets[size_t(i)].angle*180/pi << ','
-                                  << xuan::PhaseEngine::bandValue(hz,analysis,false)*180/pi << ','
-                                  << xuan::PhaseEngine::phaseAt(hz,settings,analysis)*180/pi << '\n';
+                                  << analysis.targets[size_t(i)].angle*(180/pi) << ','
+                                  << xuan::PhaseEngine::bandValue(hz,analysis,false)*(180/pi) << ','
+                                  << xuan::PhaseEngine::phaseAt(hz,settings,analysis)*(180/pi) << '\n';
                         }
                         std::sort(frequencies.begin(),frequencies.end());
                         frequencies.erase(std::unique(frequencies.begin(),frequencies.end()),frequencies.end());
@@ -273,11 +273,11 @@ int main (int argc, char** argv)
                             const auto h = response(ir,hz,rate);
                             const auto requested = xuan::PhaseEngine::phaseAt(hz,settings,analysis);
                             const auto gain = db(std::abs(h));
-                            const auto residual = std::remainder(std::arg(h)-requested,2*pi)*180/pi;
+                            const auto residual = std::remainder(std::arg(h)-requested,2*pi)*(180/pi);
                             check(std::isfinite(gain) && std::isfinite(residual),"dense realized FIR response is finite");
                             ideal << rate << ',' << names[size_t(corpus)] << ',' << hz << ','
-                                  << xuan::PhaseEngine::bandValue(hz,analysis,false)*180/pi << ','
-                                  << requested*180/pi << ',' << h.real() << ',' << h.imag() << ','
+                                  << xuan::PhaseEngine::bandValue(hz,analysis,false)*(180/pi) << ','
+                                  << requested*(180/pi) << ',' << h.real() << ',' << h.imag() << ','
                                   << gain << ',' << residual << '\n';
                         }
                     }
@@ -285,7 +285,7 @@ int main (int argc, char** argv)
                     for (int k = 0; k < reference.count; ++k)
                     {
                         const auto& target = reference.targets[size_t(k)];
-                        error += std::abs(std::remainder(std::arg(response(ir,target.frequency,rate))-target.angle,2*pi))*180/pi;
+                        error += std::abs(std::remainder(std::arg(response(ir,target.frequency,rate))-target.angle,2*pi))*(180/pi);
                     }
                     double minGain = 1e9, maxGain = -1e9;
                     for (int point = 0; point <= 96; ++point)
@@ -294,13 +294,14 @@ int main (int argc, char** argv)
                         const auto h = response(ir,hz,rate); const auto gain = db(std::abs(h));
                         minGain = std::min(minGain,gain); maxGain = std::max(maxGain,gain);
                         const auto requested = xuan::PhaseEngine::phaseAt(hz,settings,analysis);
-                        check (std::isfinite(gain) && std::abs(requested) <= 150*pi/180+1e-6,"rendered response finite and requested correction capped");
-                        curves << rate << ',' << names[size_t(corpus)] << ',' << variant.name << ',' << hz << ',' << requested*180/pi << ',' << std::arg(h)*180/pi << ',' << gain << '\n';
+                        check (std::isfinite(gain) && std::isfinite(requested),"rendered response and uncapped phase request remain finite");
+                        if (std::abs(requested) > 150*pi/180+1e-4) ++uncappedWitness;
+                        curves << rate << ',' << names[size_t(corpus)] << ',' << variant.name << ',' << hz << ',' << requested*(180/pi) << ',' << std::arg(h)*(180/pi) << ',' << gain << '\n';
                     }
                     for (int k = 0; k < analysis.count; ++k)
                     {
                         const auto& t = analysis.targets[size_t(k)];
-                        targetFile << rate << ',' << names[size_t(corpus)] << ',' << variant.name << ',' << t.frequency << ',' << t.angle*180/pi << ',' << t.delay*1000 << '\n';
+                        targetFile << rate << ',' << names[size_t(corpus)] << ',' << variant.name << ',' << t.frequency << ',' << t.angle*(180/pi) << ',' << t.delay*1000 << '\n';
                         check (std::abs(t.delay) <= .025001,"estimated delay bounded");
                     }
                     if (v == 3 && std::abs(analysis.anchor-reference.anchor) > 1/rate) ++anchorWitness;
@@ -317,6 +318,7 @@ int main (int argc, char** argv)
                     out << rate << ',' << names[size_t(corpus)] << ',' << variant.name << ',' << analysis.count << ',' << analysis.onset << ',' << analysis.anchor*1000 << ',' << peak(audio) << ',' << rms(audio) << ',' << db(peak(audio)/std::max(1e-15,rms(audio))) << ',' << dispersion(audio,rate,reference) << ',' << error/reference.count << ',' << maxGain-minGain << ',' << pre << ',' << tail << '\n';
                 }
             }
+        check(uncappedWitness > 0,"academic fixtures exercise requests beyond the former phase limit");
         check(anchorWitness > 0,"corpus exercises residual anchoring");
         check(slopeWitness > 0,"corpus exercises phase-slope timing");
         check(peakWitness > 0,"broadband corpus exercises reduced peak budget");

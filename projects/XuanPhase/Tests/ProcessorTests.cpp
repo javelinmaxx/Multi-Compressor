@@ -72,7 +72,7 @@ void stereoTests (const juce::File& directory, const std::vector<float>& hit, co
         {
             double difference = 0;
             for (size_t i = 0; i < padded.size(); ++i) difference += std::abs (out[0][i]-out[1][i]);
-            check (difference > .01, "negative Link retains opposed correction within the phase cap");
+            check (difference > .01, "negative Link retains opposed correction without phase clipping");
         }
         else check (out[0] == out[1], "identical inputs remain identical at zero and positive Stereo Link");
         for (size_t i = 0; i < padded.size(); ++i) audio << link << ',' << i << ',' << out[0][i] << ',' << out[1][i] << '\n';
@@ -181,14 +181,14 @@ void stereoTests (const juce::File& directory, const std::vector<float>& hit, co
     double liveSide = 0;
     for (size_t i = 0; i < last[0].size(); ++i) liveSide += std::abs (last[0][i]-last[1][i]);
     check (live.targetCount() > 0 && liveSide > .01,
-           "live negative Link applies opposed channel correction within the phase cap");
+           "live negative Link applies opposed channel correction without phase clipping");
 }
 
-void phaseCapTests (const juce::File& directory)
+void uncappedPhaseTests (const juce::File& directory)
 {
     xuan::StereoAnalysis a; a.shared.count = 1;
     a.shared.targets[0] = {1000, 10000, 2.8f, .025f}; a.channel = {a.shared, a.shared};
-    std::ofstream cap (directory.getChildFile ("phase-cap.csv").getFullPathName().toStdString());
+    std::ofstream cap (directory.getChildFile ("phase-range.csv").getFullPathName().toStdString());
     cap << "frequency,link,left_deg,right_deg\n";
     constexpr auto pi = juce::MathConstants<double>::pi;
     for (float manual : {-180.f, 0.f, 180.f})
@@ -198,13 +198,16 @@ void phaseCapTests (const juce::File& directory)
                 xuan::Settings s; s.automatic = true; s.low = s.high = manual; s.depth = depth; s.link = link;
                 for (double f = 20; f <= 20000; f += 37)
                 {
-                    check (std::abs (xuan::PhaseEngine::phaseAt (f, s, a.shared)) <= 150*pi/180,
-                           "combined manual and automatic phase saturates at +/-150 degrees");
+                    const auto expected = manual*pi/180+depth*.01*xuan::PhaseEngine::bandValue(f,a.shared,false);
+                    check (std::abs(xuan::PhaseEngine::phaseAt(f,s,a.shared)-expected) < 2e-5,
+                           "combined manual and automatic phase preserves the full uncapped request");
                     for (int ch = 0; ch < 2; ++ch)
                     {
                         const auto value = xuan::PhaseEngine::stereoPhaseAt (f, s, a, ch);
-                        check (std::isfinite (value) && std::abs (value) <= 150*pi/180,
-                               "all stereo correction settings stay within the DSP phase cap before FIR design");
+                        const auto shift = link < 0 ? (ch == 0 ? -1. : 1.)*.0025*(-link*.01)*std::abs(depth)*.01 : 0.;
+                        const auto stereoExpected = expected-2*pi*f*shift;
+                        check (std::isfinite(value) && std::abs(value-stereoExpected) < 3e-5,
+                               "all stereo settings preserve uncapped phase and opposing time-shift contributions");
                     }
                 }
             }
@@ -213,13 +216,13 @@ void phaseCapTests (const juce::File& directory)
         cap << f << ',' << s.link << ',' << xuan::PhaseEngine::stereoPhaseAt (f, s, a, 0)*180/pi
             << ',' << xuan::PhaseEngine::stereoPhaseAt (f, s, a, 1)*180/pi << '\n';
     s.low = s.high = 180; s.link = 100;
-    const auto saturated = xuan::PhaseEngine::phaseAt (1000, s, a.shared);
-    check (std::abs (saturated-150*pi/180) < 1e-6 && std::atan2 (std::sin (saturated), std::cos (saturated)) > 0,
-           "over-range positive correction stops at +150 rather than wrapping negative");
+    const auto positive = xuan::PhaseEngine::phaseAt (1000, s, a.shared);
+    check (std::abs(positive-(pi+2.8f)) < 1e-6 && positive > pi,
+           "combined positive correction exceeds 180 degrees without saturation or principal wrapping");
     s.low = s.high = -180; s.depth = -100;
     const auto negative = xuan::PhaseEngine::phaseAt (1000, s, a.shared);
-    check (std::abs (negative+150*pi/180) < 1e-6 && std::atan2 (std::sin (negative), std::cos (negative)) < 0,
-           "over-range negative correction stops at -150 rather than wrapping positive");
+    check (std::abs(negative+(pi+2.8f)) < 1e-6 && negative < -pi,
+           "combined negative correction exceeds minus 180 degrees without saturation or principal wrapping");
 }
 void lookaheadTests (const juce::File& directory, const std::vector<float>& hit)
 {
@@ -482,7 +485,7 @@ void dspTests (const juce::File& directory)
 {
     directory.createDirectory();
     phaseDisplayTests();
-    phaseCapTests (directory);
+    uncappedPhaseTests (directory);
     XuanPhaseProcessor saved, restored;
     set (saved, "link", -70);
     set (saved, "depth", -75); set (saved, "transient", 700);
@@ -532,8 +535,8 @@ void dspTests (const juce::File& directory)
         {
             const auto h = response (ir, hz, 48000);
             const auto error = std::remainder (std::arg (h)-xuan::PhaseEngine::phaseAt (hz, s, {}), 2*juce::MathConstants<double>::pi);
-            // The finite +/-25 ms Hilbert support has its largest phase ripple
-            // at 20 Hz for a 150-degree target (about 3.9 degrees).
+            // Retain the existing finite-support error tolerance, including
+            // the low-frequency endpoint; compare circular phase to the full request.
             check (std::abs (error) < (hz <= 30 ? .075 : .03),
                    "measured manual phase stays within finite-FIR accuracy, including the 20 Hz endpoint");
             phase << degrees << ',' << hz << ',' << std::arg (h)*180/juce::MathConstants<double>::pi << ',' << 20*std::log10 (std::abs (h)) << '\n';
@@ -662,7 +665,7 @@ void dspTests (const juce::File& directory)
         const auto scale = 180/juce::MathConstants<double>::pi;
         targetData << target.frequency << ',' << target.angle*scale << ',' << std::arg (positive)*scale << ',' << std::arg (inverse)*scale << '\n';
         check (std::abs (std::remainder (std::arg (positive)-xuan::PhaseEngine::phaseAt (target.frequency, full, targets), 2*juce::MathConstants<double>::pi)) < juce::MathConstants<double>::pi/180,
-               "full Depth follows each capped peak correction within one degree");
+               "full Depth follows each uncapped peak correction within one degree");
         check (std::abs (inverse-std::conj (positive)) < 1e-5,
                "negative Depth reverses the measured automatic phase rotation");
     }

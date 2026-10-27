@@ -88,10 +88,10 @@ the original crest rule; the adaptive state takes over on subsequent frames.
 
 ## Correction and safety checks
 
-The full DSP/editor suite passes 308,491 checks; Linux VST3 and Standalone
-builds pass without warnings.
+The full DSP/editor regression and Linux VST3/Standalone builds validate the
+uncapped academic implementation separately from these onset measurements.
 
-The 25 ms lookahead, 50 ms reported host latency, ±150° target cap, protected
+The 25 ms lookahead, 50 ms reported host latency, uncapped phase requests, protected
 onset interval, Transient release knob, and five-millisecond sigmoid handoff
 remain. Tests verify that late responses are applied after the protected
 attack rather than discarded, including a simulated electric-piano sustain.

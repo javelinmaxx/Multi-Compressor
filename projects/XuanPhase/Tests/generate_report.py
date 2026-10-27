@@ -13,9 +13,11 @@ audio = np.genfromtxt(root/'transient.csv', delimiter=',', names=True)
 fig, axes = plt.subplots(1, 2, figsize=(12, 4), constrained_layout=True)
 for degrees in [-180, -90, 0, 90, 180]:
     rows = phase[phase['setting'] == degrees]
-    axes[0].semilogx(rows['frequency'], rows['phase_deg'], 'o-', label=f'Low {degrees:+} / High {-degrees:+} deg')
+    connected = np.rad2deg(np.unwrap(np.deg2rad(rows['phase_deg'])))
+    connected += 360*np.round((degrees-connected[0])/360)
+    axes[0].semilogx(rows['frequency'], connected, 'o-', label=f'Low {degrees:+} / High {-degrees:+} deg')
     axes[1].semilogx(rows['frequency'], rows['gain_db'], 'o-')
-axes[0].set(ylabel='Phase relative to compensated 50 ms latency (degrees)', xlabel='Frequency (Hz)', title='Independent low/high rotation')
+axes[0].set(ylabel='Unwrapped phase relative to 50 ms latency (degrees)', xlabel='Frequency (Hz)', title='Independent low/high rotation')
 axes[1].set(ylabel='Magnitude (dB)', xlabel='Frequency (Hz)', title='Finite-FIR magnitude ripple')
 axes[0].legend(fontsize=7)
 for ax in axes: ax.grid(alpha=.25)
@@ -97,7 +99,7 @@ minus the required rotation toward the common transient anchor, wrapped to
 The deterministic response is frozen at full correction to isolate the alignment
 objective from worker timing and release. Intermediate frequencies follow the
 connected curve; this table measures the four detected peaks only. Corrections
-that need more than ±150° retain some residual alignment error at the cap.
+are no longer clipped at ±150°; remaining error comes from the finite response and estimator.
 
 | Auto Depth | Mean absolute residual error | Largest absolute residual error |
 | --- | ---: | ---: |
@@ -115,8 +117,8 @@ and crossfades, at Transient 40/200/800 ms. Time follows processed audio samples
 so offline rendering speed does not change the envelope. Release is exponential:
 after one selected time constant, 36.8% of the underlying target strength remains; after
 about seven time constants, the response returns to manual-only processing.
-The phase cap can hold a saturated response at its boundary until the target
-strength has fallen far enough for the visible phase to start decreasing.
+The uncapped requested rotation scales continuously with target strength;
+the principal-phase meter can still wrap at ±180° as that request releases.
 The release starts after the protected onset hold (lookahead + complete FIR
 response + 8 ms safety margin), rather than the first sample of the hit. Rebuilds occur at up to 50 Hz during release and use the
 existing 5 ms response crossfade; the plotted envelope includes that stepping.
@@ -160,34 +162,28 @@ fig.suptitle("APRiCOT"); fig.savefig(root/'stereo-link.png',dpi=160); plt.close(
 with wave.open(str(root/'stereo-link-live.wav'),'wb') as wav:
     wav.setnchannels(2); wav.setsampwidth(2); wav.setframerate(48000)
     wav.writeframes((np.clip(np.column_stack([stereo_live['left'],stereo_live['right']]),-1,1)*32767).astype('<i2').tobytes())
-cap=np.genfromtxt(root/'phase-cap.csv',delimiter=',',names=True)
+cap=np.genfromtxt(root/'phase-range.csv',delimiter=',',names=True)
 fig,ax=plt.subplots(figsize=(9,3.5),constrained_layout=True)
 for key in ['left_deg','right_deg']: ax.semilogx(cap['frequency'],cap[key],label=key.replace('_deg','').title())
-for limit in [-150,150]: ax.axhline(limit,color='black',linestyle='--',linewidth=.8)
-ax.set(xlabel='Frequency (Hz)',ylabel='Requested correction (degrees)',ylim=(-195,195),title='Combined correction saturates at ±150° before FIR design')
-ax.grid(alpha=.25);ax.legend();fig.suptitle("APRiCOT"); fig.savefig(root/'phase-cap.png',dpi=160);plt.close(fig)
+ax.set(xlabel='Frequency (Hz)',ylabel='Requested correction (degrees)',title='Uncapped combined correction retains full phase turns')
+ax.grid(alpha=.25);ax.legend();fig.suptitle("APRiCOT"); fig.savefig(root/'phase-range.png',dpi=160);plt.close(fig)
 cap_report="""
-## Strict phase-correction limit
+## Uncapped phase request
 
-![DSP phase cap](phase-cap.png)
+![Uncapped combined phase request](phase-range.png)
 
-The final combined manual, automatic, and Stereo Link correction now saturates
-at ±150° at every frequency **before** conversion to a complex FIR target.
-A +200° request stops at +150°, leaving 30° of headroom from the wrap seam.
-No extra phase turns are used for separation; existing manual parameter ranges
-remain ±180° for automation compatibility.
+The academic branch passes the complete combined manual, automatic and Stereo
+Link phase directly to FIR design, without the former ±150° saturation or
+principal-angle wrapping. Manual knobs retain their ±180° ranges; automatic
+interpolation and opposing time shifts can contribute additional phase turns.
 
-The regression sweeps 20 Hz–20 kHz, manual −180/0/+180°, Auto Depth
-−100/0/+100%, Stereo Link −100/−50/0/+50/+100%, and both channels. Every
-combined correction must stay within ±150°, and positive/negative over-range
-requests must retain their sign. The plot uses a deliberately over-range
-synthetic target with maximum negative Link to show both saturated boundaries.
-The finite FIR approximates the bounded target and can have small measured
-phase ripple; the cap applies to the actual correction requested from its design.
-At the 20 Hz manual endpoint, finite-FIR phase error is about 3.9 degrees for
-a 150-degree target; the manual regression allows 4.3 degrees there and 1.8
-degrees at its other measurement frequencies.
-Data: [phase-cap.csv](phase-cap.csv).
+The regression checks the analytical sum over 20 Hz–20 kHz, manual
+−180/0/+180°, Auto Depth −100/0/+100%, Stereo Link
+−100/−50/0/+50/+100% and both channels. It explicitly verifies requests beyond
+both +180° and −180°. The displayed curves retain every turn; the audio target
+is `exp(j*phase)`, and the meter still shows the principal measured phase.
+Finite-support approximation error is measured separately from request range.
+Data: [phase-range.csv](phase-range.csv).
 
 """
 ahead=np.genfromtxt(root/'lookahead.csv',delimiter=',',names=True)
@@ -281,11 +277,10 @@ feed identical dispersed hits to both channels through the actual convolution
 engine at 100% Auto Depth, using a frozen detected target. At +100%, both
 channels receive exactly the same correction; at 0%, each uses its own target
 (which happens to be identical in this example). At negative values, opposing
-transient-guided timing shifts aim to separate the channels, but the final
-combined correction is now strictly capped to ±150° at every frequency.
-The previous full-band 5 ms separation is no longer guaranteed: at high
-frequencies, saturation constrains the opposing time shifts, so the largest
-negative Link value can produce less peak spacing than an intermediate value.
+transient-guided timing shifts aim to separate the channels. The opposing
+request reaches 2.5 ms per channel at full Depth without phase clipping.
+The measured peak spacing still depends on the input, estimated correction
+and finite FIR response; this table reports actual rendered samples.
 
 | Stereo Link | Absolute channel peak spacing | L/R correlation over complete buffer |
 | --- | ---: | ---: |
@@ -303,8 +298,8 @@ phase response.
 The final subplot runs the real background worker at −100% Link on repeated
 identical hits with the default 200 ms release, starting with no preloaded
 target. It verifies that independent analysis and response handoff actually
-apply differing channel corrections within the phase limit; release,
-scheduling, and the cap determine the resulting peak spacing. Listen: [live stereo separation](stereo-link-live.wav).
+apply differing uncapped channel corrections; release,
+scheduling, and the finite FIR determine the resulting peak spacing. Listen: [live stereo separation](stereo-link-live.wav).
 
 Mono input layouts disable the opposing shift. Auto Off and zero Auto Depth
 also disable separation. Channel kernels crossfade together, retain block-size
@@ -330,8 +325,10 @@ phase-response accuracy from the stateful onset decision.
 The same FIR used by the processor is measured at 20, 50, 200, 1k, 5k and
 12k Hz for opposite low/high settings, with a 1 kHz crossover. Phase is measured
 relative to the compensated 50 ms latency (25 ms input lookahead plus
-the 25 ms FIR center). Requests at the manual endpoints saturate at ±150°
-before design; finite-FIR phase and magnitude ripple are shown explicitly. The response
+the 25 ms FIR center). Manual endpoint requests are preserved without phase
+saturation; the plotted manual phase is unwrapped and aligned at its first
+frequency to the nearest Low setting. Finite-FIR phase and magnitude ripple are
+shown explicitly. The response
 is a finite phase-rotation approximation, not a mathematically exact all-pass.
 
 Impulse tests compare the actual hybrid convolution against its designed FIR,
@@ -423,8 +420,8 @@ Additional tests feed ±180°, ±200°, ±540°, and +900° responses to the act
 plot helper, check that wrapping preserves their complex phase, flatten the
 cubic curves to verify they remain within the track, and reject lines joining
 +179° directly to −179°. The plot is clipped to the labeled ±180° limits;
-the DSP now saturates the combined correction to ±150° before FIR design,
-rather than retaining extra unwrapped turns.
+the academic DSP preserves the full combined request and extra unwrapped turns
+before FIR design; these display bounds do not clip the requested correction.
 Stereo Link sits at the far right of the three-knob Auto row beside Transient.
 
 A hosted-editor regression reproduces AU EditorCompHolder's lifecycle: a

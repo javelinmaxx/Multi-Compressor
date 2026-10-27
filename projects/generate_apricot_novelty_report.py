@@ -70,7 +70,8 @@ def report(source,destination):
     angle,delay = phase_targets(fft,bins,anchor,context["residual"][anchor],rate)
     np.testing.assert_allclose(np.angle(np.exp(1j*(angle-peaks["target_angle_rad"]))),0,atol=2e-5)
     np.testing.assert_allclose(delay,peaks["relative_delay_s"],atol=2e-7)
-    assert len(peaks) > 0 and np.all(abs(curve["requested_deg"]) <= 150.00001)
+    assert len(peaks) > 0
+    np.testing.assert_allclose(curve["requested_deg"],curve["interpolated_deg"],atol=1e-4,rtol=1e-7)
 
     fig = plt.figure(figsize=(14,14))
     grid = fig.add_gridspec(5,2,height_ratios=[1,.95,1,1.3,.4],left=.07,right=.92,top=.94,bottom=.045,hspace=.65,wspace=.5)
@@ -120,7 +121,7 @@ def report(source,destination):
     residual_axis.set_ylabel("Residual amplitude",color="#b43c42")
     anchor_ax.legend(fontsize=7,loc="upper left"); residual_axis.legend(fontsize=7,loc="upper right"); anchor_ax.grid(alpha=.15)
     estimator.semilogx(curve["frequency_hz"],curve["interpolated_deg"],color="#24748d",label="Interpolated phase targets")
-    estimator.semilogx(curve["frequency_hz"],curve["requested_deg"],"--",color="#b43c42",label="Requested phase (±150° cap)")
+    estimator.semilogx(curve["frequency_hz"],curve["requested_deg"],"--",color="#b43c42",label="Requested phase (uncapped)")
     estimator.scatter(peaks["frequency_hz"],peaks["interpolated_deg"],color="black",s=30,label="Selected spectral peaks")
     delay_axis = estimator.twinx()
     delay_axis.scatter(peaks["frequency_hz"],1000*peaks["relative_delay_s"],marker="s",color="#bd6e17",s=25,label="Local phase-slope delay τₖ")
@@ -161,7 +162,7 @@ This deterministic streamed fixture uses the **production `PhaseEngine::analyse(
 
 **(d)** selects the first detected-event frame at **{selected_frame/rate*1000:.3f} ms**. Production preserves the current complex FFT phase, replaces magnitudes with the event's accumulated positive novelty, imposes conjugate symmetry, and takes the IFFT. Its largest absolute real sample becomes the transient anchor at **{anchor_time:.3f} ms**, rather than automatically using the mixture's whole-window peak. The residual has its own labeled amplitude axis; it is not secretly gain-matched to the louder input.
 
-**(e)** uses that **same exported anchor and FFT** to show selected targets and the resulting interpolation. For FFT peak bin k and frame-relative anchor a, production computes `θₖ=wrap(sign(anchor)−2π*k*a/N−arg(Xₖ))` (sign term π for a negative anchor, 0 otherwise) and `τₖ=clip(−wrap(arg(Xₖ₊₁)−arg(Xₖ₋₁)+4π*a/N)/(4π*fs/N), ±25 ms)`. Those targets enter the actual smooth interpolation and ±150° capped phase request at full positive Auto Depth. This is a measured connection between detection and phase estimation, not a schematic arrow attached to independently synthesized targets.
+**(e)** uses that **same exported anchor and FFT** to show selected targets and the resulting interpolation. For FFT peak bin k and frame-relative anchor a, production computes `θₖ=wrap(sign(anchor)−2π*k*a/N−arg(Xₖ))` (sign term π for a negative anchor, 0 otherwise) and `τₖ=clip(−wrap(arg(Xₖ₊₁)−arg(Xₖ₋₁)+4π*a/N)/(4π*fs/N), ±25 ms)`. Those targets enter the actual smooth interpolation and uncapped phase request at full positive Auto Depth. This is a measured connection between detection and phase estimation, not a schematic arrow attached to independently synthesized targets.
 
 The first returned targets are retained exactly, including peaks that differ from the known synthesized attack partials:
 

@@ -23,6 +23,13 @@ class FIRResponseCalibration(unittest.TestCase):
         np.testing.assert_allclose(20*np.log10(abs(quiet)),-6.020599913,atol=1e-8)
         np.testing.assert_allclose(phase_error(np.exp(-1j*np.deg2rad(179)),179),2,atol=1e-10)
 
+    def test_full_turn_requests_keep_their_branch_with_circular_error(self):
+        requested = np.array([-720.,-370.,-181.,181.,370.,720.])
+        measured = np.exp(1j*np.deg2rad(requested))
+        error = phase_error(measured,requested)
+        np.testing.assert_allclose(error,0,atol=1e-10)
+        np.testing.assert_allclose(requested+error,requested,atol=1e-10)
+
     def test_direct_response_matches_fft_on_known_grid(self):
         taps = np.random.default_rng(17).normal(size=17)
         bins = np.array([0,1,23,77,1000,2048])

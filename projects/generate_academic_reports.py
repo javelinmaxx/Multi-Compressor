@@ -187,7 +187,7 @@ def apricot(source, destination):
         axes[0].semilogx([float(r["frequency_hz"]) for r in group], [float(r["requested_deg"]) for r in group], label=variant)
         axes[1].semilogx([float(r["frequency_hz"]) for r in group], [float(r["gain_db"]) for r in group], label=variant)
     axes[0].set_ylabel("Requested phase (degrees)"); axes[1].set(xlabel="Frequency (Hz)", ylabel="Measured FIR gain (dB)")
-    axes[0].legend(ncol=2); fig.suptitle("APRiCOT • requested phase and measured FIR gain"); fig.savefig(destination/"broadband-response.png", dpi=160); plt.close(fig)
+    axes[0].legend(ncol=2); fig.suptitle("APRiCOT • uncapped phase and measured FIR gain"); fig.savefig(destination/"broadband-response.png", dpi=160); plt.close(fig)
     return f"""# APRiCOT: synthetic alignment ablations
 
 {len(rows)} signal/variant conditions at 44.1/48/96 kHz, including the production finite FIR and partitioned audio convolution.
@@ -198,7 +198,7 @@ def apricot(source, destination):
 
 These averages are descriptive and combine very different fixtures. In particular, phase-target accuracy and envelope arrival spread need not improve together.
 
-![Broadband response and phase cap interaction](broadband-response.png)
+![Broadband uncapped phase request and measured FIR response](broadband-response.png)
 
 {novelty_report(source,destination)}
 
@@ -208,17 +208,17 @@ These averages are descriptive and combine very different fixtures. In particula
 
 Fixtures are four Gaussian wave packets with staggered centers, a broadband attack with more than 24 spectral peaks, and the dispersed attack emerging over a stationary 220 Hz sustain. The source specifies every frequency, envelope and phase. Analysis length is the next power of two ≥40 ms, matching production. Eighty identical background-only snapshots settle the spectral novelty history before an otherwise identical snapshot adds the attack. This **paired-snapshot experiment** isolates estimation/anchoring; it is not a streamed detector precision/recall trial. For the sustain case the new attack is deliberately near the frame edge, where the detector can see it. No synthetic event labels are presented as manually annotated musical audio.
 
-Baselines are latency-matched bypass and a fixed manual +45° low/−45° high response at 1 kHz crossover. Auto is full positive Depth, unity strength, default Stereo Link +100%; manual rotation is zero for all adaptive variants. The same analysed event is frozen before rendering, excluding worker scheduling and release from this experiment. Ablations remove residual anchoring, set local phase-slope delay estimates to zero, retain only the six strongest selected peaks (restoring ascending frequency order), disable adjacent-angle unwrapping, or replace smoothstep interpolation with linear interpolation. The real ±150° cap remains enabled in **every** condition. No output gain or RMS normalization is applied.
+Baselines are latency-matched bypass and a fixed manual +45° low/−45° high response at 1 kHz crossover. Auto is full positive Depth, unity strength, default Stereo Link +100%; manual rotation is zero for all adaptive variants. The same analysed event is frozen before rendering, excluding worker scheduling and release from this experiment. Ablations remove residual anchoring, set local phase-slope delay estimates to zero, retain only the six strongest selected peaks (restoring ascending frequency order), disable adjacent-angle unwrapping, or replace smoothstep interpolation with linear interpolation. The combined phase request is **uncapped in every condition** on the academic branch; complete interpolation turns are passed to FIR synthesis. No output gain or RMS normalization is applied.
 
 Phase error is mean absolute wrapped residual between the **measured FIR** phase (25 ms FIR reference removed) and the *full method's original target angles at its detected frequencies*. The common reference avoids rewarding reduced-peak variants by evaluating only their own retained targets. FIR magnitude ripple is max−min gain across 97 logarithmic points from 40 Hz to min(18 kHz, 0.4×sample rate); this is sampled ripple, not a continuous-frequency bound. Audio rendering includes the separate 25 ms lookahead and the full 50 ms host latency.
 
 Arrival spread is the population standard deviation of energy-centroid arrival times in analytic Gaussian frequency bands centered on those same full-method peaks, using bandwidth sigma=max(70 Hz, 0.06×frequency). Each centroid uses the complete zero-padded rendered buffer; positive-frequency FFT bins form an analytic envelope. It is an envelope-centroid metric, not onset timing precision or perceived punch. RMS and crest use that entire common buffer. `pre_window_energy` integrates before 15 ms relative to the 50 ms-delayed input reference, and `tail_energy` after 33 ms; sustained background is included in both, so these columns must not be interpreted as pure processing artifacts.
 
-## Finding: unwrapping and the cap
+## Uncapped phase synthesis
 
-On the broadband fixture, disabling unwrapping can produce **less residual phase error** than the full method. The connected unwrapped angle can accumulate beyond one cycle, while the final requested phase is clipped to ±150° without first choosing an equivalent principal angle. This experiment exposes a cap/interpolation interaction; it does not establish that disabling unwrapping is a good production fix. No DSP correction is silently included in this research commit. Inspect the requested-phase traces and per-frequency response before choosing a remedy.
+The academic branch no longer clips combined manual, Auto or Stereo Link phase at ±150°. The connected interpolated request is passed directly to the complex target `exp(j*phase)`; no principal-angle wrapping or replacement bound is inserted. The sampled FIR phase error remains a circular error, while plots place realized phase on the branch nearest the full requested curve. Updated measurements retain all approximation errors and do not assume removing the cap guarantees improved transient concentration.
 
-A separate exact seam probe demonstrates why unwrapping exists: adjacent +179°/−179° targets yield π at the midpoint with unwrapping and zero without it. Another off-center probe confirms linear and smooth interpolation differ. Tests assert these mechanisms, finite audio, capped requests, bounded timing, detected targets, residual-anchor differences, nonzero slope contributions and the six-peak budget. They do not demand universal peak or concentration improvement.
+A separate exact seam probe demonstrates why unwrapping exists: adjacent +179°/−179° targets yield π at the midpoint with unwrapping and zero without it. Another off-center probe confirms linear and smooth interpolation differ. Tests assert these mechanisms, finite audio, requests beyond the former limit, bounded timing, detected targets, residual-anchor differences, nonzero slope contributions and the six-peak budget. They do not demand universal peak or concentration improvement.
 
 ## Limits
 

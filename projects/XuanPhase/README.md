@@ -30,9 +30,9 @@ The maximum audio tail is approximately 75 ms including lookahead. Rotated
 transients can move or spread around the compensated reference; host latency
 remains fixed rather than following each frequency's group delay.
 
-The final combined manual, Auto and stereo correction is capped at **±150°**
-to leave 30° of headroom from the wrap seam. Manual parameter ranges remain
-±180° for existing automation; requests beyond the cap saturate at ±150°.
+On the academic branch the combined manual, Auto and stereo phase request is
+**uncapped** and retains complete interpolation turns before FIR synthesis.
+Manual knobs retain their ±180° ranges for automation compatibility.
 
 The desired positive-frequency response is unit magnitude with phase
 `low × w(f) + high × (1 − w(f))`, where `w(f) = 1 / (1 + (f / crossover)^4)`.
@@ -57,9 +57,9 @@ across ±180°; only the outer edges taper to neutral. Peak selection reserves
 coverage across logarithmic regions up to 20 kHz (or 45% of sample rate), then
 fills spare slots with the strongest remaining peaks to avoid low-frequency bias. Their complex phase and locally unwrapped phase slopes
 estimate how wave packets can meet the new transient's strongest spectral-residual sample. Relative
-band-delay targets are limited to ±25 ms. The final combined manual, Auto,
-and Stereo Link phase is saturated to ±150° before FIR design; values beyond
-the limit stop at that boundary rather than wrapping into another turn.
+band-delay targets are limited to ±25 ms. Combined manual, Auto and Stereo
+Link phase is passed directly to FIR design without saturation or
+principal-angle wrapping on the academic branch.
 
 **Auto Depth** ranges from −100% to +100% and scales only these additional
 corrections: 0% leaves the manual response unchanged, +100% applies the full
@@ -72,14 +72,14 @@ detected target, and negative values reverse the correction away from alignment.
 - **0%** detects, corrects, and releases each channel independently, with no
   contribution from the shared target.
 - **−100%** keeps independent correction and adds opposing shifts of up to
-  2.5 ms per channel at full Depth, subject to the final ±150° cap,
+  2.5 ms per channel at full Depth, without phase clipping,
   aiming to move their transients farther apart; the channel whose detected anchor is earlier moves earlier, and the
   later one moves later (equal anchors use left-earlier/right-later).
 
 Positive intermediate values blend toward the shared correction; negative
-values scale the opposing timing request. The phase cap limits the achievable
-separation, especially at higher frequencies; maximum negative Link does not
-guarantee the largest peak spacing on every signal. Separation follows Transient release
+values scale the opposing timing request. Achievable peak separation still
+depends on the input and finite FIR; maximum negative Link does not guarantee
+the largest peak spacing on every signal. Separation follows Transient release
 and absolute Auto Depth; at zero Depth or Auto Off it stops. Mono layouts use
 independent correction without an opposing shift. The fixed host latency stays
 50 ms, and the plugin now has unity output gain. Old Output state is ignored
@@ -90,8 +90,8 @@ when loading older sessions, which default to +100% Link.
 after the protected onset response has passed. New distinct onsets refresh
 the correction; it decays
 back toward the manual response between hits, and returns fully once below 0.1%.
-A saturated correction can remain at the ±150° boundary until its decaying
-target strength falls far enough for the requested phase to leave the cap.
+The uncapped phase request scales with decaying target strength; the measured
+principal phase can still wrap at ±180° during release.
 Release responses update at up to 50 Hz through the existing 5 ms kernel fades.
 Auto Off or Depth 0% stops automatic response updates; a visible meter retains
 lower-rate input analysis for manual use, which stops when the editor is hidden.
@@ -133,9 +133,9 @@ they do not jump ahead to an unapplied worker target. Guides mark 0°, ±45°,
 ±90°, ±135°, and the ±180° boundaries, with matching line styles in the key
 below the track; positive rotation is right of center and negative is left.
 The history is 168 px wide, and the readout reports the largest absolute
-rotation. The DSP correction is strictly capped to ±150°, including combined manual,
-Auto, and Stereo Link contributions. The meter measures the finite FIR, whose
-phase can show small approximation ripple near the boundary. The display
+rotation. The academic DSP preserves uncapped combined manual, Auto and Stereo
+Link requests. The meter measures the finite FIR, whose phase can show
+approximation ripple. The display
 uses principal phase for that measured complex response. Curves are
 clipped to the ±180° track, and smoothing is checked against overshoot.
 The lower strip shows input peak activity in white and detected
@@ -214,7 +214,7 @@ production target interpolation for all three synthetic fixtures at 44.1, 48
 and 96 kHz. The [three-panel report](Tests/Reports/Academic/fir-core.md) shows:
 
 - **(a)** interpolated target phase on logarithmic frequency with selected peaks
-  marked, plus the actual capped request;
+  marked, plus the actual uncapped request;
 - **(b)** the synthesized finite kernel, its 25 ms causal centre and ±25 ms
   relative support (2,401 taps at 48 kHz);
 - **(c)** requested versus measured phase and magnitude deviation from 0 dB.

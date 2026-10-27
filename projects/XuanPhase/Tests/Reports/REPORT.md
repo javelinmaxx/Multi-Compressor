@@ -15,8 +15,10 @@ phase-response accuracy from the stateful onset decision.
 The same FIR used by the processor is measured at 20, 50, 200, 1k, 5k and
 12k Hz for opposite low/high settings, with a 1 kHz crossover. Phase is measured
 relative to the compensated 50 ms latency (25 ms input lookahead plus
-the 25 ms FIR center). Requests at the manual endpoints saturate at ±150°
-before design; finite-FIR phase and magnitude ripple are shown explicitly. The response
+the 25 ms FIR center). Manual endpoint requests are preserved without phase
+saturation; the plotted manual phase is unwrapped and aligned at its first
+frequency to the nearest Low setting. Finite-FIR phase and magnitude ripple are
+shown explicitly. The response
 is a finite phase-rotation approximation, not a mathematically exact all-pass.
 
 Impulse tests compare the actual hybrid convolution against its designed FIR,
@@ -38,10 +40,10 @@ applied; both RMS and crest are reported to expose magnitude changes.
 
 | Auto Depth | Peak | RMS over the full 7,000-sample buffer | Crest factor |
 | --- | ---: | ---: | ---: |
-| −100% | 0.273170 | 0.028242 | 19.711 dB |
+| −100% | 0.272990 | 0.028242 | 19.705 dB |
 | 0% | 0.382388 | 0.028242 | 22.632 dB |
 | 50% | 0.483089 | 0.028242 | 24.663 dB |
-| 100% | 0.532159 | 0.028242 | 25.503 dB |
+| 100% | 0.532231 | 0.028242 | 25.504 dB |
 
 Depth 0 is sample-identical to manual-only processing. Full Depth must improve
 the dispersed hit's peak by at least 5% in this test. Detected group-delay
@@ -102,7 +104,7 @@ minus the required rotation toward the common transient anchor, wrapped to
 The deterministic response is frozen at full correction to isolate the alignment
 objective from worker timing and release. Intermediate frequencies follow the
 connected curve; this table measures the four detected peaks only. Corrections
-that need more than ±150° retain some residual alignment error at the cap.
+are no longer clipped at ±150°; remaining error comes from the finite response and estimator.
 
 | Auto Depth | Mean absolute residual error | Largest absolute residual error |
 | --- | ---: | ---: |
@@ -122,17 +124,17 @@ and crossfades, at Transient 40/200/800 ms. Time follows processed audio samples
 so offline rendering speed does not change the envelope. Release is exponential:
 after one selected time constant, 36.8% of the underlying target strength remains; after
 about seven time constants, the response returns to manual-only processing.
-The phase cap can hold a saturated response at its boundary until the target
-strength has fallen far enough for the visible phase to start decreasing.
+The uncapped requested rotation scales continuously with target strength;
+the principal-phase meter can still wrap at ±180° as that request releases.
 The release starts after the protected onset hold (lookahead + complete FIR
 response + 8 ms safety margin), rather than the first sample of the hit. Rebuilds occur at up to 50 Hz during release and use the
 existing 5 ms response crossfade; the plotted envelope includes that stepping.
 
 | Transient | Largest applied rotation during test | Rotation at end of 1.25 s stream |
 | --- | ---: | ---: |
-| 40 ms | 149.545° | 0.000000° |
-| 200 ms | 149.545° | 0.804683° |
-| 800 ms | 149.545° | 40.566300° |
+| 40 ms | 149.858° | 0.000000° |
+| 200 ms | 149.858° | 0.804683° |
+| 800 ms | 149.858° | 40.566300° |
 
 The short release must return below 1°; the long release must retain more
 correction than the medium release. Other checks cover zero Depth, host bypass,
@@ -146,27 +148,22 @@ and worker scheduling can limit improvement. Higher peak at unchanged RMS is a
 punch indicator, not proof of perceived quality or reconstruction of an original
 undispersed source.
 
-## Strict phase-correction limit
+## Uncapped phase request
 
-![DSP phase cap](phase-cap.png)
+![Uncapped combined phase request](phase-range.png)
 
-The final combined manual, automatic, and Stereo Link correction now saturates
-at ±150° at every frequency **before** conversion to a complex FIR target.
-A +200° request stops at +150°, leaving 30° of headroom from the wrap seam.
-No extra phase turns are used for separation; existing manual parameter ranges
-remain ±180° for automation compatibility.
+The academic branch passes the complete combined manual, automatic and Stereo
+Link phase directly to FIR design, without the former ±150° saturation or
+principal-angle wrapping. Manual knobs retain their ±180° ranges; automatic
+interpolation and opposing time shifts can contribute additional phase turns.
 
-The regression sweeps 20 Hz–20 kHz, manual −180/0/+180°, Auto Depth
-−100/0/+100%, Stereo Link −100/−50/0/+50/+100%, and both channels. Every
-combined correction must stay within ±150°, and positive/negative over-range
-requests must retain their sign. The plot uses a deliberately over-range
-synthetic target with maximum negative Link to show both saturated boundaries.
-The finite FIR approximates the bounded target and can have small measured
-phase ripple; the cap applies to the actual correction requested from its design.
-At the 20 Hz manual endpoint, finite-FIR phase error is about 3.9 degrees for
-a 150-degree target; the manual regression allows 4.3 degrees there and 1.8
-degrees at its other measurement frequencies.
-Data: [phase-cap.csv](phase-cap.csv).
+The regression checks the analytical sum over 20 Hz–20 kHz, manual
+−180/0/+180°, Auto Depth −100/0/+100%, Stereo Link
+−100/−50/0/+50/+100% and both channels. It explicitly verifies requests beyond
+both +180° and −180°. The displayed curves retain every turn; the audio target
+is `exp(j*phase)`, and the meter still shows the principal measured phase.
+Finite-support approximation error is measured separately from request range.
+Data: [phase-range.csv](phase-range.csv).
 
 ## Lookahead and onset stability
 
@@ -228,16 +225,15 @@ feed identical dispersed hits to both channels through the actual convolution
 engine at 100% Auto Depth, using a frozen detected target. At +100%, both
 channels receive exactly the same correction; at 0%, each uses its own target
 (which happens to be identical in this example). At negative values, opposing
-transient-guided timing shifts aim to separate the channels, but the final
-combined correction is now strictly capped to ±150° at every frequency.
-The previous full-band 5 ms separation is no longer guaranteed: at high
-frequencies, saturation constrains the opposing time shifts, so the largest
-negative Link value can produce less peak spacing than an intermediate value.
+transient-guided timing shifts aim to separate the channels. The opposing
+request reaches 2.5 ms per channel at full Depth without phase clipping.
+The measured peak spacing still depends on the input, estimated correction
+and finite FIR response; this table reports actual rendered samples.
 
 | Stereo Link | Absolute channel peak spacing | L/R correlation over complete buffer |
 | --- | ---: | ---: |
-| -100% | 0.167 ms | 0.4869 |
-| -50% | 0.500 ms | 0.2952 |
+| -100% | 5.000 ms | -0.0033 |
+| -50% | 2.500 ms | 0.2426 |
 | +0% | 0.000 ms | 1.0000 |
 | +50% | 0.000 ms | 1.0000 |
 | +100% | 0.000 ms | 1.0000 |
@@ -254,8 +250,8 @@ phase response.
 The final subplot runs the real background worker at −100% Link on repeated
 identical hits with the default 200 ms release, starting with no preloaded
 target. It verifies that independent analysis and response handoff actually
-apply differing channel corrections within the phase limit; release,
-scheduling, and the cap determine the resulting peak spacing. Listen: [live stereo separation](stereo-link-live.wav).
+apply differing uncapped channel corrections; release,
+scheduling, and the finite FIR determine the resulting peak spacing. Listen: [live stereo separation](stereo-link-live.wav).
 
 Mono input layouts disable the opposing shift. Auto Off and zero Auto Depth
 also disable separation. Channel kernels crossfade together, retain block-size
@@ -284,8 +280,8 @@ Additional tests feed ±180°, ±200°, ±540°, and +900° responses to the act
 plot helper, check that wrapping preserves their complex phase, flatten the
 cubic curves to verify they remain within the track, and reject lines joining
 +179° directly to −179°. The plot is clipped to the labeled ±180° limits;
-the DSP now saturates the combined correction to ±150° before FIR design,
-rather than retaining extra unwrapped turns.
+the academic DSP preserves the full combined request and extra unwrapped turns
+before FIR design; these display bounds do not clip the requested correction.
 Stereo Link sits at the far right of the three-knob Auto row beside Transient.
 
 A hosted-editor regression reproduces AU EditorCompHolder's lifecycle: a

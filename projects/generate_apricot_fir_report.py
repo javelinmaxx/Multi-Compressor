@@ -44,7 +44,7 @@ def report(source,destination):
             np.testing.assert_allclose(h["relative_ms"],1000*(np.arange(len(h))-centre)/rate,atol=1e-7)
             assert np.isfinite(h["coefficient"]).all() and np.max(abs(h["coefficient"][[0,-1]])) < 1e-12
             assert np.all(np.diff(r["frequency_hz"]) > 0)
-            assert np.all(abs(r["requested_deg"]) <= 150.00001)
+            np.testing.assert_allclose(r["requested_deg"],r["interpolated_deg"],atol=1e-4,rtol=1e-7)
             assert set(p["frequency_hz"]).issubset(set(r["frequency_hz"]))
             measured = response(h["coefficient"],r["frequency_hz"],rate,centre)
             # Recompute from actual coefficients instead of trusting the native
@@ -55,7 +55,7 @@ def report(source,destination):
             np.testing.assert_allclose(gain,r["gain_db"],atol=2e-6)
             np.testing.assert_allclose(error,r["phase_error_deg"],atol=2e-5)
             # At the exact peak frequencies, the exported interpolation values
-            # must coincide with the requested curve, including cap differences.
+            # must coincide with the requested curve, without phase clipping.
             indices = np.searchsorted(r["frequency_hz"],p["frequency_hz"])
             np.testing.assert_allclose(r["interpolated_deg"][indices],p["interpolated_deg"],atol=1e-7)
             np.testing.assert_allclose(r["requested_deg"][indices],p["requested_deg"],atol=1e-7)
@@ -69,10 +69,9 @@ def report(source,destination):
             c = grid[2].subgridspec(2,1,height_ratios=[1.2,1])
             cp = fig.add_subplot(c[0]); cm = fig.add_subplot(c[1],sharex=cp)
             frequency = r["frequency_hz"]
-            a.semilogx(frequency,r["interpolated_deg"],color="#24748d",label="Smooth interpolated target (before cap)")
-            a.semilogx(frequency,r["requested_deg"],"--",color="#bd6e17",label="Requested phase (±150° cap)")
+            a.semilogx(frequency,r["interpolated_deg"],color="#24748d",label="Smooth interpolated target")
+            a.semilogx(frequency,r["requested_deg"],"--",color="#bd6e17",label="Requested phase (uncapped)")
             a.scatter(p["frequency_hz"],p["interpolated_deg"],s=22,color="black",zorder=4,label="Selected spectral peaks")
-            for bound in [-150,150]: a.axhline(bound,color="gray",lw=.6,ls=":")
             a.set(title="(a) Desired phase response",xlabel="Frequency (Hz, logarithmic)",ylabel="Phase (degrees)",xlim=(frequency[0],frequency[-1]))
             a.legend(fontsize=8,ncol=2); a.grid(alpha=.2)
             b.plot(h["causal_ms"],h["coefficient"],color="#24748d",lw=.9,label="Actual PhaseEngine::impulse() coefficients")
@@ -101,6 +100,7 @@ def report(source,destination):
             fig.savefig(destination/(name+".pdf"),metadata={"CreationDate":None,"ModDate":None})
             plt.close(fig)
             figures.append(f"![Desired phase, actual FIR and realized response: {corpus}]({name}.png)\n\n[Vector PDF]({name}.pdf)")
+    assert np.max(abs(curves["requested_deg"])) > 150, "FIR fixtures must exercise the removed phase limit"
     with (destination/"fir-approximation-metrics.csv").open("w",newline="") as stream:
         writer = csv.writer(stream,lineterminator="\n")
         writer.writerow(["rate","corpus","taps","phase_rmse_deg","max_phase_error_deg","max_magnitude_deviation_db","magnitude_ripple_db"])
@@ -108,7 +108,7 @@ def report(source,destination):
     radius_44100 = next((row[2]-1)*500/44100 for row in summaries if row[0] == 44100)
     text = "## Finite FIR core: requested, synthesized and realized\n\n"+"\n\n".join(figures)+f"""
 
-Panel **(a)** evaluates the production `bandValue()` smooth interpolation densely on logarithmic frequency, with the detected spectral peaks marked at their connected/interpolated target angles. It separately shows the actual `phaseAt()` request after the ±150° cap. The original principal target angles are preserved in `fir-peaks.csv.gz`; interpolation uses connected angles and local phase-slope terms, so its curve can exceed the cap. No Python interpolation substitutes for the production implementation.
+Panel **(a)** evaluates the production `bandValue()` smooth interpolation densely on logarithmic frequency, with the detected spectral peaks marked at their connected/interpolated target angles. The actual `phaseAt()` request is uncapped and follows that interpolated target at full positive Auto Depth with zero manual rotation. The original principal target angles are preserved in `fir-peaks.csv.gz`; interpolation uses connected angles and local phase-slope terms, so its curve can retain extra phase turns. No Python interpolation substitutes for the production implementation.
 
 Panel **(b)** plots every actual coefficient returned by `PhaseEngine::impulse()`. At 48 kHz there are **2,401 taps**, indexed 0–2,400, with a **25 ms causal centre** and **−25 ms to +25 ms relative support** (0–50 ms causal time). Gray areas lie outside the finite support. These coefficients include the production taper and are not normalized or replaced by an ideal impulse. The separate input lookahead is not part of this kernel. At other sample rates, `centre = juce::roundToInt(0.025*fs)` and length is `2*centre+1`; at 44.1 kHz the centre/support radius in this run is {radius_44100:.6f} ms due to sample rounding. The plotter derives the centre from the exported odd kernel length rather than imposing a rounding convention.
 

@@ -53,7 +53,7 @@ s(u) = u^2 * (3 - 2u)
 
 blends neighboring phase and timing targets. Within a local target region, the phase estimate includes a frequency-offset term derived from the local relative-time estimate. The response tapers toward neutral only outside the outermost target regions, reducing abrupt boundary behavior.
 
-The requested phase combines this automatic correction with the user's low/high manual phase controls and crossover. Auto Depth scales the automatic correction from reversed correction at negative values, through no correction at 0%, to the full estimated correction at +100%. The combined request is capped at ±150° to leave margin from the ±180° phase-wrap boundary.
+The requested phase combines this automatic correction with the user's low/high manual phase controls and crossover. Auto Depth scales the automatic correction from reversed correction at negative values, through no correction at 0%, to the full estimated correction at +100%. On the academic branch the combined request is uncapped: all interpolation turns pass to FIR synthesis without saturation or principal-angle wrapping.
 
 ## 5. Finite-FIR phase-response synthesis
 

@@ -79,8 +79,9 @@ The Kuo weight sweep demonstrates the expected measured trade-off on this
 corpus: mean mid log-magnitude error rose from 0.1328 at side weight zero to
 0.1536 at side weight 2.0, while mean side/mid RMS rose from 0.4874 to 0.5482.
 These pooled synthetic means do not identify a perceptually optimal setting.
-The APRiCOT ablations exposed an interaction between connected angle unwrapping
-and the final phase cap; its report preserves the unfavorable measurements.
+The academic branch now removes the phase cap from combined manual, Auto and
+Stereo Link requests; current APRiCOT figures are regenerated from the uncapped
+response. Finite-FIR error and unfavorable estimator outcomes remain reported.
 
 ## Sample-derived audio spectrogram tests
 

@@ -63,7 +63,7 @@ private:
     std::array<std::atomic<float>, N> data {};
     std::atomic<uint32_t> version { 0 };
 };
-// The worker designs a bounded, real FIR around a 25 ms reference. The audio
+// The worker designs a finite, real FIR around a 25 ms reference. The audio
 // input has a separate 25 ms correction lookahead, for 50 ms total latency.
 // Convolution uses a direct head plus FFT tail with no extra block delay.
 class PhaseEngine final : private juce::Thread

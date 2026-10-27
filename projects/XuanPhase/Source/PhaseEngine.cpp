@@ -6,9 +6,6 @@ namespace xuan
 namespace
 {
 constexpr auto pi = juce::MathConstants<double>::pi;
-// Leave headroom from the +/-180 degree wrap seam in the final combined response.
-constexpr auto phaseLimit = static_cast<float> (150*pi/180);
-float cappedPhase (double phase) { return static_cast<float> (std::clamp (phase, -static_cast<double> (phaseLimit), static_cast<double> (phaseLimit))); }
 int64_t attackDeadline (int64_t onset, double rate)
 {
     return onset+juce::roundToInt (rate*.05)-juce::roundToInt (rate*.025)
@@ -102,7 +99,7 @@ double requestedPhase (double frequency, const Settings& s, const Analysis& a)
 }
 float PhaseEngine::phaseAt (double frequency, const Settings& s, const Analysis& a)
 {
-    return cappedPhase (requestedPhase (frequency, s, a));
+    return static_cast<float> (requestedPhase (frequency, s, a));
 }
 
 namespace
@@ -149,8 +146,8 @@ float PhaseEngine::stereoPhaseAt (double f, const Settings& s, const StereoAnaly
     const auto link = a.stereo ? std::clamp (s.link*.01f, -1.f, 1.f) : 0.f;
     if (link >= 1) return phaseAt (f, s, a.shared);
     const auto independent = requestedPhase (f, s, own);
-    if (link >= 0) return cappedPhase (independent+link*(requestedPhase (f, s, a.shared)-independent));
-    if (! s.automatic || juce::exactlyEqual (s.depth, 0.f)) return cappedPhase (independent);
+    if (link >= 0) return static_cast<float> (independent+link*(requestedPhase (f, s, a.shared)-independent));
+    if (! s.automatic || juce::exactlyEqual (s.depth, 0.f)) return static_cast<float> (independent);
     // Push already-earlier and already-later channel anchors farther apart;
     // equal anchors use L-earlier/R-later. No opposing shift in mono layouts.
     const auto rightLater = a.channel[1].anchor >= a.channel[0].anchor;
@@ -158,7 +155,7 @@ float PhaseEngine::stereoPhaseAt (double f, const Settings& s, const StereoAnaly
     const auto strength = std::max (a.channel[0].count > 0 ? a.channel[0].strength : 0.f,
                                     a.channel[1].count > 0 ? a.channel[1].strength : 0.f);
     const auto shift = sign*.0025*(-link)*std::min (1.f, std::abs (s.depth)*.01f)*strength;
-    return cappedPhase (independent-2*pi*f*shift);
+    return static_cast<float> (independent-2*pi*f*shift);
 }
 std::vector<float> PhaseEngine::stereoImpulse (double rate, const Settings& s, const StereoAnalysis& a, int channel)
 {
