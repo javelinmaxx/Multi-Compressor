@@ -79,3 +79,4 @@ The audio path adds 25 ms of input lookahead before the centered FIR, resulting 
 - [Onset detection report](Tests/Reports/onset-detection.md)
 - [Automatic alignment report](Tests/Reports/AUTO_ALIGNMENT.md)
 - [Academic test plan](ACADEMIC_TEST_PLAN.md)
+- [Measured spectral-novelty → transient anchor → phase-target handoff](Tests/Reports/Academic/novelty-phase-handoff.md)

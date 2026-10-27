@@ -4,6 +4,8 @@
 // include these controls or their branches; there are no hidden host parameters.
 #if defined(J_SONIC_ABLATION_TESTS)
 #include <array>
+#include <complex>
+#include <vector>
 namespace academic
 {
 struct HaasOptions
@@ -27,5 +29,17 @@ struct PhaseOptions
     int peaks = 24;
 };
 inline thread_local PhaseOptions phase;
+// Optional observer for academic measurements only; ordinary plugin builds do
+// not contain this state, allocation or instrumentation.
+struct PhaseDetectionTrace
+{
+    float threshold = 0, floor = 0, largest = 0, anchorValue = 0;
+    double activePeaks = 0, emergingScore = 0;
+    int anchor = 0, inputPeak = 0;
+    bool estimating = false, residualUsed = false;
+    std::vector<float> magnitude, reference, novel, collected, windowed, residual;
+    std::vector<std::complex<float>> spectrum;
+};
+inline thread_local PhaseDetectionTrace* phaseDetectionTrace = nullptr;
 }
 #endif

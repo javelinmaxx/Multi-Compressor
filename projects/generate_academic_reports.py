@@ -17,6 +17,7 @@ import numpy as np
 from academic_names import public_project, PUBLIC_PROJECTS
 from generate_audio_spectrograms import report as audio_report
 from generate_apricot_fir_report import report as fir_report
+from generate_apricot_novelty_report import report as novelty_report
 
 ROOT = Path(__file__).resolve().parent
 
@@ -199,6 +200,8 @@ These averages are descriptive and combine very different fixtures. In particula
 
 ![Broadband response and phase cap interaction](broadband-response.png)
 
+{novelty_report(source,destination)}
+
 {fir_report(source,destination)}
 
 ## Protocol and metrics
@@ -242,7 +245,7 @@ def main():
         (destination/"report-provenance.json").write_text(json.dumps({
             "academic_names_sha256": hashlib.sha256((ROOT/"academic_names.py").read_bytes()).hexdigest(),
             "generator_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            **({"fir_generator_sha256": hashlib.sha256((ROOT/"generate_apricot_fir_report.py").read_bytes()).hexdigest()} if project == "XuanPhase" else {}),
+            **({"fir_generator_sha256": hashlib.sha256((ROOT/"generate_apricot_fir_report.py").read_bytes()).hexdigest(), "novelty_generator_sha256": hashlib.sha256((ROOT/"generate_apricot_novelty_report.py").read_bytes()).hexdigest()} if project == "XuanPhase" else {}),
             "audio_generator_sha256": hashlib.sha256((ROOT/"generate_audio_spectrograms.py").read_bytes()).hexdigest(),
             "input_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(source.glob("*.csv"))},
             "matplotlib_version": matplotlib.__version__,

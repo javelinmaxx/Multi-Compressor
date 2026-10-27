@@ -1,7 +1,8 @@
 {
   "academic_names_sha256": "28127fcf2b1c4113f8057875cadbd0a8a367d92aa500ecc1a2a953b2e38ea887",
-  "generator_sha256": "c10acc01c442c3db4663e064d352830791f495415eb0726aac190332bebffbbd",
+  "generator_sha256": "743399e8c34d19a0fdcc78287bc60d8056f921aa2f371ca345116c67d675449f",
   "fir_generator_sha256": "e61aab1bb40576c459f696d41159049e4bf7f7a86da57a097e98a8db24d39e06",
+  "novelty_generator_sha256": "95c767ddb5ccb5bd850c6c01f28d96b716ffb9bdbced7df9f7297d39faf399e6",
   "audio_generator_sha256": "7b087846c34c8c51a1afef292374d5d234ff68e92b967a311e0edd7734068ed6",
   "input_sha256": {
     "audio-attack_over_sustain-bypass.csv": "90a59b000467cc77729d84b4d7c3ae4248a6ad16b8bb3e6b422ca4099fa64cb7",
@@ -15,6 +16,12 @@
     "fir-response.csv": "74d70f80082b37f2d8af7a4d5e482eb68257a3390ce0253d7d00fd3a752bc777",
     "interpolation-probes.csv": "2c622aec26d6e4a9f96259de7eba54be857e49287a748e666942b60a76bc9341",
     "manifest.csv": "961050f2c79506bb415336686266fe1564efbf12e53dd60fe9546c33a16811dc",
+    "novelty-audio.csv": "407ccf5f0d80c5732b7076882ec0ab04e75847f57d107230faf83f4e58914e65",
+    "novelty-context.csv": "6431f04dc0df02d68fdcbd91bb817d229d217b79573a10016c8fae5587256a21",
+    "novelty-frames.csv": "ca69c0748c4c7a3924b9cc0a05a19681c4f3136fe22523a29922066657bc90b2",
+    "novelty-peaks.csv": "7973d606e41777e18beeab9829b6d2390a0431a8cc49d0dbb08c0e56e2db7a3d",
+    "novelty-spectrum.csv": "0527457cc66978e3bfe3cdf808b5fd5693f2fbdcd246059791e0cf88e4ef9042",
+    "novelty-target-curve.csv": "cbb2c1287c8c9541e321cf11297682937d34624e948461575263641ee4e888dc",
     "phase-targets.csv": "cf57db63176244b0d4df99d7fb29df26b8609db0dde292fbf06d5d902e62e5c8",
     "phase.csv": "f44deb668883c748e7588c305d9e56e960b45eb1e279a86c95f18143efff3d79",
     "response.csv": "cf08b33227ed123486a39f35bae89eb7bbd2f615d8968d511744a39ff484496d"

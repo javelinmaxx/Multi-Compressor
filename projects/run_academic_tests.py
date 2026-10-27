@@ -47,7 +47,7 @@ def main():
             executable = build/"Release"/executable.name
         destination = output/project
         destination.mkdir(parents=True, exist_ok=True)
-        sources = [ROOT/"projects/academic_names.py", ROOT/"projects"/project/"CMakeLists.txt", ROOT/"projects/AcademicAblations.h", ROOT/"projects/AcademicTestUtils.h", ROOT/"projects/AcademicTests.cmake", Path(__file__).resolve(), ROOT/"projects/generate_academic_reports.py", ROOT/"projects/generate_audio_spectrograms.py", ROOT/"projects/generate_apricot_fir_report.py", ROOT/"projects/test_apricot_fir_report.py", ROOT/"projects/test_audio_spectrograms.py", ROOT/"projects/KuoStereo/Measurements/SynthPad.h"]
+        sources = [ROOT/"projects/academic_names.py", ROOT/"projects"/project/"CMakeLists.txt", ROOT/"projects/AcademicAblations.h", ROOT/"projects/AcademicTestUtils.h", ROOT/"projects/AcademicTests.cmake", Path(__file__).resolve(), ROOT/"projects/generate_academic_reports.py", ROOT/"projects/generate_audio_spectrograms.py", ROOT/"projects/generate_apricot_fir_report.py", ROOT/"projects/generate_apricot_novelty_report.py", ROOT/"projects/test_apricot_novelty_report.py", ROOT/"projects/test_apricot_fir_report.py", ROOT/"projects/test_audio_spectrograms.py", ROOT/"projects/KuoStereo/Measurements/SynthPad.h"]
         sources += sorted((ROOT/"projects"/project/"Source").glob("*"))
         sources += [ROOT/"projects"/project/"Tests/AblationTests.cpp"]
         # Include transitive shared DSP headers as well as the direct project.

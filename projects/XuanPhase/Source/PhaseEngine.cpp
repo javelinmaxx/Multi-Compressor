@@ -212,6 +212,17 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
     std::vector<float> novel (static_cast<size_t> (n/2+1));
     double novelty = 0, emerging = 0, activeWeight = 0;
     const auto floor = std::max (n*1e-5f, largest*.001f);
+#if defined(J_SONIC_ABLATION_TESTS)
+    auto* trace = academic::phaseDetectionTrace;
+    if (trace != nullptr)
+    {
+        *trace = {}; trace->floor = floor; trace->largest = largest; trace->inputPeak = anchor;
+        trace->magnitude.resize(novel.size()); trace->reference.resize(novel.size());
+        trace->windowed.resize(input.size()); trace->residual.resize(input.size());
+        trace->spectrum = spectrum;
+        for (int i = 0; i < n; ++i) trace->windowed[size_t(i)] = time[size_t(i)].real();
+    }
+#endif
     if (onsetState != nullptr && onsetState->spectralBaseline.size() != novel.size())
         onsetState->spectralBaseline.assign (novel.size(),0);
     for (int k = 1; k < n/2; ++k)
@@ -222,6 +233,9 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
         // A maximum over neighbouring previous bins rejects spectral motion
         // from vibrato, while log compression lets soft new partials contribute.
         const auto reference = std::max ({previous[index-1], previous[index], previous[index+1]});
+#if defined(J_SONIC_ABLATION_TESTS)
+        if (trace != nullptr) { trace->magnitude[index] = m; trace->reference[index] = reference; }
+#endif
         novel[index] = m > largest*.01f ? std::max (0.f,m-reference*1.25f-floor*.5f) : 0.f;
         if (rate*k/n >= 60 && rate*k/n <= std::min (20000., rate*.45)
             && m > 4*floor && m >= std::abs (spectrum[index-1]) && m > std::abs (spectrum[index+1]))
@@ -239,6 +253,13 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
             }
         }
     }
+#if defined(J_SONIC_ABLATION_TESTS)
+    if (trace != nullptr)
+    {
+        trace->novel = novel; trace->activePeaks = activeWeight;
+        trace->emergingScore = emerging/std::max(1.,activeWeight);
+    }
+#endif
     energy /= n;
     Analysis result; result.anchor = anchor/rate; result.flux = static_cast<float> (flux/std::max (1e-12, total));
     result.crest = static_cast<float> (peak/std::sqrt (std::max (1e-12, energy)));
@@ -276,6 +297,9 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
         mean /= std::max (1,state.count); squared /= std::max (1,state.count);
         const auto deviation = std::sqrt (std::max (0.,squared-mean*mean));
         const auto threshold = std::max ({.125f,centre+4*std::max (.003f,median (values)),static_cast<float> (mean+3.5*deviation)});
+#if defined(J_SONIC_ABLATION_TESTS)
+        if (trace != nullptr) trace->threshold = threshold;
+#endif
         const auto shortSize = std::min (n/4,std::max (1,juce::roundToInt (rate*.004)));
         double recent = 0, earlier = 0;
         for (int i = 0; i < shortSize; ++i)
@@ -313,6 +337,9 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
                 state.eventNovelty[i] = std::max (state.eventNovelty[i],novel[i]);
                 novel[i] = state.eventNovelty[i];
             }
+#if defined(J_SONIC_ABLATION_TESTS)
+        if (trace != nullptr) { trace->estimating = onset; trace->collected = novel; }
+#endif
         bool residualAnchor = onset;
 #if defined(J_SONIC_ABLATION_TESTS)
         residualAnchor = residualAnchor && academic::phase.residualAnchor;
@@ -329,6 +356,13 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
                 residual[static_cast<size_t> (n-k)] = std::conj (residual[index]);
             }
             analyser.perform (residual.data(),impulse.data(),true);
+#if defined(J_SONIC_ABLATION_TESTS)
+            if (trace != nullptr)
+            {
+                trace->residualUsed = true;
+                for (int i = 0; i < n; ++i) trace->residual[size_t(i)] = impulse[size_t(i)].real();
+            }
+#endif
             float largestNew = 0;
             for (int i = 0; i < n; ++i)
                 if (std::abs (impulse[static_cast<size_t> (i)].real()) > largestNew)
@@ -337,6 +371,9 @@ Analysis PhaseEngine::analyse (const std::vector<float>& input, double rate, std
         }
     }
     if (onsetState == nullptr) result.onset = onset;
+#if defined(J_SONIC_ABLATION_TESTS)
+    if (trace != nullptr) { trace->anchor = anchor; trace->anchorValue = anchorValue; }
+#endif
     for (int k = 1; k < n/2; ++k) previous[static_cast<size_t> (k)] = std::abs (spectrum[static_cast<size_t> (k)]);
     previousEnergy = energy;
     if (meter != nullptr && onset) (*meter)[meterTransient] = onsetState != nullptr

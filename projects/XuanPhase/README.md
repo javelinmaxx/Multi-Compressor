@@ -232,3 +232,14 @@ python3 projects/run_academic_tests.py --only APRiCOT --output build/academic-re
 python3 projects/test_apricot_fir_report.py
 python3 projects/generate_academic_reports.py build/academic-results --only APRiCOT --publish
 ```
+
+## Academic novelty-to-phase handoff figure
+
+The [spectral-novelty handoff report](Tests/Reports/Academic/novelty-phase-handoff.md)
+shows soft new attacks under a louder sustained background, the actual positive
+spectral novelty and adaptive threshold, the event-context residual anchor,
+and the selected phase/delay targets derived from that same anchor. Its PNG and
+vector PDF are generated from test-only observations inside the production
+`PhaseEngine::analyse()` implementation. The ordinary plugin contains none of
+the trace observer. Reproduce with the APRiCOT academic workflow above; run
+`python3 projects/test_apricot_novelty_report.py` for known-signal calibration.

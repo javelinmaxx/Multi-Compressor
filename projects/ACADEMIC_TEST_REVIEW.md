@@ -131,3 +131,14 @@ conditions numerically. Native unit-pulse convolution checks and independent
 Python DTFT/FFT calibration cover support, delay reference, phase sign, gain
 and wrapped error. Regenerate it with the ordinary academic workflow, or use
 `--only APRiCOT` on both the native runner and report generator.
+
+### APRiCOT spectral-novelty handoff
+
+The [measured handoff figure](XuanPhase/Tests/Reports/Academic/novelty-phase-handoff.md)
+connects chronological input FFTs and adaptive novelty threshold crossings to
+the actual accumulated residual, transient anchor and anchor-referenced phase
+and phase-slope delay estimates. Two softer attacks emerge over a louder
+sustained background. All intermediates come from a test-only observer in the
+production analysis function; native and independent Python checks validate
+both detections and their phase-estimator inputs. This deterministic streamed
+analysis test does not claim to measure asynchronous worker handoff timing.

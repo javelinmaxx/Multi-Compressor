@@ -60,6 +60,99 @@ double dispersion (const std::vector<float>& audio, double rate, const xuan::Ana
     if (count < 2) return 0;
     return 1000*std::sqrt(std::max(0.,squared/count-std::pow(sum/count,2)));
 }
+
+void captureNoveltyHandoff(const std::filesystem::path& directory)
+{
+    constexpr int rate = 48000, n = 2048, hop = 128, count = 48000;
+    const std::array<int,2> starts {12000,36000};
+    std::vector<float> input(count), background(count), attack(count), frame(n), previous;
+    auto audio = csv(directory,"novelty-audio.csv","sample,rate,input,background,attack,expected_onset");
+    for (int i = 0; i < count; ++i)
+    {
+        const auto t = i/double(rate);
+        background[size_t(i)] = float(.25*std::sin(2*pi*220*t)+.10*std::sin(2*pi*330*t));
+        for (int start : starts)
+        {
+            const auto age = (i-start)/double(rate);
+            if (age >= 0 && age <= .12)
+                attack[size_t(i)] += float(.035*(1-std::exp(-age/.0015))*std::exp(-age/.022)
+                    *(std::cos(2*pi*2437.5*age)+.4*std::cos(2*pi*6750*age)));
+        }
+        input[size_t(i)] = background[size_t(i)]+attack[size_t(i)];
+        audio << i << ',' << rate << ',' << input[size_t(i)] << ',' << background[size_t(i)] << ','
+              << attack[size_t(i)] << ',' << (i == starts[0] || i == starts[1]) << '\n';
+    }
+    auto frames = csv(directory,"novelty-frames.csv","frame_sample,rate,frame_size,hop,novelty,threshold,emerging_score,active_peaks,crest,flux,onset,estimating,targets,anchor_sample,input_peak_sample,noise_floor,largest_magnitude");
+    auto spectra = csv(directory,"novelty-spectrum.csv","frame_sample,bin,frequency_hz,input_magnitude,previous_neighbour_max,novelty_magnitude,event_novelty_magnitude");
+    frames.precision(17); spectra.precision(17);
+    PhaseDetectionTrace trace, selectedTrace; xuan::Analysis selected;
+    struct Reset { ~Reset() { phaseDetectionTrace = nullptr; } } reset;
+    phase = {}; phaseDetectionTrace = &trace;
+    xuan::OnsetState detector; double energy = 0;
+    std::vector<int> events; int firstEvent = -1, selectedFrame = -1;
+    for (int at = hop; at <= count; at += hop)
+    {
+        for (int i = 0; i < n; ++i) frame[size_t(i)] = at-n+i >= 0 ? input[size_t(at-n+i)] : 0.f;
+        const auto analysis = xuan::PhaseEngine::analyse(frame,rate,previous,energy,nullptr,&detector,at);
+        if (at < 9600) continue; // Display only after the 200 ms baseline warmup.
+        frames << at << ',' << rate << ',' << n << ',' << hop << ',' << analysis.novelty << ','
+               << trace.threshold << ',' << trace.emergingScore << ',' << trace.activePeaks << ','
+               << analysis.crest << ',' << analysis.flux << ',' << analysis.onset << ',' << trace.estimating << ','
+               << analysis.count << ',' << at-n+trace.anchor << ',' << at-n+trace.inputPeak << ','
+               << trace.floor << ',' << trace.largest << '\n';
+        for (int k = 1; k < n/2; ++k)
+            spectra << at << ',' << k << ',' << k*rate/double(n) << ',' << trace.magnitude[size_t(k)] << ','
+                    << trace.reference[size_t(k)] << ',' << trace.novel[size_t(k)] << ',' << trace.collected[size_t(k)] << '\n';
+        if (analysis.onset)
+        {
+            events.push_back(at);
+            check(analysis.novelty > trace.threshold,"observed new event crosses the actual adaptive novelty threshold");
+            check(trace.residualUsed && analysis.count > 0,"observed detector event supplies residual-anchored phase targets");
+            if (firstEvent < 0)
+            {
+                firstEvent = at; selectedTrace = trace; selected = analysis; selectedFrame = at;
+            }
+        }
+        if (!trace.estimating) check(analysis.count == 0,"no phase targets are returned outside detected event/context frames");
+    }
+    check(events.size() == starts.size(),"masked two-hit fixture has exactly two post-warmup detector events");
+    for (size_t i = 0; i < starts.size(); ++i)
+        check(events[i] >= starts[i] && events[i]-starts[i] < rate*.03,"each masked attack is detected within 30 ms");
+    check(selectedFrame == firstEvent && selectedTrace.residualUsed,"figure captures the first actual detector-to-estimator handoff");
+    check(selectedTrace.anchor == int(std::max_element(selectedTrace.residual.begin(),selectedTrace.residual.end(),
+          [](float a, float b) { return std::abs(a) < std::abs(b); })-selectedTrace.residual.begin()),
+          "phase anchor is the actual positive-spectral-residual absolute peak");
+    check(selectedFrame-n+selectedTrace.anchor >= starts[0] && selectedFrame-n+selectedTrace.anchor < starts[0]+rate*.03,
+          "selected phase anchor belongs to the newly emerging masked transient");
+    auto context = csv(directory,"novelty-context.csv","frame_sample,sample,input,windowed_input,residual,is_anchor,is_input_peak");
+    context.precision(17);
+    for (int i = 0; i < n; ++i)
+        context << selectedFrame << ',' << selectedFrame-n+i << ',' << input[size_t(selectedFrame-n+i)] << ','
+                << selectedTrace.windowed[size_t(i)] << ',' << selectedTrace.residual[size_t(i)] << ','
+                << (i == selectedTrace.anchor) << ',' << (i == selectedTrace.inputPeak) << '\n';
+    auto peaks = csv(directory,"novelty-peaks.csv","frequency_hz,bin,anchor_index,anchor_value,left_real,left_imag,real,imag,right_real,right_imag,target_angle_rad,relative_delay_s,interpolated_deg,requested_deg");
+    auto curve = csv(directory,"novelty-target-curve.csv","frequency_hz,interpolated_deg,requested_deg");
+    peaks.precision(17); curve.precision(17);
+    xuan::Settings settings; settings.automatic = true; settings.depth = 100;
+    for (int i = 0; i < selected.count; ++i)
+    {
+        const auto& target = selected.targets[size_t(i)];
+        const auto k = size_t(juce::roundToInt(target.frequency*n/rate));
+        peaks << target.frequency << ',' << k << ',' << selectedTrace.anchor << ',' << selectedTrace.anchorValue << ','
+              << selectedTrace.spectrum[k-1].real() << ',' << selectedTrace.spectrum[k-1].imag() << ','
+              << selectedTrace.spectrum[k].real() << ',' << selectedTrace.spectrum[k].imag() << ','
+              << selectedTrace.spectrum[k+1].real() << ',' << selectedTrace.spectrum[k+1].imag() << ','
+              << target.angle << ',' << target.delay << ',' << xuan::PhaseEngine::bandValue(target.frequency,selected,false)*180/pi << ','
+              << xuan::PhaseEngine::phaseAt(target.frequency,settings,selected)*180/pi << '\n';
+    }
+    for (int i = 0; i <= 1024; ++i)
+    {
+        const auto hz = 60*std::pow(20000./60,i/1024.);
+        curve << hz << ',' << xuan::PhaseEngine::bandValue(hz,selected,false)*180/pi << ','
+              << xuan::PhaseEngine::phaseAt(hz,settings,selected)*180/pi << '\n';
+    }
+}
+
 }
 int main (int argc, char** argv)
 {
@@ -239,6 +332,7 @@ int main (int argc, char** argv)
         check(std::abs(smooth-linear) > .05,"interpolation ablation changes off-center response");
         auto probes = csv(directory,"interpolation-probes.csv","probe,current,ablated,units");
         probes << "phase_seam," << unwrapped << ',' << raw << ",radians\nquarter_interval," << smooth << ',' << linear << ",radians\n";
+        captureNoveltyHandoff(directory);
         std::cout << checks << " phase ablation checks passed\n";
     }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
