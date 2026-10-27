@@ -956,6 +956,32 @@ void shimmerTests (const juce::File& directory)
     report << "rate,frequency_hz,left_power,right_power,alias_power\n";
     std::ofstream grainReport(directory.getChildFile("shimmer-grains.csv").getFullPathName().toStdString());
     grainReport << "rate,input_hz,target_hz,peak_hz,error_cents,peak_power\n";
+    std::ofstream fadeReport(directory.getChildFile("shimmer-fade.csv").getFullPathName().toStdString());
+    fadeReport << "rate,time_s,gain\n";
+    for (double rate : {8000.,44100.,48000.,96000.,192000.})
+    {
+        lan::ShimmerOnsetFade fade; fade.prepare(rate);
+        for (int i = 0; i < int(rate*.25); ++i)
+            check(std::abs(fade.process(0,0)-1) < 1e-7,"silent grain warmup does not consume an onset fade");
+        float previous = 0;
+        const auto count = juce::roundToInt(rate*lan::ShimmerOnsetFade::attackSeconds);
+        for (int i = 0; i < count; ++i)
+        {
+            const auto gain = fade.process(0,.1f); // right-only arrivals must trigger the shared fade
+            check(gain >= previous && gain <= 1 && gain-previous < 1.6/count,
+                  "delayed stereo onset fades monotonically without a gain step");
+            if (i == 0) check(gain < 1e-5,"first arriving pitched sample starts near zero gain");
+            if (i == count/2-1) check(std::abs(gain-.5f) < .001,"onset reaches half gain halfway through the hundred-ms fade");
+            if (i%std::max(1,count/100) == 0) fadeReport << rate << ',' << i/rate << ',' << gain << '\n';
+            previous = gain;
+        }
+        check(previous > .99999f,"onset fade completes in one hundred milliseconds");
+        for (int i = 0; i < juce::roundToInt(rate*.01); ++i) fade.process(0,0);
+        check(fade.process(.1f,-.1f) > .99999f,"short waveform gaps do not restart the pitch fade");
+        for (int i = 0; i < juce::roundToInt(rate*.06); ++i)
+            check(fade.process(.00005f,-.00005f) > .99999f,"quiet pitched tails pass without being gated while the next fade rearms");
+        check(fade.process(.1f,-.1f) < 1e-5,"a new phrase rearms the fade after silence");
+    }
     for (double rate : {44100.,48000.,96000.})
     {
         lan::Shimmer shifted, alias; shifted.prepare(rate); alias.prepare(rate);

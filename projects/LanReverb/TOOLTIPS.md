@@ -12,7 +12,7 @@
 | Tap Shift | Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies. |
 | Phase | Sets feedback phase dispersion and correction across sixteen resonance bands within a five-millisecond delay budget. |
 | Tame | Sets narrow feedback attenuation across up to sixteen resonance bands within a shared six-decibel limit while protecting incoming notes. |
-| Shimmer | Adds an octave-up input layer to the feedback-loop injection using a twice-oversampled pitch shifter; Saves CPU when Off. |
+| Shimmer | Adds a softly faded octave-up layer to the feedback-loop injection using a twice-oversampled grain shifter; Saves CPU when Off. |
 | Low shelf handle | Drag across the full frequency range and vertically for up to +3 dB shelf gain, or double-click to reset. |
 | High shelf handle | Drag across the full frequency range and vertically for up to +3 dB shelf gain, or double-click to reset. |
 | Dry / Wet | Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent. |

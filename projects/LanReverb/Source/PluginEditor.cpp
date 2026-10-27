@@ -16,7 +16,7 @@ constexpr std::array<const char*,12> hints {
     "Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies.",
     "Sets feedback phase dispersion and correction across sixteen resonance bands within a five-millisecond delay budget.",
     "Sets narrow feedback attenuation across up to sixteen resonance bands within a shared six-decibel limit while protecting incoming notes.",
-    "Adds an octave-up input layer to the feedback-loop injection using a twice-oversampled pitch shifter; Saves CPU when Off.",
+    "Adds a softly faded octave-up layer to the feedback-loop injection using a twice-oversampled grain shifter; Saves CPU when Off.",
     "Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent.",
     "Adjusts the final output level after the dry and wet signals are mixed." };
 }

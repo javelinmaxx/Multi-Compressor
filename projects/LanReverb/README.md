@@ -200,7 +200,11 @@ this is a diffuse shimmer texture. The test report measures these offsets and
 provides comparison audio. Source protection and the grey input spectrum
 include the generated layer to protect it from unintended resonance correction.
 
-The send changes over 250 ms. At Off, both the grain shifter and its FIR
+The arriving pitched signal fades in over **100 ms** with a smooth S curve.
+The fade starts when the delayed layer becomes audible (above −80 dBFS),
+and re-arms after 50 ms below that level; both channels share the same gain.
+This also softens new phrases while Shimmer stays enabled. The send control
+still changes over 250 ms. At Off, both the grain shifter and its FIR
 converter stop to save CPU; reenabling clears stale pitch buffers. Host or
 plugin bypass keeps an enabled Shimmer running with the rest of the network.
 Adding the octave can raise wet levels, so Output remains available for gain

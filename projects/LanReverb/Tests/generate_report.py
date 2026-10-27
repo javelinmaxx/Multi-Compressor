@@ -64,6 +64,14 @@ def main():
     axes[2].set(xlabel="Time (s)",ylabel="Full-wet RMS (dBFS)"); axes[2].legend(fontsize=8)
     for ax in axes: ax.grid(alpha=.25)
     fig.savefig(destination/"shimmer.png",dpi=160); plt.close(fig)
+    fade = load(source,"shimmer-fade.csv")
+    fig,ax = plt.subplots(figsize=(9,3.5),constrained_layout=True)
+    for rate in np.unique(fade["rate"]):
+        rows = fade[fade["rate"] == rate]
+        ax.plot(rows["time_s"]*1000,rows["gain"],label=f"{rate/1000:g} kHz")
+    ax.set(xlabel="Time since delayed onset (ms)",ylabel="Shared stereo gain",title="Shimmer arrival: 100 ms smooth fade",xlim=(0,100),ylim=(0,1.03))
+    ax.legend(fontsize=8); ax.grid(alpha=.25)
+    fig.savefig(destination/"shimmer-fade.png",dpi=160); plt.close(fig)
     phase = load(source,"multiband-phase.csv")
     fig,axes = plt.subplots(3,1,figsize=(10,8),constrained_layout=True,sharex=True)
     selected = phase[(phase["rate"] == 48000)&(phase["line"] == 0)]
@@ -236,6 +244,14 @@ Fixed-duration grain resets create modulation sidebands spaced by 20 Hz after fo
 [Off-note stereo example](shimmer-off-notes.wav). For a matched full-reverb comparison, listen to the [previous phase-vocoder render](shimmer-vocoder-reference.wav) and the [current grain render](shimmer-reverb.wav); both use the chord and settings below. This comparison is synthetic and does not establish a subjective improvement.
 
 The lower graph and [four-second Shimmer reverb example](shimmer-reverb.wav) use a one-second mono 220/330/440 Hz chord at amplitudes 0.08/0.06/0.04, followed by a tail. The production engine uses default Time 90 ms, Decay 10 s, Pre-delay 20 ms, Scatter 100%, Diffusion 85%, Width 125%, Phase 60%, Auto On and Tame 75%; Mix is 100%, Output 0 dB, and both shelves are −3 dB at their default 200/8,000 Hz frequencies. Shimmer Off and 75% receive identical input, and their outputs must differ measurably. This layer is added to the incoming source, not repeatedly shifted on each feedback pass. The [isolated stereo octave example](shimmer-octave.wav) contains the direct pitch-shifter test output, without the reverb.
+
+## Soft Shimmer arrival
+
+![Shimmer onset fade](shimmer-fade.png)
+
+The actual pitched output drives a stereo-linked 100 ms smoothstep attack, so the fade begins when delayed audio arrives instead of while the grain buffers are silent. An arrival above −80 dBFS triggers the fade after at least 50 ms below that level; short waveform gaps do not retrigger it. Quiet tails retain their existing level rather than being gated off. The Shimmer amount knob retains its separate 250 ms smoothing.
+
+Production envelope tests run at 8/44.1/48/96/192 kHz, verifying that silent warmup cannot consume the attack, a right-only arrival triggers the shared gain, the first sample is near zero, gain increases monotonically without steps, reaches half at 50 ms and unity at 100 ms, and a new phrase after silence re-arms the fade. The existing actual grain tests verify steady level, stereo relationships, zero dry latency and hot bypass; the updated [isolated octave](shimmer-octave.wav) and [full-reverb example](shimmer-reverb.wav) include the new fade.
 
 ## Multiband phase correction, five-millisecond limit and longer fades
 
