@@ -120,3 +120,14 @@ and Bypass OFF**, Input/Output at 0 dB and Mix at 100%. Smart is the only switch
 varied for the Smart on/off comparison; circuit/analysis ablations remain as
 documented. The settings are explicit in the native harness and exported to
 `audio-settings.csv`, which report generation checks.
+
+### Xuan finite-FIR core figure
+
+[Xuan's three-panel FIR report](XuanPhase/Tests/Reports/Academic/fir-core.md)
+links production smooth target interpolation and detected peaks to the actual
+finite kernel and its measured approximation error. It includes all three
+48 kHz fixtures as PNG/PDF figures and checks all nine fixture/sample-rate
+conditions numerically. Native unit-pulse convolution checks and independent
+Python DTFT/FFT calibration cover support, delay reference, phase sign, gain
+and wrapped error. Regenerate it with the ordinary academic workflow, or use
+`--only XuanPhase` on both the native runner and report generator.

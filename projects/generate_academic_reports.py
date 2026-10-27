@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from generate_audio_spectrograms import report as audio_report
+from generate_xuan_fir_report import report as fir_report
 
 ROOT = Path(__file__).resolve().parent
 
@@ -195,6 +196,8 @@ These averages are descriptive and combine very different fixtures. In particula
 
 ![Broadband response and phase cap interaction](broadband-response.png)
 
+{fir_report(source,destination)}
+
 ## Protocol and metrics
 
 Fixtures are four Gaussian wave packets with staggered centers, a broadband attack with more than 24 spectral peaks, and the dispersed attack emerging over a stationary 220 Hz sustain. The source specifies every frequency, envelope and phase. Analysis length is the next power of two ≥40 ms, matching production. Eighty identical background-only snapshots settle the spectral novelty history before an otherwise identical snapshot adds the attack. This **paired-snapshot experiment** isolates estimation/anchoring; it is not a streamed detector precision/recall trial. For the sustain case the new attack is deliberately near the frame edge, where the detector can see it. No synthetic event labels are presented as manually annotated musical audio.
@@ -221,8 +224,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("results", type=Path)
     parser.add_argument("--publish", action="store_true", help="Write reports into each project's Tests/Reports/Academic folder")
+    parser.add_argument("--only", nargs="+", choices=["KuoStereo","ZaoDrive","XuanPhase"], default=["KuoStereo","ZaoDrive","XuanPhase"])
     args = parser.parse_args()
     for project, generate in [("KuoStereo", kuo), ("ZaoDrive", zao), ("XuanPhase", xuan)]:
+        if project not in args.only:
+            continue
         source = args.results/project
         if not source.exists():
             continue
@@ -232,6 +238,7 @@ def main():
         (destination/"README.md").write_text(generate(source, destination)+audio_report(project, source, destination)+"\n## Reproduce\n\nFrom the repository root, run:\n\n```sh\npython3 projects/run_academic_tests.py --output build/academic-results\npython3 projects/generate_academic_reports.py build/academic-results --publish\n```\n\nCMake 3.22+, a C++17 compiler and the normal JUCE system dependencies are required. Plot generation additionally needs Python `numpy` and `matplotlib`. Native tests and CTest do not require Python plotting packages. Detailed CSV files are gzip-compressed alongside this report; `provenance.json` records source hashes and build information when run through the launcher. Timing values are machine-dependent.\n")
         (destination/"report-provenance.json").write_text(json.dumps({
             "generator_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            **({"fir_generator_sha256": hashlib.sha256((ROOT/"generate_xuan_fir_report.py").read_bytes()).hexdigest()} if project == "XuanPhase" else {}),
             "audio_generator_sha256": hashlib.sha256((ROOT/"generate_audio_spectrograms.py").read_bytes()).hexdigest(),
             "input_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(source.glob("*.csv"))},
             "matplotlib_version": matplotlib.__version__,

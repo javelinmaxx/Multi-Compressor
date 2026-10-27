@@ -206,3 +206,29 @@ tests so the preview exercises a real desktop window on a bare Xvfb display.
 
 [Hover hints](TOOLTIPS.md) cover every control. See the repository
 [build guide](../../docs/BUILDING.md) for dependencies and installation paths.
+
+## Academic finite-FIR core test
+
+The academic test exports the actual `PhaseEngine::impulse()` coefficients and
+production target interpolation for all three synthetic fixtures at 44.1, 48
+and 96 kHz. The [three-panel report](Tests/Reports/Academic/fir-core.md) shows:
+
+- **(a)** interpolated target phase on logarithmic frequency with selected peaks
+  marked, plus the actual capped request;
+- **(b)** the synthesized finite kernel, its 25 ms causal centre and ±25 ms
+  relative support (2,401 taps at 48 kHz);
+- **(c)** requested versus measured phase and magnitude deviation from 0 dB.
+
+Only the declared FIR centre delay is removed when measuring phase. The
+separate audio lookahead is excluded from the kernel response. Python checks
+the native measurements against a direct DTFT of the exported taps; the native
+test also verifies unit-pulse output through the real convolution path. The
+report includes raw CSVs, PNG figures, vector PDFs and sampled error metrics.
+
+Run from the repository root:
+
+```sh
+python3 projects/run_academic_tests.py --only XuanPhase --output build/academic-results
+python3 projects/test_xuan_fir_report.py
+python3 projects/generate_academic_reports.py build/academic-results --only XuanPhase --publish
+```

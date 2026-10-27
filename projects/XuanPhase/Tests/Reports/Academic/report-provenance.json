@@ -1,5 +1,6 @@
 {
-  "generator_sha256": "a5aedeaec63b52e4af94399b9538e14c164d0af542311eaf7b9b68ea37125479",
+  "generator_sha256": "f0c5ff12503ba55a29610e2c10f1f32b9f8469769163d1b29e9016576067c077",
+  "fir_generator_sha256": "82259efa27dba5950e22298a51db3fd8c531d6b6a703bea245fe38e7d35044c7",
   "audio_generator_sha256": "9330b431598b199fe437108e1379cc4ee1d80738249dad41b61744d48a4c79e0",
   "input_sha256": {
     "audio-attack_over_sustain-bypass.csv": "90a59b000467cc77729d84b4d7c3ae4248a6ad16b8bb3e6b422ca4099fa64cb7",
@@ -8,6 +9,9 @@
     "audio-broadband_attack-current.csv": "31fe438a789468ce2d2d0e801090197da1f5f61bea8ce7f9813a95a3bf250210",
     "audio-dispersed_packets-bypass.csv": "266fb6f2b1c98086a1abc9139a71d996ff6cdbfdc345a5b1dd43aa324127eaf3",
     "audio-dispersed_packets-current.csv": "d80d95ade28b5ab0a1369bc63c5d5c478a6ea10610f81ce186c4b92351c5b273",
+    "fir-kernels.csv": "869775d8cb3eae9c19e39213296522251be997b1c81b7be483b94cd487c3bf99",
+    "fir-peaks.csv": "00670d5d9c1360c3cc8ce5b6c451249d12206a443f4583751850c043737be8c3",
+    "fir-response.csv": "74d70f80082b37f2d8af7a4d5e482eb68257a3390ce0253d7d00fd3a752bc777",
     "interpolation-probes.csv": "2c622aec26d6e4a9f96259de7eba54be857e49287a748e666942b60a76bc9341",
     "manifest.csv": "e7189ec0a0d83a2a67d01a278d67cf991d1317746c178e87ae1067a49553a4d5",
     "phase-targets.csv": "cf57db63176244b0d4df99d7fb29df26b8609db0dde292fbf06d5d902e62e5c8",

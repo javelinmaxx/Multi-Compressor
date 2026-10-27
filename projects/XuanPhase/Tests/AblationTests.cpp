@@ -69,7 +69,11 @@ int main (int argc, char** argv)
         manifest(directory,"XuanPhase");
         auto out = csv(directory,"phase.csv","rate,corpus,variant,targets,onset,anchor_ms,peak,rms,crest_db,arrival_dispersion_ms,mean_phase_error_deg,magnitude_ripple_db,pre_window_energy,tail_energy");
         auto curves = csv(directory,"response.csv","rate,corpus,variant,frequency_hz,requested_deg,measured_deg,gain_db");
+        auto kernels = csv(directory,"fir-kernels.csv","rate,corpus,sample,causal_ms,relative_ms,coefficient");
+        auto ideal = csv(directory,"fir-response.csv","rate,corpus,frequency_hz,interpolated_deg,requested_deg,real,imag,gain_db,phase_error_deg");
+        auto peaks = csv(directory,"fir-peaks.csv","rate,corpus,frequency_hz,raw_angle_deg,interpolated_deg,requested_deg");
         auto targetFile = csv(directory,"phase-targets.csv","rate,corpus,variant,frequency_hz,angle_deg,delay_ms");
+        kernels.precision(17); ideal.precision(17); peaks.precision(17);
         constexpr std::array<const char*,3> names {"dispersed_packets","broadband_attack","attack_over_sustain"};
         int anchorWitness = 0, slopeWitness = 0, peakWitness = 0;
         for (double rate : {44100.,48000.,96000.})
@@ -131,6 +135,59 @@ int main (int argc, char** argv)
                                      input,input,audio,audio,rate,latency);
                     }
                     const auto ir = xuan::PhaseEngine::impulse(rate,settings,analysis);
+                    if (v == 2)
+                    {
+                        const auto centre = juce::roundToInt(rate*.025);
+                        check(ir.size() == size_t(2*centre+1),"actual FIR has finite plus/minus 25 ms support");
+                        check(std::abs(ir.front()) < 1e-12 && std::abs(ir.back()) < 1e-12,
+                              "actual FIR taper reaches zero at both support boundaries");
+                        // Independent audio-path check: the FIR sits after a
+                        // separate 25 ms lookahead, not a 50 ms kernel shift.
+                        const auto pulse = render(std::vector<float>{1.f},rate,settings,analysis);
+                        const auto lookahead = juce::roundToInt(rate*.05)-centre;
+                        for (size_t i = 0; i < ir.size(); ++i)
+                        {
+                            check(std::isfinite(ir[i]),"exported FIR coefficients are finite");
+                            check(std::abs(pulse[size_t(lookahead)+i]-ir[i]) < 2e-5,
+                                  "partitioned convolution of a unit pulse reproduces the exported FIR");
+                            kernels << rate << ',' << names[size_t(corpus)] << ',' << i << ','
+                                    << 1000*i/rate << ',' << 1000*(double(i)-centre)/rate << ',' << ir[i] << '\n';
+                        }
+                        xuan::Settings neutral;
+                        const auto identity = xuan::PhaseEngine::impulse(rate,neutral);
+                        check(identity.size() == ir.size() && identity[size_t(centre)] == 1.f,
+                              "neutral FIR is an exact unit impulse at the declared centre");
+                        const auto referenceResponse = response(identity,1234.5,rate);
+                        check(std::abs(referenceResponse-std::complex<double>(1,0)) < 1e-10,
+                              "centre-delay removal leaves the neutral response at unity and zero phase");
+                        std::vector<double> frequencies;
+                        const auto upper = std::min(20000.,rate*.49);
+                        for (int i = 0; i <= 2048; ++i) frequencies.push_back(20*std::pow(upper/20,i/2048.));
+                        for (int i = 0; i < analysis.count; ++i)
+                        {
+                            const auto hz = double(analysis.targets[size_t(i)].frequency);
+                            check(hz >= 20 && hz <= upper,"selected peak lies within the plotted frequency range");
+                            frequencies.push_back(hz);
+                            peaks << rate << ',' << names[size_t(corpus)] << ',' << hz << ','
+                                  << analysis.targets[size_t(i)].angle*180/pi << ','
+                                  << xuan::PhaseEngine::bandValue(hz,analysis,false)*180/pi << ','
+                                  << xuan::PhaseEngine::phaseAt(hz,settings,analysis)*180/pi << '\n';
+                        }
+                        std::sort(frequencies.begin(),frequencies.end());
+                        frequencies.erase(std::unique(frequencies.begin(),frequencies.end()),frequencies.end());
+                        for (const auto hz : frequencies)
+                        {
+                            const auto h = response(ir,hz,rate);
+                            const auto requested = xuan::PhaseEngine::phaseAt(hz,settings,analysis);
+                            const auto gain = db(std::abs(h));
+                            const auto residual = std::remainder(std::arg(h)-requested,2*pi)*180/pi;
+                            check(std::isfinite(gain) && std::isfinite(residual),"dense realized FIR response is finite");
+                            ideal << rate << ',' << names[size_t(corpus)] << ',' << hz << ','
+                                  << xuan::PhaseEngine::bandValue(hz,analysis,false)*180/pi << ','
+                                  << requested*180/pi << ',' << h.real() << ',' << h.imag() << ','
+                                  << gain << ',' << residual << '\n';
+                        }
+                    }
                     double error = 0;
                     for (int k = 0; k < reference.count; ++k)
                     {
