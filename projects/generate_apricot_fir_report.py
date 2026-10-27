@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and plot Xuan's selected targets, actual finite kernel and DTFT error."""
+"""Validate and plot APRiCOT's selected targets, actual finite kernel and DTFT error."""
 import csv
 
 import matplotlib
@@ -95,7 +95,7 @@ def report(source,destination):
             cm.set(xlabel="Frequency (Hz, logarithmic)",ylabel="Deviation (dB)")
             cm.legend(fontsize=8); cm.grid(alpha=.2)
             cm.text(.02,.05,f"Sampled max |phase error| {summary[4]:.3f}°; max |magnitude deviation| {summary[5]:.3f} dB",transform=cm.transAxes,fontsize=8,bbox={"facecolor":"white","alpha":.85,"edgecolor":"none"})
-            fig.suptitle(f"Xuan Phase • {corpus} • 48 kHz / {len(h)} taps / Auto Depth +100%")
+            fig.suptitle(f"APRiCOT • {corpus} • 48 kHz / {len(h)} taps / Auto Depth +100%")
             name = "fir-core-"+corpus
             fig.savefig(destination/(name+".png"),dpi=170)
             fig.savefig(destination/(name+".pdf"),metadata={"CreationDate":None,"ModDate":None})
@@ -118,5 +118,5 @@ All three synthetic fixtures are checked at **44.1/48/96 kHz**. The figures show
 
 Native tests verify finite taps, exact support length and tapered boundaries, the neutral unit impulse at the declared centre, and reproduction of each kernel by the actual partitioned-convolution audio path driven by a unit pulse (including the correctly rounded separate lookahead). The report independently recomputes the dense DTFT from the exported taps and checks complex response, phase error, magnitude deviation and exact peak/curve correspondence. These figures establish the finite-FIR approximation; they do not impose an unsupported universal error tolerance or claim better perceived transients.
 """
-    (destination/"fir-core.md").write_text("# Xuan Phase: finite FIR core\n\n"+text)
+    (destination/"fir-core.md").write_text("# APRiCOT: finite FIR core\n\n"+text)
     return text

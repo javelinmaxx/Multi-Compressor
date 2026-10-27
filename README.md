@@ -25,7 +25,7 @@ the JUCE framework is included in this repository.
 | [Zao Drive](projects/ZaoDrive/README.md) | `ZaoDrive` | Overdrive | Four circuit models, Smart harmonic shaping, Clear contour, waveform preview, Auto compensation |
 | [Ren Transformer](projects/RenTransformer/README.md) | `RenTransformer` | Transformer coloration | Yinyang's transformer stage in a compact four-knob interface |
 | [Kuo Velvet](projects/KuoVelvet/README.md) | `KuoVelvet` | Convolution widening | Kuo's Velvet stage with Width, Transient, Attack, and Output controls |
-| [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
+| [APRiCOT](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
 
 ### Yinyang Compressor
 
@@ -131,9 +131,9 @@ attacks; this compact version omits Haas search, meters, and band controls.
 [Controls and processing](projects/KuoVelvet/README.md) ·
 [Processor checks](projects/KuoVelvet/Tests/REPORT.md)
 
-### Xuan Phase
+### APRiCOT
 
-![Xuan Phase with independent Low Phase and High Phase knobs, Crossover, Auto Depth, Transient, and Stereo Link](projects/XuanPhase/Previews/xuan-phase.png)
+![APRiCOT with independent Low Phase and High Phase knobs, Crossover, Auto Depth, Transient, and Stereo Link](projects/XuanPhase/Previews/apricot.png)
 
 Rotate the low and high frequencies independently with a combined ±150° cap and a smooth
 adjustable crossover, **25 ms correction lookahead**, and **50 ms** total latency. **Auto** detects
@@ -177,7 +177,7 @@ documents describe their equations, assumptions, and measurement conditions.
 ## Academic experiments
 
 The `academic` branch adds deterministic ablations for Kuo Stereo, Zao Drive and
-Xuan Phase, including machine-readable results and reproducible figures. See the
+APRiCOT, including machine-readable results and reproducible figures. See the
 [test review](projects/ACADEMIC_TEST_REVIEW.md) for implemented experiments,
 measured limitations and the remaining research requirements.
 
@@ -197,7 +197,7 @@ The source includes JUCE; no separate framework checkout is needed. Start from
 the repository root:
 
 ```bash
-git clone --branch master https://github.com/javelinmaxx/Multi-Compressor.git
+git clone --branch academic https://github.com/javelinmaxx/Multi-Compressor.git
 cd Multi-Compressor
 ```
 
@@ -214,7 +214,7 @@ installing by default. See `./build-macos-all.sh --help` for all options.
 
 **Windows — build VST3:** the manual
 [All Plugins - Windows VST3 workflow](https://github.com/javelinmaxx/Multi-Compressor/actions/workflows/all-plugins-windows.yml)
-packages all seven plugins, including Xuan Phase. For a local Yinyang build, use
+packages all seven plugins, including APRiCOT. For a local Yinyang build, use
 [`build-windows-vst3.ps1`](build-windows-vst3.ps1) with Visual Studio 2022's C++
 tools. The [build guide](docs/BUILDING.md#windows-vst3) covers local commands,
 workflow artifacts, and installation.

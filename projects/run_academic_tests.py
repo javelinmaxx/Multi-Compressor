@@ -8,6 +8,7 @@ from pathlib import Path
 import platform
 import subprocess
 import sys
+from academic_names import internal_project, public_project, PUBLIC_PROJECTS
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTS = {"KuoStereo": "KUO_STEREO_BUILD_TESTS", "ZaoDrive": "ZAO_DRIVE_BUILD_TESTS", "XuanPhase": "XUAN_PHASE_BUILD_TESTS"}
@@ -23,18 +24,20 @@ def main():
     parser.add_argument("--build-root", type=Path, default=ROOT / "build/academic")
     parser.add_argument("--output", type=Path, default=ROOT / "build/academic-results")
     parser.add_argument("--build-dir", action="append", default=[], metavar="PROJECT=PATH", help="Reuse a configured project build directory; repeat for multiple projects")
-    parser.add_argument("--only", nargs="+", choices=PROJECTS, default=list(PROJECTS))
+    parser.add_argument("--only", nargs="+", type=public_project, choices=PUBLIC_PROJECTS, default=PUBLIC_PROJECTS)
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--jobs", type=int, default=3)
     args = parser.parse_args()
     builds = {}
     for entry in args.build_dir:
         project, path = entry.split("=", 1)
+        project = internal_project(project)
         if project not in PROJECTS:
             parser.error(f"Unknown project: {project}")
         builds[project] = Path(path).resolve()
     output = args.output.resolve()
-    for project in args.only:
+    for selected in args.only:
+        project = internal_project(selected)
         build = builds.get(project, args.build_root.resolve()/project)
         if not args.skip_build:
             run(["cmake", "-S", ROOT/"projects"/project, "-B", build, "-DCMAKE_BUILD_TYPE=Release", f"-D{PROJECTS[project]}=ON"] if project not in builds else ["cmake", "-S", ROOT/"projects"/project, "-B", build, f"-D{PROJECTS[project]}=ON"])
@@ -44,7 +47,7 @@ def main():
             executable = build/"Release"/executable.name
         destination = output/project
         destination.mkdir(parents=True, exist_ok=True)
-        sources = [ROOT/"projects/AcademicAblations.h", ROOT/"projects/AcademicTestUtils.h", ROOT/"projects/AcademicTests.cmake", Path(__file__).resolve(), ROOT/"projects/generate_academic_reports.py", ROOT/"projects/generate_audio_spectrograms.py", ROOT/"projects/generate_xuan_fir_report.py", ROOT/"projects/test_xuan_fir_report.py", ROOT/"projects/test_audio_spectrograms.py", ROOT/"projects/KuoStereo/Measurements/SynthPad.h"]
+        sources = [ROOT/"projects/academic_names.py", ROOT/"projects"/project/"CMakeLists.txt", ROOT/"projects/AcademicAblations.h", ROOT/"projects/AcademicTestUtils.h", ROOT/"projects/AcademicTests.cmake", Path(__file__).resolve(), ROOT/"projects/generate_academic_reports.py", ROOT/"projects/generate_audio_spectrograms.py", ROOT/"projects/generate_apricot_fir_report.py", ROOT/"projects/test_apricot_fir_report.py", ROOT/"projects/test_audio_spectrograms.py", ROOT/"projects/KuoStereo/Measurements/SynthPad.h"]
         sources += sorted((ROOT/"projects"/project/"Source").glob("*"))
         sources += [ROOT/"projects"/project/"Tests/AblationTests.cpp"]
         # Include transitive shared DSP headers as well as the direct project.

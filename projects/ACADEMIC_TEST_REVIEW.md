@@ -2,7 +2,7 @@
 
 This branch currently proposes academic experiments in **three** project folders:
 [Kuo Stereo](KuoStereo/ACADEMIC_TEST_PLAN.md), [Zao Drive](ZaoDrive/ACADEMIC_TEST_PLAN.md),
-and [Xuan Phase](XuanPhase/ACADEMIC_TEST_PLAN.md). Yinyang Compressor, Shun De-Esser,
+and [APRiCOT](XuanPhase/ACADEMIC_TEST_PLAN.md). Yinyang Compressor, Shun De-Esser,
 Ren Transformer and Kuo Velvet have existing engineering tests/reports but no
 `ACADEMIC_TEST_PLAN.md` in this checkout. Their existing tests are not relabelled
 as academic validation.
@@ -13,7 +13,7 @@ as academic validation.
 |---|---|---|
 | Kuo Stereo | Spectrum-only, side-shortfall-only, combined score, no averaging, no margin; nine relative spectrum/side weights and target/averaging/margin sensitivity; exhaustive same-frame oracle and regret; fixed center/zero baselines; target-switch rate; mono sign ties and anti-phase fallback | [Report](KuoStereo/Tests/Reports/Academic/README.md) |
 | Zao Drive | Off/current/energy-only; no input protection; no wet threshold; half/double bandwidth; all four actual circuits; input-partial retention, measured target reduction and wet/total RMS | [Report](ZaoDrive/Tests/Reports/Academic/README.md) |
-| Xuan Phase | Bypass/fixed manual/current; no residual anchor; no phase-slope estimates; six rather than 24 peaks; no unwrapping; linear interpolation; rendered phase error/ripple, band-envelope arrival dispersion, peak/RMS/crest and windowed energy | [Report](XuanPhase/Tests/Reports/Academic/README.md) |
+| APRiCOT | Bypass/fixed manual/current; no residual anchor; no phase-slope estimates; six rather than 24 peaks; no unwrapping; linear interpolation; rendered phase error/ripple, band-envelope arrival dispersion, peak/RMS/crest and windowed energy | [Report](XuanPhase/Tests/Reports/Academic/README.md) |
 
 All three use 44.1/48/96 kHz. They use production estimators and filtering rather
 than independent copies of the algorithms. Experimental controls compile only
@@ -37,11 +37,11 @@ not a validation on recordings or listeners.
 | Commercial processor baselines | Pending access to named/licensed processors, exact versions/settings and reproducible host rendering. |
 | Zao SPICE/hardware fidelity | Pending independent matching schematics, component models and/or measured hardware. Solver regression alone is insufficient. |
 | Alternative psychoacoustic models and adaptive transfer-function baseline | Further implementation needed: choose and cite precise published models, implement them independently, then compare at controlled drive/loudness. The energy-only baseline is now available, but is not a substitute for those models. |
-| Xuan explicit group-delay optimization and simple-rule baseline | Further implementation needed as separate algorithms. The fixed/manual baseline now exists; it is not represented as a group-delay optimizer. |
-| Full sensitivity matrices | Haas target ratio, penalty, averaging and margin, Zao bandwidth, and Xuan peak budget are now sampled. Candidate-grid resolution and other Zao thresholds/curve parameters still need dedicated sweeps. |
+| APRiCOT explicit group-delay optimization and simple-rule baseline | Further implementation needed as separate algorithms. The fixed/manual baseline now exists; it is not represented as a group-delay optimizer. |
+| Full sensitivity matrices | Haas target ratio, penalty, averaging and margin, Zao bandwidth, and APRiCOT peak budget are now sampled. Candidate-grid resolution and other Zao thresholds/curve parameters still need dedicated sweeps. |
 | Dynamic runtime behavior | Existing integration tests cover selected transitions and worker operation. The new frozen/snapshot experiments do not replace streamed crossfade, worker-starvation, latency/CPU distributions, transient-protection ablation or stereo-link evaluations. Those need separate timing-controlled protocols. |
 | Haas waveform/fold-down measurements | Still pending for the full time-varying audio path. Search-score regret is now measured, but does not measure delay slew or exact mono fold-down. |
-| Xuan FIR length/depth sweep, phase/timing accuracy on a broader corpus | Current ablations measure actual default-length FIRs at full Depth and three sample rates. Other lengths/depths and broader input classes remain pending. |
+| APRiCOT FIR length/depth sweep, phase/timing accuracy on a broader corpus | Current ablations measure actual default-length FIRs at full Depth and three sample rates. Other lengths/depths and broader input classes remain pending. |
 | Literature/patent/novelty review | Requires a systematic research workflow and citations; synthetic regression results make no novelty claim. |
 
 ## Reproduce
@@ -70,7 +70,7 @@ provenance; timings are observations of that machine, not CI pass thresholds.
 Linux/GCC 14.2 Release builds passed all three native ablation executables:
 134,200 Haas snapshot/variant observations, 420 Smart conditions, and 72 phase
 conditions. The ordinary processor regression suites also passed (269 Kuo,
-3,144 Zao, 308,437 Xuan assertions). Assertion counts include per-sample safety
+3,144 Zao, 308,437 APRiCOT assertions). Assertion counts include per-sample safety
 checks and are not counts of independent experimental trials. CTest registration
 was checked for all three new targets. Symbol inspection of each production
 shared-code archive confirmed that research-control globals were absent.
@@ -79,18 +79,18 @@ The Kuo weight sweep demonstrates the expected measured trade-off on this
 corpus: mean mid log-magnitude error rose from 0.1328 at side weight zero to
 0.1536 at side weight 2.0, while mean side/mid RMS rose from 0.4874 to 0.5482.
 These pooled synthetic means do not identify a perceptually optimal setting.
-The Xuan ablations exposed an interaction between connected angle unwrapping
+The APRiCOT ablations exposed an interaction between connected angle unwrapping
 and the final phase cap; its report preserves the unfavorable measurements.
 
 ## Sample-derived audio spectrogram tests
 
 The native ablation executables now export real audio samples at 48 kHz for
 Kuo's neutral and fixed-Haas renders with Velvet always off, Zao's paired Smart Off/On wet and
-total outputs, and Xuan's three transient fixtures before/after automatic phase
+total outputs, and APRiCOT's three transient fixtures before/after automatic phase
 processing. `generate_academic_reports.py` validates and publishes the resulting
 spectrograms alongside each existing report. Kuo shows **mid and side energy**;
 Zao shows **on-minus-off power and measured dissonance-weighted wet energy**;
-Xuan shows **waveforms, transient window energy, magnitude and masked phase**.
+APRiCOT shows **waveforms, transient window energy, magnitude and masked phase**.
 
 The audio protocols and limitations are in each report's `audio-spectrograms.md`.
 Native tests check finite samples, neutral reference identity, and exercised
@@ -121,13 +121,13 @@ varied for the Smart on/off comparison; circuit/analysis ablations remain as
 documented. The settings are explicit in the native harness and exported to
 `audio-settings.csv`, which report generation checks.
 
-### Xuan finite-FIR core figure
+### APRiCOT finite-FIR core figure
 
-[Xuan's three-panel FIR report](XuanPhase/Tests/Reports/Academic/fir-core.md)
+[APRiCOT's three-panel FIR report](XuanPhase/Tests/Reports/Academic/fir-core.md)
 links production smooth target interpolation and detected peaks to the actual
 finite kernel and its measured approximation error. It includes all three
 48 kHz fixtures as PNG/PDF figures and checks all nine fixture/sample-rate
 conditions numerically. Native unit-pulse convolution checks and independent
 Python DTFT/FFT calibration cover support, delay reference, phase sign, gain
 and wrapped error. Regenerate it with the ordinary academic workflow, or use
-`--only XuanPhase` on both the native runner and report generator.
+`--only APRiCOT` on both the native runner and report generator.

@@ -1,4 +1,4 @@
-# Xuan Phase test report
+# APRiCOT test report
 
 ## Adaptive onset detection
 
@@ -302,6 +302,6 @@ blank stripes or backdating the newest onset.
 These run on Linux/Xvfb against JUCE's real desktop peer and timers; Logic Pro
 and macOS AU rendering still require validation on a Mac.
 
-![Native editor with live transient history](../../Previews/xuan-phase.png)
+![Native editor with live transient history](../../Previews/apricot.png)
 
 Data: [phase.csv](phase.csv), [transient.csv](transient.csv), [auto-live.csv](auto-live.csv), [auto-phase.csv](auto-phase.csv).

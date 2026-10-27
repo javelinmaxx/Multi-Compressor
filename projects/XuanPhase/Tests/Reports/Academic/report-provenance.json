@@ -1,7 +1,8 @@
 {
-  "generator_sha256": "f0c5ff12503ba55a29610e2c10f1f32b9f8469769163d1b29e9016576067c077",
-  "fir_generator_sha256": "82259efa27dba5950e22298a51db3fd8c531d6b6a703bea245fe38e7d35044c7",
-  "audio_generator_sha256": "9330b431598b199fe437108e1379cc4ee1d80738249dad41b61744d48a4c79e0",
+  "academic_names_sha256": "28127fcf2b1c4113f8057875cadbd0a8a367d92aa500ecc1a2a953b2e38ea887",
+  "generator_sha256": "c10acc01c442c3db4663e064d352830791f495415eb0726aac190332bebffbbd",
+  "fir_generator_sha256": "e61aab1bb40576c459f696d41159049e4bf7f7a86da57a097e98a8db24d39e06",
+  "audio_generator_sha256": "7b087846c34c8c51a1afef292374d5d234ff68e92b967a311e0edd7734068ed6",
   "input_sha256": {
     "audio-attack_over_sustain-bypass.csv": "90a59b000467cc77729d84b4d7c3ae4248a6ad16b8bb3e6b422ca4099fa64cb7",
     "audio-attack_over_sustain-current.csv": "f9c6ed68de3852794287f10d4582bbb05cfab51506135adb0215732b19b2867d",
@@ -13,7 +14,7 @@
     "fir-peaks.csv": "00670d5d9c1360c3cc8ce5b6c451249d12206a443f4583751850c043737be8c3",
     "fir-response.csv": "74d70f80082b37f2d8af7a4d5e482eb68257a3390ce0253d7d00fd3a752bc777",
     "interpolation-probes.csv": "2c622aec26d6e4a9f96259de7eba54be857e49287a748e666942b60a76bc9341",
-    "manifest.csv": "e7189ec0a0d83a2a67d01a278d67cf991d1317746c178e87ae1067a49553a4d5",
+    "manifest.csv": "961050f2c79506bb415336686266fe1564efbf12e53dd60fe9546c33a16811dc",
     "phase-targets.csv": "cf57db63176244b0d4df99d7fb29df26b8609db0dde292fbf06d5d902e62e5c8",
     "phase.csv": "f44deb668883c748e7588c305d9e56e960b45eb1e279a86c95f18143efff3d79",
     "response.csv": "cf08b33227ed123486a39f35bae89eb7bbd2f615d8968d511744a39ff484496d"

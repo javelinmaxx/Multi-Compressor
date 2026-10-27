@@ -866,7 +866,7 @@ void editor (const juce::File& path)
 {
     hostedEditorTests();
     XuanPhaseProcessor p; std::unique_ptr<juce::AudioProcessorEditor> e (p.createEditor()); e->addToDesktop (0); e->setVisible (true);
-    check (e->getWidth() == 840 && e->getHeight() == 490, "Xuan includes its vertical side meter at the intended scalable size");
+    check (e->getWidth() == 840 && e->getHeight() == 490, "APRiCOT includes its vertical side meter at the intended scalable size");
     XuanPhaseMeter* meter = nullptr;
     for (auto* child : e->getChildren())
     {
@@ -997,7 +997,7 @@ int main (int argc, char** argv)
                             s.automatic = automatic; s.depth = depth; s.bypass = bypass;
                             engine.process (block, s, hostBypass);
                             check (xuan::PhaseEngineTestAccess::correcting (engine) == (automatic && depth > 0),
-                                   "Xuan keeps selected Auto correction hot in both bypass paths, and stops it for Auto Off or zero Depth");
+                                   "APRiCOT keeps selected Auto correction hot in both bypass paths, and stops it for Auto Off or zero Depth");
                         }
         }
         if (argc > 1 && juce::String (argv[1]) == "--hosted-editor")
@@ -1009,10 +1009,11 @@ int main (int argc, char** argv)
             const juce::File directory (argv[2]); directory.createDirectory();
             onsetAccuracyTests (directory); std::cout << checks << " onset accuracy checks passed\n"; return 0;
         }
+        { XuanPhaseProcessor branded; check(branded.getName() == "APRiCOT", "public processor name is exactly APRiCOT"); }
         stateTests<XuanPhaseProcessor> (8);
         dspTests (argc > 2 && juce::String (argv[1]) == "--report" ? juce::File (argv[2]) : juce::File ("/tmp/xuan-report"));
         if (argc > 2 && juce::String (argv[1]) == "--editor") editor (juce::File (argv[2]));
-        std::cout << checks << " Xuan Phase checks passed\n"; return 0;
+        std::cout << checks << " APRiCOT checks passed\n"; return 0;
     }
     catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

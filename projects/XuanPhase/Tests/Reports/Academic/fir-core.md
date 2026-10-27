@@ -1,4 +1,4 @@
-# Xuan Phase: finite FIR core
+# APRiCOT: finite FIR core
 
 ## Finite FIR core: requested, synthesized and realized
 

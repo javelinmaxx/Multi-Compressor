@@ -430,7 +430,7 @@ void PhaseEngine::Kernel::build (const std::vector<float>& ir, int count)
         transform.perform (block.data(), tail.data()+p*fftSize, false);
     }
 }
-PhaseEngine::PhaseEngine() : Thread ("Xuan phase analysis") {}
+PhaseEngine::PhaseEngine() : Thread ("APRiCOT phase analysis") {}
 PhaseEngine::~PhaseEngine() { release(); }
 void PhaseEngine::release() { signalThreadShouldExit(); notify(); stopThread (-1); }
 void PhaseEngine::prepareMeter (Slot& slot, const std::vector<float>& ir, int channel)

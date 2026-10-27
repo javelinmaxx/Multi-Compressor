@@ -1,12 +1,12 @@
-# Academic Test Plan — XuanPhase
+# Academic Test Plan — APRiCOT
 
-**Purpose:** List the experiments still needed to develop the XuanPhase investigation into a defensible academic paper. This is a research checklist, not a claim that the proposed tests have already been run.
+**Purpose:** List the experiments still needed to develop the APRiCOT investigation into a defensible academic paper. This is a research checklist, not a claim that the proposed tests have already been run.
 
 Implementation references:
-- [Project README](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/XuanPhase/README.md)
-- [Phase engine](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/XuanPhase/Source/PhaseEngine.cpp)
-- [Onset detection report](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/XuanPhase/Tests/Reports/onset-detection.md)
-- [Automatic alignment report](https://github.com/javelinmaxx/Multi-Compressor/blob/master/projects/XuanPhase/Tests/Reports/AUTO_ALIGNMENT.md)
+- [Project README](https://github.com/javelinmaxx/Multi-Compressor/blob/academic/projects/XuanPhase/README.md)
+- [Phase engine](https://github.com/javelinmaxx/Multi-Compressor/blob/academic/projects/XuanPhase/Source/PhaseEngine.cpp)
+- [Onset detection report](https://github.com/javelinmaxx/Multi-Compressor/blob/academic/projects/XuanPhase/Tests/Reports/onset-detection.md)
+- [Automatic alignment report](https://github.com/javelinmaxx/Multi-Compressor/blob/academic/projects/XuanPhase/Tests/Reports/AUTO_ALIGNMENT.md)
 
 ## Implemented synthetic experiment suite
 
@@ -51,7 +51,7 @@ The current implementation is a finite, tapered FIR approximation to a phase-onl
 
 ## Priority 4 — Perceptual validation
 
-- [ ] Design a blinded, randomized, loudness-controlled listening test comparing bypass, static phase rotation, and adaptive XuanPhase.
+- [ ] Design a blinded, randomized, loudness-controlled listening test comparing bypass, static phase rotation, and adaptive APRiCOT.
 - [ ] Ask separately about transient sharpness, punch, body, ringing, timbral change, and overall preference.
 - [ ] Include examples where concentration is beneficial and examples where phase dispersion is intentional or undesirable.
 - [ ] Document participants, material, protocol, level matching, statistical method, uncertainty intervals, and exclusions.

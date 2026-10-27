@@ -75,7 +75,7 @@ void XuanPhaseEditor::paint (juce::Graphics& g)
     g.setColour (secondary); g.setFont (juce::FontOptions (10));
     g.drawText ("J-SONIC / TRANSIENT PHASE", 24, 12, 370, 16, juce::Justification::centredLeft);
     g.setColour (foreground); g.setFont (juce::FontOptions (25));
-    g.drawText ("XUAN PHASE", 24, 30, 370, 36, juce::Justification::centredLeft);
+    g.drawText ("APRiCOT", 24, 30, 370, 36, juce::Justification::centredLeft);
     drawPanel (g, {24, 88, 500, 188}); drawPanel (g, {24, 288, 500, 186});
     g.setColour (foreground); g.setFont (juce::FontOptions (13).withStyle ("bold"));
     g.drawText ("MANUAL ROTATION", 38, 100, 340, 20, juce::Justification::centredLeft);

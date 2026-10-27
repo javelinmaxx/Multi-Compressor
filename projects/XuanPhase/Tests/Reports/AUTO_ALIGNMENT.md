@@ -1,4 +1,4 @@
-# Xuan Phase automatic alignment performance
+# APRiCOT automatic alignment performance
 
 Measured at 48 kHz using the production FIR, convolution engine, and analysis worker.
 Run `XuanPhaseTests --report <this directory>` then `python3 ../generate_report.py` to reproduce.

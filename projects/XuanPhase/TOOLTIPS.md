@@ -1,4 +1,4 @@
-# Xuan Phase hover hints
+# APRiCOT hover hints
 
 | Control | Tooltip |
 | --- | --- |

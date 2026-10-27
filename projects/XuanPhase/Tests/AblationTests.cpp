@@ -66,7 +66,7 @@ int main (int argc, char** argv)
     try
     {
         const std::filesystem::path directory = argc > 1 ? argv[1] : "academic-results";
-        manifest(directory,"XuanPhase");
+        manifest(directory,"APRiCOT");
         auto out = csv(directory,"phase.csv","rate,corpus,variant,targets,onset,anchor_ms,peak,rms,crest_db,arrival_dispersion_ms,mean_phase_error_deg,magnitude_ripple_db,pre_window_energy,tail_energy");
         auto curves = csv(directory,"response.csv","rate,corpus,variant,frequency_hz,requested_deg,measured_deg,gain_db");
         auto kernels = csv(directory,"fir-kernels.csv","rate,corpus,sample,causal_ms,relative_ms,coefficient");

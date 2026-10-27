@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from academic_names import public_project
 
 
 def load(path, *, constant_rate=True):
@@ -150,7 +151,7 @@ Blue in the difference maps means attenuation, red enhancement, both computed fr
 """
 
 
-def xuan(source,destination):
+def apricot(source,destination):
     sections = ["## Rendered transients and phase spectrograms"]
     for corpus in ["dispersed_packets","broadband_attack","attack_over_sustain"]:
         a = load(source/f"audio-{corpus}-current.csv")
@@ -179,7 +180,7 @@ def xuan(source,destination):
         axes[3,1].text(0,.9,"Same input timeline; 2,400-sample host latency removed.\n512-sample Hann / 32-sample hop (10.67 / 0.67 ms).\nCyclic phase colour: −π to +π.\nHide phase >50 dB below common peak bin power.\nNo per-image or loudness normalization.\nFrozen automatic correction, full positive Depth.\nEnvelope alignment and carrier phase are distinct measures.",va="top",fontsize=10,linespacing=1.8)
         for ax in axes[1:,:].flat:
             if ax.axison: ax.set_xlim(0,.08)
-        fig.suptitle(f"Xuan Phase • {corpus} • actual partitioned convolution output")
+        fig.suptitle(f"APRiCOT • {corpus} • actual partitioned convolution output")
         filename = f"audio-phase-{corpus}.png"; save(fig,destination,filename)
         sections.append(f"![Transient and phase before/after: {corpus}]({filename})")
     return "\n\n".join(sections)+"""
@@ -191,7 +192,7 @@ Phase is the wrapped complex **audio STFT phase**, not the requested filter resp
 
 
 def report(project,source,destination):
-    text = {"KuoStereo":kuo,"ZaoDrive":zao,"XuanPhase":xuan}[project](source,destination)
-    text += "\nAll spectrograms derive from native sample captures, using NumPy FFTs and Hann windows without boundary padding. One-sided per-bin power is `|FFT(x*w)|²/(N*sum(w²))`, doubling interior bins; its sum is the window-weighted mean square (0 dBFS = mean square 1). Kuo uses 2,048/256 samples (window/hop), Zao 4,096/256, Xuan 512/32, all at 48 kHz. Phase is masked in silence. Raw captures are gzip-compressed beside this report.\n"
-    (destination/"audio-spectrograms.md").write_text(f"# {project}: audio spectrogram measurements\n\n"+text)
+    text = {"KuoStereo":kuo,"ZaoDrive":zao,"XuanPhase":apricot}[project](source,destination)
+    text += "\nAll spectrograms derive from native sample captures, using NumPy FFTs and Hann windows without boundary padding. One-sided per-bin power is `|FFT(x*w)|²/(N*sum(w²))`, doubling interior bins; its sum is the window-weighted mean square (0 dBFS = mean square 1). Kuo uses 2,048/256 samples (window/hop), Zao 4,096/256, APRiCOT 512/32, all at 48 kHz. Phase is masked in silence. Raw captures are gzip-compressed beside this report.\n"
+    (destination/"audio-spectrograms.md").write_text(f"# {public_project(project)}: audio spectrogram measurements\n\n"+text)
     return "\n\n"+text

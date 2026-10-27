@@ -39,7 +39,7 @@ jobs:
             product: Kuo Velvet
             test_option: KUO_VELVET_BUILD_TESTS
           - project: XuanPhase
-            product: Xuan Phase
+            product: APRiCOT
             test_option: XUAN_PHASE_BUILD_TESTS
     defaults:
       run:

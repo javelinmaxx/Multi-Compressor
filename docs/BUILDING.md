@@ -33,7 +33,7 @@ automatic Yinyang Compressor and Shun De-Esser builds.
 Download the main development branch with Git:
 
 ```bash
-git clone --branch master https://github.com/javelinmaxx/Multi-Compressor.git
+git clone --branch academic https://github.com/javelinmaxx/Multi-Compressor.git
 cd Multi-Compressor
 ```
 
@@ -98,7 +98,7 @@ rescan its plug-ins. The build links the MSVC runtime statically.
 
 ### Build with GitHub Actions
 
-To build **all seven plugins, including Xuan Phase**, open
+To build **all seven plugins, including APRiCOT**, open
 [All Plugins - Windows VST3](https://github.com/javelinmaxx/Multi-Compressor/actions/workflows/all-plugins-windows.yml)
 in Actions and select **Run workflow** on `master`. This workflow runs only
 when manually requested; pushes and pull requests do not start it. Each plugin

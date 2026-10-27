@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot actual Xuan FIR phase measurements and the dispersed-transient test."""
+"""Plot actual APRiCOT FIR phase measurements and the dispersed-transient test."""
 from pathlib import Path
 import os
 os.environ.setdefault('MPLCONFIGDIR', '/tmp/xuan-matplotlib')
@@ -19,12 +19,12 @@ axes[0].set(ylabel='Phase relative to compensated 50 ms latency (degrees)', xlab
 axes[1].set(ylabel='Magnitude (dB)', xlabel='Frequency (Hz)', title='Finite-FIR magnitude ripple')
 axes[0].legend(fontsize=7)
 for ax in axes: ax.grid(alpha=.25)
-fig.savefig(root/'manual-phase.png', dpi=160); plt.close(fig)
+fig.suptitle("APRiCOT"); fig.savefig(root/'manual-phase.png', dpi=160); plt.close(fig)
 fig, ax = plt.subplots(figsize=(10, 4), constrained_layout=True)
 for key in ['depthminus100', 'depth0', 'depth50', 'depth100']:
     ax.plot(audio['sample']/48, audio[key], label=key.replace('depth', 'Auto Depth ').replace('minus','−')+'%', alpha=.8)
 ax.set(xlabel='Time (ms), including reference latency', ylabel='Amplitude', title='Phase-guided alignment of a dispersed transient', xlim=(65,90))
-ax.legend(); ax.grid(alpha=.25); fig.savefig(root/'transient-alignment.png', dpi=160); plt.close(fig)
+ax.legend(); ax.grid(alpha=.25); fig.suptitle("APRiCOT"); fig.savefig(root/'transient-alignment.png', dpi=160); plt.close(fig)
 # A separate case runs the actual background detector, handoff and crossfade;
 # no target is injected and both manual rotations remain zero with unity gain.
 live = np.genfromtxt(root/'auto-live.csv', delimiter=',', names=True)
@@ -42,7 +42,7 @@ axes[2].semilogx(curve['frequency'], np.unwrap(np.deg2rad(curve['target_deg']))*
 axes[2].semilogx(curve['frequency'], np.unwrap(np.deg2rad(curve['measured_deg']))*180/np.pi, '--', label='Measured FIR', alpha=.8)
 axes[2].set(xlabel='Frequency (Hz)', ylabel='Unwrapped rotation (degrees)', title='Detected-target phase response: neighboring bands remain connected')
 for ax in axes: ax.grid(alpha=.25); ax.legend(fontsize=8)
-fig.savefig(root/'auto-live.png', dpi=160); plt.close(fig)
+fig.suptitle("APRiCOT"); fig.savefig(root/'auto-live.png', dpi=160); plt.close(fig)
 live_rows=[]
 for number, start in enumerate([4096,20480,36864], 1):
     rows=live[start+2400:start+2400+4096]
@@ -79,7 +79,7 @@ for ms in [40,200,800]:
 axes[1].set(xlabel='Stream time (ms, including 50 ms latency)', ylabel='Largest applied rotation (degrees)', title='Live worker: phase correction releases after one hit')
 axes[1].legend(fontsize=8)
 for ax in axes: ax.grid(alpha=.25)
-fig.savefig(root/'auto-performance.png', dpi=160); plt.close(fig)
+fig.suptitle("APRiCOT"); fig.savefig(root/'auto-performance.png', dpi=160); plt.close(fig)
 error_rows=[]
 for name, error in zip(['Off', '+100%', '−100%'], errors):
     error_rows.append(f'| {name} | {np.mean(abs(error)):.3f}° | {np.max(abs(error)):.3f}° |')
@@ -156,7 +156,7 @@ a=stereo_live[(stereo_live['sample']>=38000)&(stereo_live['sample']<44000)]
 for key in ['left','right']: axes[1,1].plot((a['sample']-36864)/48,a[key],label=key.title(),alpha=.8)
 axes[1,1].set(xlim=(64,85),xlabel='Time from last hit start (ms, including reference latency)',ylabel='Amplitude',title='Live worker at −100% Link: last repeated hit')
 for ax in axes.flat: ax.grid(alpha=.25); ax.legend(fontsize=8)
-fig.savefig(root/'stereo-link.png',dpi=160); plt.close(fig)
+fig.suptitle("APRiCOT"); fig.savefig(root/'stereo-link.png',dpi=160); plt.close(fig)
 with wave.open(str(root/'stereo-link-live.wav'),'wb') as wav:
     wav.setnchannels(2); wav.setsampwidth(2); wav.setframerate(48000)
     wav.writeframes((np.clip(np.column_stack([stereo_live['left'],stereo_live['right']]),-1,1)*32767).astype('<i2').tobytes())
@@ -165,7 +165,7 @@ fig,ax=plt.subplots(figsize=(9,3.5),constrained_layout=True)
 for key in ['left_deg','right_deg']: ax.semilogx(cap['frequency'],cap[key],label=key.replace('_deg','').title())
 for limit in [-150,150]: ax.axhline(limit,color='black',linestyle='--',linewidth=.8)
 ax.set(xlabel='Frequency (Hz)',ylabel='Requested correction (degrees)',ylim=(-195,195),title='Combined correction saturates at ±150° before FIR design')
-ax.grid(alpha=.25);ax.legend();fig.savefig(root/'phase-cap.png',dpi=160);plt.close(fig)
+ax.grid(alpha=.25);ax.legend();fig.suptitle("APRiCOT"); fig.savefig(root/'phase-cap.png',dpi=160);plt.close(fig)
 cap_report="""
 ## Strict phase-correction limit
 
@@ -210,7 +210,7 @@ for late in [0,1]:
     protected=a[(a['sample']>=anchor+1200)&(a['sample']<anchor+3000)]
     ahead_rows.append(f"| {'Late' if late else 'Normal'} | {np.max(protected['filter_change']):.8f} |")
 for ax in axes.flat: ax.grid(alpha=.25);ax.legend(fontsize=7)
-fig.savefig(root/'lookahead.png',dpi=160);plt.close(fig)
+fig.suptitle("APRiCOT"); fig.savefig(root/'lookahead.png',dpi=160);plt.close(fig)
 piano=np.genfromtxt(root/'electric-piano.csv',delimiter=',',names=True)
 fig,axes=plt.subplots(2,1,figsize=(10,5),constrained_layout=True,sharex=True)
 t=piano['sample']/48
@@ -220,7 +220,7 @@ axes[0].set(ylabel='Amplitude',title='Simulated electric piano: stable attack, f
 axes[1].plot(t,piano['automatic']-piano['reference'])
 axes[1].set(xlabel='Stream time (ms)',ylabel='Output minus reference')
 for ax in axes: ax.grid(alpha=.25)
-axes[0].legend();fig.savefig(root/'electric-piano.png',dpi=160);plt.close(fig)
+axes[0].legend();fig.suptitle("APRiCOT"); fig.savefig(root/'electric-piano.png',dpi=160);plt.close(fig)
 ahead_report="""## Lookahead and onset stability
 
 ![Live lookahead and delayed-worker regression](lookahead.png)
@@ -313,7 +313,7 @@ the corresponding FIR. Negative Link deliberately changes the stereo phase
 relationship and may change the mono sum; it is a widening effect rather than
 a promise of maximum separation for every transient source.
 """
-(root/'REPORT.md').write_text('''# Xuan Phase test report
+(root/'REPORT.md').write_text('''# APRiCOT test report
 
 ## Adaptive onset detection
 
@@ -441,7 +441,7 @@ blank stripes or backdating the newest onset.
 These run on Linux/Xvfb against JUCE's real desktop peer and timers; Logic Pro
 and macOS AU rendering still require validation on a Mac.
 
-![Native editor with live transient history](../../Previews/xuan-phase.png)
+![Native editor with live transient history](../../Previews/apricot.png)
 
 Data: [phase.csv](phase.csv), [transient.csv](transient.csv), [auto-live.csv](auto-live.csv), [auto-phase.csv](auto-phase.csv).
 ''')
@@ -449,7 +449,7 @@ print('\n'.join(rows))
 
 report=(root/'REPORT.md').read_text()
 auto=report[report.index('## Transient spectral phase and Depth'):report.index('## Phase-field display')]
-(root/'AUTO_ALIGNMENT.md').write_text('# Xuan Phase automatic alignment performance\n\n' +
+(root/'AUTO_ALIGNMENT.md').write_text('# APRiCOT automatic alignment performance\n\n' +
     'Measured at 48 kHz using the production FIR, convolution engine, and analysis worker.\n' +
     'Run `XuanPhaseTests --report <this directory>` then `python3 ../generate_report.py` to reproduce.\n\n' + auto +
     '\nData: [transient](transient.csv), [live audio](auto-live.csv), [phase targets](auto-targets.csv), [release](auto-release.csv).\n')

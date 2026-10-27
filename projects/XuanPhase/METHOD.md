@@ -1,10 +1,10 @@
-# XuanPhase Method: Transient-Guided Phase Rotation
+# APRiCOT Method: Transient-Guided Phase Rotation
 
-This note describes the implemented signal path for the XuanPhase research project. It documents the current algorithm; it does not claim an exact all-pass implementation or an iterative group-delay optimizer.
+This note describes the implemented signal path for the APRiCOT research project. It documents the current algorithm; it does not claim an exact all-pass implementation or an iterative group-delay optimizer.
 
 ## 1. Transient detection
 
-XuanPhase analyzes overlapping, windowed FFT frames on a background worker. Its detector looks for **newly emerging spectral content**, rather than relying only on the whole-window crest factor.
+APRiCOT analyzes overlapping, windowed FFT frames on a background worker. Its detector looks for **newly emerging spectral content**, rather than relying only on the whole-window crest factor.
 
 For each frame, it compares each spectral-bin magnitude with the maximum of the previous frame's same and neighboring bins. A positive novelty residual is formed when a bin grows sufficiently beyond this local reference and a noise-relative floor. Log-compressed growth lets quieter new partials contribute without allowing low-level FFT sidelobes to dominate.
 
@@ -27,7 +27,7 @@ The anchor is a local reference for constructing phase targets; it is not an ext
 
 ## 3. Local phase-slope timing estimates
 
-After anchoring, XuanPhase selects local spectral peaks between 60 Hz and the smaller of 20 kHz or 45% of the sample rate. Selection reserves a strong peak in each of 24 logarithmic frequency regions, then fills remaining slots with the strongest candidates. This avoids allowing low frequencies to consume every available anchor.
+After anchoring, APRiCOT selects local spectral peaks between 60 Hz and the smaller of 20 kHz or 45% of the sample rate. Selection reserves a strong peak in each of 24 logarithmic frequency regions, then fills remaining slots with the strongest candidates. This avoids allowing low frequencies to consume every available anchor.
 
 For each selected FFT bin (k), the algorithm estimates:
 - **Relative phase:** the bin's complex phase is measured relative to the selected transient anchor, including the phase sign implied by the anchor sample.

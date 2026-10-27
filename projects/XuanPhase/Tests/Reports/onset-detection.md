@@ -1,4 +1,4 @@
-# Xuan Phase adaptive onset detection
+# APRiCOT adaptive onset detection
 
 The recent whole-note discard rule has been reverted. It affected correction
 eligibility, rather than changing the detector's thresholds: a detected event

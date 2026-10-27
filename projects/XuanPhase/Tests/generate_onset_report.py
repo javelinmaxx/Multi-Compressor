@@ -39,10 +39,10 @@ for ax, case, title in zip(axes.flat, cases, titles):
     ax.scatter(frame['sample'][old]/48000, np.full(np.sum(old), .025), marker='x', s=10, color='#888888', label='Legacy detection')
     ax.set(xlim=(.2, 1.5), ylim=(-.025, 1.05), title=title, xlabel='Input stream time (s)', ylabel='Novelty')
     ax.grid(alpha=.25); ax.legend(fontsize=6, loc='upper right')
-fig.savefig(root / 'onset-detection.png', dpi=160)
+fig.suptitle("APRiCOT"); fig.savefig(root / 'onset-detection.png', dpi=160)
 plt.close(fig)
 
-report = f'''# Xuan Phase adaptive onset detection
+report = f'''# APRiCOT adaptive onset detection
 
 The recent whole-note discard rule has been reverted. It affected correction
 eligibility, rather than changing the detector's thresholds: a detected event

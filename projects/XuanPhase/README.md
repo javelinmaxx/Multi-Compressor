@@ -1,12 +1,12 @@
-# Xuan Phase
+# APRiCOT
 
-Xuan Phase is J-SONIC's manual and transient-guided phase rotator. It offers
+APRiCOT is J-SONIC's manual and transient-guided phase rotator. It offers
 independent low/high rotation, a smooth adjustable crossover, signed Auto Depth,
 Transient release, Stereo Link, and **25 ms correction lookahead** in a
 50%–120% scalable editor, with **50 ms total reported latency**.
 The 840 × 490 default panel includes a vertical phase-field meter beside the controls.
 
-![Xuan Phase native editor](Previews/xuan-phase.png)
+![APRiCOT native editor](Previews/apricot.png)
 
 ## Manual rotation and 50 ms total latency
 
@@ -188,9 +188,9 @@ For plugin-only builds set `-DXUAN_PHASE_BUILD_TESTS=OFF`.
 Generate measurements and a native preview on Linux:
 
 ```bash
-xvfb-run -a build/xuan/XuanPhaseTests --report "$PWD/projects/XuanPhase/Tests/Reports"
+xvfb-run -a python3 projects/ZaoDrive/Tests/with_x11_atoms.py build/xuan/XuanPhaseTests --report "$PWD/projects/XuanPhase/Tests/Reports"
 xvfb-run -a python3 projects/ZaoDrive/Tests/with_x11_atoms.py \
-  build/xuan/XuanPhaseTests --editor "$PWD/projects/XuanPhase/Previews/xuan-phase.png"
+  build/xuan/XuanPhaseTests --editor "$PWD/projects/XuanPhase/Previews/apricot.png"
 python3 projects/XuanPhase/Tests/generate_report.py
 ```
 
@@ -228,7 +228,7 @@ report includes raw CSVs, PNG figures, vector PDFs and sampled error metrics.
 Run from the repository root:
 
 ```sh
-python3 projects/run_academic_tests.py --only XuanPhase --output build/academic-results
-python3 projects/test_xuan_fir_report.py
-python3 projects/generate_academic_reports.py build/academic-results --only XuanPhase --publish
+python3 projects/run_academic_tests.py --only APRiCOT --output build/academic-results
+python3 projects/test_apricot_fir_report.py
+python3 projects/generate_academic_reports.py build/academic-results --only APRiCOT --publish
 ```

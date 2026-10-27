@@ -50,7 +50,7 @@ Exact-mono mirrored scores must match within 1e−6, verifying that this objecti
 
 ![Relative score weights](score-weights.png)
 
-With spectral-error weight fixed at 1, λ spans **0, 0.05, 0.10, 0.175, 0.35, 0.50, 0.70, 1.00, 2.00** in `E + λ*max(0,1−R/0.20)`. The side-only ablation supplies the complementary zero-spectral-weight extreme. `weight-sweep.csv` and the full frame table retain the measured results. Each weight uses exactly the same input snapshots and production temporal/search logic. The criterion is the production side/mid **shortfall**, not an unbounded side-energy reward. These paired comparisons measure a trade-off; they do not select an optimum by listening preference. This mechanism is in **Kuo Stereo**, while Xuan Phase's current alignment algorithm has no such weighted score.
+With spectral-error weight fixed at 1, λ spans **0, 0.05, 0.10, 0.175, 0.35, 0.50, 0.70, 1.00, 2.00** in `E + λ*max(0,1−R/0.20)`. The side-only ablation supplies the complementary zero-spectral-weight extreme. `weight-sweep.csv` and the full frame table retain the measured results. Each weight uses exactly the same input snapshots and production temporal/search logic. The criterion is the production side/mid **shortfall**, not an unbounded side-energy reward. These paired comparisons measure a trade-off; they do not select an optimum by listening preference. This mechanism is in **Kuo Stereo**, while APRiCOT's current alignment algorithm has no such weighted score.
 
 ## Limits
 
@@ -65,7 +65,7 @@ Six seconds of the deterministic mono C→Am pad plus 400 ms-spaced bursts pass 
 
 `M=(L+R)/2`, `S=(L−R)/2`; no channel or image normalization is applied. The ratio trace is hidden where mid energy is below −80 dBFS. Integrated rendered mid energy is -23.03 dBFS and side energy -26.22 dBFS (side/mid -3.20 dB). This Haas-only full-path example complements the search snapshots: it does not evaluate adaptive worker scheduling or claim exact mid preservation with Haas enabled. Raw aligned samples are in `audio-neutral.csv.gz` and `audio-wide.csv.gz`.
 
-All spectrograms derive from native sample captures, using NumPy FFTs and Hann windows without boundary padding. One-sided per-bin power is `|FFT(x*w)|²/(N*sum(w²))`, doubling interior bins; its sum is the window-weighted mean square (0 dBFS = mean square 1). Kuo uses 2,048/256 samples (window/hop), Zao 4,096/256, Xuan 512/32, all at 48 kHz. Phase is masked in silence. Raw captures are gzip-compressed beside this report.
+All spectrograms derive from native sample captures, using NumPy FFTs and Hann windows without boundary padding. One-sided per-bin power is `|FFT(x*w)|²/(N*sum(w²))`, doubling interior bins; its sum is the window-weighted mean square (0 dBFS = mean square 1). Kuo uses 2,048/256 samples (window/hop), Zao 4,096/256, APRiCOT 512/32, all at 48 kHz. Phase is masked in silence. Raw captures are gzip-compressed beside this report.
 
 ## Reproduce
 

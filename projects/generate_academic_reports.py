@@ -14,8 +14,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from academic_names import public_project, PUBLIC_PROJECTS
 from generate_audio_spectrograms import report as audio_report
-from generate_xuan_fir_report import report as fir_report
+from generate_apricot_fir_report import report as fir_report
 
 ROOT = Path(__file__).resolve().parent
 
@@ -40,7 +41,7 @@ def table(rows, fields):
     return "\n".join(lines)
 
 
-def plot_groups(rows, fields, destination):
+def plot_groups(rows, fields, destination, title=None):
     groups = defaultdict(list)
     for row in rows:
         groups[row["variant"]].append(row)
@@ -52,6 +53,8 @@ def plot_groups(rows, fields, destination):
         ax.set_xticks(range(len(groups)), list(groups), rotation=65, ha="right", fontsize=8)
         ax.set_ylabel(label)
         ax.grid(axis="y", alpha=.25)
+    if title:
+        fig.suptitle(title)
     fig.savefig(destination, dpi=160)
     plt.close(fig)
 
@@ -133,7 +136,7 @@ Exact-mono mirrored scores must match within 1e−6, verifying that this objecti
 
 ![Relative score weights](score-weights.png)
 
-With spectral-error weight fixed at 1, λ spans **0, 0.05, 0.10, 0.175, 0.35, 0.50, 0.70, 1.00, 2.00** in `E + λ*max(0,1−R/0.20)`. The side-only ablation supplies the complementary zero-spectral-weight extreme. `weight-sweep.csv` and the full frame table retain the measured results. Each weight uses exactly the same input snapshots and production temporal/search logic. The criterion is the production side/mid **shortfall**, not an unbounded side-energy reward. These paired comparisons measure a trade-off; they do not select an optimum by listening preference. This mechanism is in **Kuo Stereo**, while Xuan Phase's current alignment algorithm has no such weighted score.
+With spectral-error weight fixed at 1, λ spans **0, 0.05, 0.10, 0.175, 0.35, 0.50, 0.70, 1.00, 2.00** in `E + λ*max(0,1−R/0.20)`. The side-only ablation supplies the complementary zero-spectral-weight extreme. `weight-sweep.csv` and the full frame table retain the measured results. Each weight uses exactly the same input snapshots and production temporal/search logic. The criterion is the production side/mid **shortfall**, not an unbounded side-energy reward. These paired comparisons measure a trade-off; they do not select an optimum by listening preference. This mechanism is in **Kuo Stereo**, while APRiCOT's current alignment algorithm has no such weighted score.
 
 ## Limits
 
@@ -173,9 +176,9 @@ Means pool these synthetic conditions and partials; they are not perceptual scor
 """
 
 
-def xuan(source, destination):
+def apricot(source, destination):
     rows = read(source/"phase.csv")
-    plot_groups(rows, [("mean_phase_error_deg", "Residual phase error (degrees)"), ("arrival_dispersion_ms", "Band-envelope arrival spread (ms)"), ("magnitude_ripple_db", "FIR magnitude ripple (dB)")], destination/"ablation.png")
+    plot_groups(rows, [("mean_phase_error_deg", "Residual phase error (degrees)"), ("arrival_dispersion_ms", "Band-envelope arrival spread (ms)"), ("magnitude_ripple_db", "FIR magnitude ripple (dB)")], destination/"ablation.png", title="APRiCOT • synthetic alignment ablations")
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), constrained_layout=True)
     responses = read(source/"response.csv")
     for variant in ["current", "no_unwrap", "no_slope", "six_peaks"]:
@@ -183,8 +186,8 @@ def xuan(source, destination):
         axes[0].semilogx([float(r["frequency_hz"]) for r in group], [float(r["requested_deg"]) for r in group], label=variant)
         axes[1].semilogx([float(r["frequency_hz"]) for r in group], [float(r["gain_db"]) for r in group], label=variant)
     axes[0].set_ylabel("Requested phase (degrees)"); axes[1].set(xlabel="Frequency (Hz)", ylabel="Measured FIR gain (dB)")
-    axes[0].legend(ncol=2); fig.savefig(destination/"broadband-response.png", dpi=160); plt.close(fig)
-    return f"""# Xuan Phase: synthetic alignment ablations
+    axes[0].legend(ncol=2); fig.suptitle("APRiCOT • requested phase and measured FIR gain"); fig.savefig(destination/"broadband-response.png", dpi=160); plt.close(fig)
+    return f"""# APRiCOT: synthetic alignment ablations
 
 {len(rows)} signal/variant conditions at 44.1/48/96 kHz, including the production finite FIR and partitioned audio convolution.
 
@@ -224,10 +227,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("results", type=Path)
     parser.add_argument("--publish", action="store_true", help="Write reports into each project's Tests/Reports/Academic folder")
-    parser.add_argument("--only", nargs="+", choices=["KuoStereo","ZaoDrive","XuanPhase"], default=["KuoStereo","ZaoDrive","XuanPhase"])
+    parser.add_argument("--only", nargs="+", type=public_project, choices=PUBLIC_PROJECTS, default=PUBLIC_PROJECTS)
     args = parser.parse_args()
-    for project, generate in [("KuoStereo", kuo), ("ZaoDrive", zao), ("XuanPhase", xuan)]:
-        if project not in args.only:
+    for project, generate in [("KuoStereo", kuo), ("ZaoDrive", zao), ("XuanPhase", apricot)]:
+        if public_project(project) not in args.only:
             continue
         source = args.results/project
         if not source.exists():
@@ -237,8 +240,9 @@ def main():
         archive(source, destination)
         (destination/"README.md").write_text(generate(source, destination)+audio_report(project, source, destination)+"\n## Reproduce\n\nFrom the repository root, run:\n\n```sh\npython3 projects/run_academic_tests.py --output build/academic-results\npython3 projects/generate_academic_reports.py build/academic-results --publish\n```\n\nCMake 3.22+, a C++17 compiler and the normal JUCE system dependencies are required. Plot generation additionally needs Python `numpy` and `matplotlib`. Native tests and CTest do not require Python plotting packages. Detailed CSV files are gzip-compressed alongside this report; `provenance.json` records source hashes and build information when run through the launcher. Timing values are machine-dependent.\n")
         (destination/"report-provenance.json").write_text(json.dumps({
+            "academic_names_sha256": hashlib.sha256((ROOT/"academic_names.py").read_bytes()).hexdigest(),
             "generator_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            **({"fir_generator_sha256": hashlib.sha256((ROOT/"generate_xuan_fir_report.py").read_bytes()).hexdigest()} if project == "XuanPhase" else {}),
+            **({"fir_generator_sha256": hashlib.sha256((ROOT/"generate_apricot_fir_report.py").read_bytes()).hexdigest()} if project == "XuanPhase" else {}),
             "audio_generator_sha256": hashlib.sha256((ROOT/"generate_audio_spectrograms.py").read_bytes()).hexdigest(),
             "input_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(source.glob("*.csv"))},
             "matplotlib_version": matplotlib.__version__,

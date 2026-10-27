@@ -2,7 +2,7 @@
 """Independent analytical checks of the FIR report's response convention."""
 import unittest
 import numpy as np
-from generate_xuan_fir_report import response, phase_error
+from generate_apricot_fir_report import response, phase_error
 
 
 class FIRResponseCalibration(unittest.TestCase):
