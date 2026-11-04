@@ -109,10 +109,23 @@ Mix, and Stereo Link sit directly below it. Bypass is a button beside the
 plug-in name. Sidechain combines Detector HPF, SC High Tilt, and Mid/Side.
 Transformer enable, Core Drive, and DC Bias share a Transformer Stage section.
 The compact analog switches show ON/OFF or M/S/L/R at either end of the lever.
-The history line runs oldest at left to current at right.
+The history line runs oldest at left to current at right. **Click the trace to
+switch to waveform display**, then click again to restore gain history. The
+waveform view overlays the uncompressed input in pale grey and the actual
+plugin output in gold on a shared linear ±1 scale. It includes Mix, Output and
+the optional transformer in the output trace. The original input is delayed by
+64 samples for visual alignment with the output. Signed min/max buckets at
+approximately 200 Hz preserve short transients and anti-phase stereo without
+mid-channel cancellation; the view covers the same three seconds and expires
+when audio stops. The gain bar and dB readout remain visible in both views.
+The display choice is retained when reopening the editor on the same instance.
+
+![Waveform view comparing input and output](Previews/yinyang-waveform.png)
+
+[Waveform display validation](Tests/Reports/waveform-history.md).
 The display samples gain reduction at 30 Hz while the editor is open; timestamps
 keep the window at three seconds even if UI updates are delayed. Closing the
-editor clears its display history. Transformer, Upward, and Mid/Side use
+editor clears its gain-history trace. Transformer, Upward, and Mid/Side use
 vertical animated switches; Bypass is an animated button. All retain keyboard
 access and host automation. Each model has
 its own palette: FET charcoal with purple GR, VCA white Yang panels and white
@@ -169,7 +182,7 @@ XDG_CACHE_HOME=/workspace/juce-env/cache xvfb-run -a \
     /workspace/juce-env/yinyang-build/YinyangCompressorTests --editor
 ```
 
-The editor check also exercises switch clicks, automation, and history expiry.
+The editor check also exercises switch clicks, automation, history expiry, waveform toggling, and scaled waveform hit targets. Waveform tests verify transient peaks, stereo anti-phase capture, ring wrapping, elapsed-time expiry, 64-sample input alignment, actual output attenuation, and bit-identical audio with the observer enabled.
 It runs the message loop for six seconds with a synthetic GR signal to verify
 the animated display. Add an absolute PNG path after `--editor` to save a preview.
 Preview PNGs for all four models and their Upward reversals are in

@@ -96,6 +96,7 @@ character::Parameters YinyangCompressorProcessor::readParameters() const noexcep
 void YinyangCompressorProcessor::prepareToPlay (double rate, int)
 {
     engine.prepare (rate);
+    waveform.prepare (rate);
     engine.setParameters (readParameters());
     reduction.store (0); inputPeak.store (-100); outputPeak.store (-100);
     setLatencySamples (character::Compressor::latencySamples);
@@ -138,7 +139,9 @@ void YinyangCompressorProcessor::process (juce::AudioBuffer<float>& buffer, bool
     auto p = readParameters();
     p.bypass = p.bypass || hostBypassed;
     engine.setParameters (p);
-    engine.process (buffer.getArrayOfWritePointers(), channels, buffer.getNumSamples());
+    waveform.beginBlock (juce::Time::getMillisecondCounterHiRes()*.001,buffer.getNumSamples());
+    engine.process (buffer.getArrayOfWritePointers(), channels, buffer.getNumSamples(),
+        [this] (const auto& dry, const auto& wet, int count) noexcept { waveform.push (dry,wet,count); });
     for (int ch = 0; ch < channels; ++ch)
         out = std::max (out, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
     inputPeak.store (character::Compressor::db (in), std::memory_order_relaxed);

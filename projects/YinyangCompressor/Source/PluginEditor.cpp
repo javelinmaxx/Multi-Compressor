@@ -7,6 +7,14 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
     addAndMakeVisible (titleHint);
+    addAndMakeVisible (historyToggle);
+    historyToggle.setTooltip ("Click to switch between gain history and the uncompressed input and compressed output waveforms.");
+    historyToggle.setToggleState (processor.waveformDisplay.load(),juce::dontSendNotification);
+    historyToggle.onClick = [this]
+    {
+        processor.waveformDisplay.store (historyToggle.getToggleState());
+        repaint();
+    };
     setOpaque (true);
     setLookAndFeel (&look);
     model.addItemList ({ "FET / Feed-forward", "VCA / Feedback", "Variable-mu", "Optical" }, 1);
@@ -532,9 +540,10 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
 {
     drawAnalogPanel (g, meterBounds.toFloat(), 10, theme.meterPanel, theme.grid);
     const auto yinMode = upward.getToggleState();
+    const auto waveformMode = historyToggle.getToggleState();
     g.setColour (juce::Colour (0xffb9c8c4));
     g.setFont (juce::FontOptions (11.0f));
-    g.drawText (yinMode ? "YIN GAIN" : "YANG GAIN REDUCTION",
+    g.drawText (waveformMode ? "INPUT / OUTPUT" : yinMode ? "YIN GAIN" : "YANG GAIN REDUCTION",
                 356, 158, 156, 20, juce::Justification::centred);
     const juce::Rectangle<float> bar (360, 202, 14, 310), plot (410, 202, 98, 310);
     g.setColour (theme.gaugeTrack);
@@ -551,7 +560,7 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
     {
         const auto y = meterY (static_cast<float> (db));
         g.setColour (theme.grid);
-        g.drawLine (plot.getX(), y, plot.getRight(), y);
+        if (! waveformMode) g.drawLine (plot.getX(), y, plot.getRight(), y);
         g.setColour (juce::Colour (0xffb9c8c4));
         const auto caption = yinMode && db > 0 ? "+" + juce::String (db) : juce::String (db);
         g.drawText (caption, 378, juce::roundToInt (y) - 8, 26, 16, juce::Justification::centred);
@@ -584,33 +593,76 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
         g.drawVerticalLine (juce::roundToInt (visibleFill.getCentreX()), visibleFill.getY() + 2, visibleFill.getBottom() - 2);
     }
     const auto now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-    juce::Path trace;
-    bool started = false;
-    double previous = 0;
-    history.visit (now, [&] (float position, float reduction, double time)
+    if (! waveformMode)
     {
-        const auto x = plot.getX() + plot.getWidth() * position;
-        const auto y = meterY (yinMode ? std::clamp (reduction, 0.0f, 12.0f) : reduction);
-        if (! started || time - previous > 0.25) trace.startNewSubPath (x, y);
-        else trace.lineTo (x, y);
-        previous = time;
-        started = true;
-    });
-    g.saveState();
-    g.reduceClipRegion (plot.expanded (1).toNearestInt());
-    for (int layer = 5; layer >= 1; --layer)
-    {
-        const auto spread = static_cast<float> (layer) * 2.4f;
-        g.setColour (meterAccent.withAlpha (glow * (0.10f / static_cast<float> (layer))));
-        g.strokePath (trace, juce::PathStrokeType (2.0f + spread));
+        juce::Path trace;
+        bool started = false;
+        double previous = 0;
+        history.visit (now, [&] (float position, float reduction, double time)
+        {
+            const auto x = plot.getX() + plot.getWidth() * position;
+            const auto y = meterY (yinMode ? std::clamp (reduction, 0.0f, 12.0f) : reduction);
+            if (! started || time - previous > 0.25) trace.startNewSubPath (x, y);
+            else trace.lineTo (x, y);
+            previous = time;
+            started = true;
+        });
+        g.saveState();
+        g.reduceClipRegion (plot.expanded (1).toNearestInt());
+        for (int layer = 5; layer >= 1; --layer)
+        {
+            const auto spread = static_cast<float> (layer) * 2.4f;
+            g.setColour (meterAccent.withAlpha (glow * (0.10f / static_cast<float> (layer))));
+            g.strokePath (trace, juce::PathStrokeType (2.0f + spread));
+        }
+        g.setColour (meterAccent.withAlpha (0.98f));
+        g.strokePath (trace, juce::PathStrokeType (2.1f));
+        g.setColour (meterAccent);
+        g.strokePath (trace, juce::PathStrokeType (1.7f));
+        g.setColour (juce::Colours::white.withAlpha (glow * 0.78f));
+        g.strokePath (trace, juce::PathStrokeType (0.75f));
+        g.restoreState();
     }
-    g.setColour (meterAccent.withAlpha (0.98f));
-    g.strokePath (trace, juce::PathStrokeType (2.1f));
-    g.setColour (meterAccent);
-    g.strokePath (trace, juce::PathStrokeType (1.7f));
-    g.setColour (juce::Colours::white.withAlpha (glow * 0.78f));
-    g.strokePath (trace, juce::PathStrokeType (0.75f));
-    g.restoreState();
+    else
+    {
+        const auto inputColour = juce::Colour (0xffb9c8c4);
+        const auto outputColour = juce::Colour (0xffe7ac58);
+        g.setFont (juce::FontOptions (9.f));
+        g.setColour (inputColour); g.drawText ("IN",410,183,43,15,juce::Justification::centredLeft);
+        g.setColour (outputColour); g.drawText ("OUT",465,183,43,15,juce::Justification::centredRight);
+        g.saveState(); g.reduceClipRegion (plot.toNearestInt());
+        const auto yFor = [&] (float value) { return plot.getCentreY()-std::clamp (value,-1.f,1.f)*plot.getHeight()*.5f; };
+        g.setColour (theme.grid);
+        for (float level : {-1.f,-.5f,0.f,.5f,1.f}) g.drawHorizontalLine (juce::roundToInt (yFor (level)),plot.getX(),plot.getRight());
+        std::array<WaveformHistory::Frame,100> columns {};
+        std::array<bool,100> valid {};
+        processor.waveform.visit (now,[&] (float position, const auto& frame)
+        {
+            const auto index = static_cast<size_t> (std::clamp (int(position*plot.getWidth()),0,int(plot.getWidth())-1));
+            auto& column = columns[index];
+            if (! valid[index]) { column = frame; valid[index] = true; }
+            else
+            {
+                column.inputMin = std::min (column.inputMin,frame.inputMin); column.inputMax = std::max (column.inputMax,frame.inputMax);
+                column.outputMin = std::min (column.outputMin,frame.outputMin); column.outputMax = std::max (column.outputMax,frame.outputMax);
+            }
+        });
+        for (int trace = 0; trace < 2; ++trace)
+        {
+            g.setColour (trace == 0 ? inputColour.withAlpha (.7f) : outputColour);
+            for (size_t i = 0; i < columns.size(); ++i)
+                if (valid[i])
+                {
+                    const auto& frame = columns[i];
+                    const auto top = yFor (trace == 0 ? frame.inputMax : frame.outputMax);
+                    const auto bottom = yFor (trace == 0 ? frame.inputMin : frame.outputMin);
+                    g.drawVerticalLine (int(plot.getX())+int(i),top,std::max (top+.75f,bottom));
+                }
+        }
+        g.setColour (inputColour); g.drawText ("+1",412,203,24,12,juce::Justification::centredLeft);
+        g.drawText ("-1",412,498,24,12,juce::Justification::centredLeft);
+        g.restoreState();
+    }
     g.setColour (juce::Colour (0xffb9c8c4));
     g.drawText ("-3 s", 408, 516, 44, 18, juce::Justification::centredLeft);
     g.drawText ("NOW", 466, 516, 44, 18, juce::Justification::centredRight);
@@ -628,6 +680,7 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
 void YinyangCompressorEditor::resized()
 {
     titleHint.setBounds (24, 30, 420, 38);
+    historyToggle.setBounds (406,172,106,340);
     const auto up = [] (int y) { return y - 30; };
     model.setBounds (24, up (98), 500, 32);
     bypass.setBounds (450, up (63), 74, 28);
@@ -681,6 +734,7 @@ void YinyangCompressorEditor::resized()
 
     const auto scale = editorScaling::transform (*this, designWidth, designHeight);
     titleHint.setTransform (scale);
+    historyToggle.setTransform (scale);
     model.setTransform (scale);
     for (auto& slider : sliders) slider.setTransform (scale);
     for (auto& label : labels) label.setTransform (scale);

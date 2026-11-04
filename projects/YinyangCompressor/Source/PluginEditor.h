@@ -67,6 +67,17 @@ private:
     juce::Colour ring { 0xff38434e }, knobTop { 0xff46515e }, knobBottom { 0xff1b242d };
 };
 
+class HistoryDisplayToggle final : public juce::Button
+{
+public:
+    HistoryDisplayToggle() : Button ("History display") { setClickingTogglesState (true); setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+    void paintButton (juce::Graphics& g, bool, bool) override
+    {
+        if (hasKeyboardFocus (true))
+        { g.setColour (juce::Colour (0xffe7ac58).withAlpha (.65f)); g.drawRect (getLocalBounds().reduced (1)); }
+    }
+};
+
 class YinyangCompressorEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -95,6 +106,7 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>, 14> attachments;
     std::unique_ptr<State::ButtonAttachment> transformerAttachment, bypassAttachment, upwardAttachment, midSideAttachment;
     GainReductionHistory history;
+    HistoryDisplayToggle historyToggle;
     juce::Rectangle<int> meterBounds { 344, 140, 180, 470 };
     double lastTick = 0;
     float displayedReduction = 0;

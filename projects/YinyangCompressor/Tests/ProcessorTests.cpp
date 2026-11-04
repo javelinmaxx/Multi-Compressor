@@ -28,9 +28,58 @@ void set (YinyangCompressorProcessor& p, const char* id, float value)
 }
 }
 
+void waveformTests()
+{
+    WaveformHistory history; history.prepare (8000); history.beginBlock (3,24000);
+    for (int i = 0; i < 24000; ++i)
+        history.push ({i%40 == 0 ? .8f : 0.f,i%40 == 0 ? -.8f : 0.f},
+                      {i%40 == 0 ? .2f : 0.f,i%40 == 0 ? -.2f : 0.f},2);
+    int count = 0;
+    history.visit (3.000001,[&] (float position, const auto& frame)
+    {
+        check (position >= 0 && position <= 1 && exact (frame.inputMax,.8f) && exact (frame.inputMin,-.8f)
+               && exact (frame.outputMax,.2f) && exact (frame.outputMin,-.2f),
+               "waveform peak buckets retain single-sample transients and anti-phase stereo"); ++count;
+    });
+    check (count == 600,"waveform retains two hundred paired input/output buckets per second");
+    history.beginBlock (9,48000);
+    for (int i = 0; i < 48000; ++i) history.push ({.1f,0},{.05f,0},1);
+    count = 0; float previous = -1;
+    history.visit (9.000001,[&] (float position, const auto&)
+    { check (position >= previous,"wrapped waveform buckets remain chronological"); previous = position; ++count; });
+    check (count >= 599 && count <= 600,"wrapped waveform keeps only the latest three seconds");
+    count = 0; history.visit (13,[&] (float, const auto&) { ++count; });
+    check (count == 0,"waveforms expire after audio stops");
+    character::Compressor observed, reference; observed.prepare (48000); reference.prepare (48000);
+    character::Parameters settings; settings.bypass = true;
+    observed.setParameters (settings); reference.setParameters (settings);
+    std::vector<float> left (1024), right (1024), copyLeft, copyRight;
+    left[0] = .7f; right[0] = -.4f; copyLeft = left; copyRight = right;
+    float* channels[] {left.data(),right.data()}; float* copies[] {copyLeft.data(),copyRight.data()};
+    reference.process (copies,2,1024); int sample = 0;
+    observed.process (channels,2,1024,[&] (const auto& dry, const auto& wet, int)
+    {
+        check (exact (dry[0],wet[0]) && exact (dry[1],wet[1]),"bypass waveforms align the original input with the actual output");
+        check (exact (dry[0],sample == character::Compressor::latencySamples ? .7f : 0.f),"waveform reference follows the sixty-four-sample processor delay");
+        ++sample;
+    });
+    check (left == copyLeft && right == copyRight,"waveform observation leaves processed audio unchanged");
+    character::Compressor compressor; compressor.prepare (48000);
+    settings.bypass = false; settings.sidechainHz = 0; settings.thresholdDb = -30; settings.ratio = 10; settings.attackMs = .05f;
+    compressor.setParameters (settings);
+    left.assign (24000,.7f); right = left;
+    float* compressedChannels[] {left.data(),right.data()};
+    float finalInput = 0, finalOutput = 0;
+    compressor.process (compressedChannels,2,24000,[&] (const auto& dry, const auto& wet, int)
+    { finalInput = dry[0]; finalOutput = wet[0]; });
+    check (exact (finalInput,.7f) && std::abs (finalOutput) < finalInput*.3f,
+           "waveform observes actual attenuation instead of reusing the uncompressed signal");
+}
+
 int runTests (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juce;
+    waveformTests();
     YinyangCompressorProcessor p;
     check (p.getParameters().size() == 20, "all host parameters registered");
     check (std::abs (p.parameters.getParameter ("ratio")->getNormalisableRange().interval - 0.01f) < 1.0e-7f,
@@ -189,7 +238,7 @@ int runTests (int argc, char** argv)
                     if (auto* readout = dynamic_cast<juce::Label*> (nested))
                         check (readout->getTooltip() == hint, "Yinyang readout shares its control hint");
         }
-        check (tooltipWindows == 1 && hintedControls == 33,
+        check (tooltipWindows == 1 && hintedControls == 34,
                "Yinyang has one tooltip window and hints for every control and caption");
         juce::Slider *threshold = nullptr, *knee = nullptr, *ratio = nullptr;
         juce::Slider *attack = nullptr, *release = nullptr, *output = nullptr, *mix = nullptr;
@@ -417,6 +466,56 @@ int runTests (int argc, char** argv)
                 check (tooltip->isVisible(), "Yinyang tooltip is visible in the preview");
             }
         }
+        juce::Button* displayToggle = nullptr;
+        for (auto* child : editor->getChildren())
+            if (auto* button = dynamic_cast<juce::Button*> (child); button && button->getName() == "History display") displayToggle = button;
+        check (displayToggle != nullptr,"history plot exposes a clickable display toggle");
+        const auto clickHistory = [&]
+        {
+            const auto point = displayToggle->getLocalBounds().getCentre().toFloat();
+            const auto now = juce::Time::getCurrentTime();
+            juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(),point,
+                juce::ModifierKeys::leftButtonModifier,1,0,0,0,0,displayToggle,displayToggle,now,point,now,1,false);
+            static_cast<juce::Component*> (displayToggle)->mouseDown (event);
+            static_cast<juce::Component*> (displayToggle)->mouseUp (event);
+        };
+        clickHistory();
+        check (restored.waveformDisplay.load(),"clicking the history plot selects waveform display");
+        clickHistory();
+        check (! restored.waveformDisplay.load(),"clicking again restores gain history");
+        if (argc > 3 && juce::String (argv[3]) == "--waveform")
+        {
+            using Pair = std::array<float,2>;
+            std::vector<Pair> original, compressed; original.reserve (144000); compressed.reserve (144000);
+            juce::AudioBuffer<float> audio (2,256);
+            std::vector<Pair> source; source.reserve (144000);
+            juce::MidiBuffer previewMidi;
+            for (int at = 0; at < 144000; at += 256)
+            {
+                const auto n = std::min (256,144000-at);
+                for (int sampleIndex = 0; sampleIndex < n; ++sampleIndex)
+                {
+                    const auto time = (at+sampleIndex)/48000.;
+                    const auto level = float(.12+.7*std::exp(-std::fmod(time,.6)*8));
+                    const auto x = level*float(std::sin(juce::MathConstants<double>::twoPi*220*time));
+                    audio.setSample (0,sampleIndex,x); audio.setSample (1,sampleIndex,-x);
+                    source.push_back ({x,-x});
+                }
+                if (n < audio.getNumSamples()) audio.setSize (2,n,true,false,true);
+                restored.processBlock (audio,previewMidi);
+                for (int sampleIndex = 0; sampleIndex < n; ++sampleIndex)
+                {
+                    const auto index = at+sampleIndex-character::Compressor::latencySamples;
+                    original.push_back (index >= 0 ? source[static_cast<size_t> (index)] : Pair {});
+                    compressed.push_back ({audio.getSample(0,sampleIndex),audio.getSample(1,sampleIndex)});
+                }
+            }
+            restored.waveform.prepare (48000);
+            restored.waveform.beginBlock (juce::Time::getMillisecondCounterHiRes()*.001,144000);
+            for (size_t sampleIndex = 0; sampleIndex < original.size(); ++sampleIndex)
+                restored.waveform.push (original[sampleIndex],compressed[sampleIndex],2);
+            displayToggle->setToggleState (true,juce::sendNotificationSync);
+        }
         // Exercise actual component rendering, not only construction.
         auto image = editor->createComponentSnapshot (editor->getLocalBounds());
         check (image.isValid(), "native editor renders to an image");
@@ -436,6 +535,8 @@ int runTests (int argc, char** argv)
                    && (size.x < 548 ? control.getWidth() < originalThresholdWidth
                                     : control.getWidth() > originalThresholdWidth),
                    "Yinyang controls scale and remain inside the editor");
+            const auto plotBounds = editor->getLocalArea (displayToggle,displayToggle->getLocalBounds());
+            check (editor->getComponentAt (plotBounds.getCentre()) == displayToggle,"history display stays clickable at both UI resize limits");
             auto* hit = editor->getComponentAt (control.getCentre());
             check (hit == threshold || threshold->isParentOf (hit),
                    "Yinyang scaled controls remain clickable");

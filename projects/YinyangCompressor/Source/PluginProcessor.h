@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "CompressorDSP.h"
+#include "WaveformHistory.h"
 
 class YinyangCompressorProcessor final : public juce::AudioProcessor
 {
@@ -30,6 +31,8 @@ public:
     void setStateInformation (const void*, int) override;
 
     juce::AudioProcessorValueTreeState parameters;
+    WaveformHistory waveform;
+    std::atomic<bool> waveformDisplay {false};
     std::atomic<float> reduction { 0 }, inputPeak { -100 }, outputPeak { -100 };
 
 private:

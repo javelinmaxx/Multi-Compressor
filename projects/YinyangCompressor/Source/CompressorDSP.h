@@ -141,6 +141,10 @@ public:
     float reductionDb() const noexcept { return meterReduction; }
 
     void process (float* const* channels, int channelCount, int frames) noexcept
+    { process (channels,channelCount,frames,[] (const auto&, const auto&, int) noexcept {}); }
+
+    template<typename Observer>
+    void process (float* const* channels, int channelCount, int frames, Observer&& observe) noexcept
     {
         channelCount = std::clamp (channelCount, 0, 2);
         if (channelCount == 0 || frames <= 0)
@@ -151,28 +155,32 @@ public:
         for (int sample = 0; sample < frames; ++sample)
         {
             std::array<Oversampling4x::Frame, 2> highRate {};
-            std::array<float, 2> input {};
+            std::array<float, 2> hostInput {};
             for (int ch = 0; ch < channelCount; ++ch)
             {
                 const auto c = static_cast<size_t> (ch);
-                input[c] = std::isfinite (channels[ch][sample]) ? channels[ch][sample] : 0.0f;
-                highRate[c] = converters[c].upsample (input[c]);
+                hostInput[c] = std::isfinite (channels[ch][sample]) ? channels[ch][sample] : 0.0f;
+                highRate[c] = converters[c].upsample (hostInput[c]);
             }
             float* highChannels[] { highRate[0].data(), highRate[1].data() };
             // Detection, control smoothing, compression, M/S, mix, output and
             // transformer share this rate. There is no nested 16x converter.
             processHighRate (highChannels, channelCount, oversamplingFactor);
+            std::array<float,2> reference {}, processed {};
             for (int ch = 0; ch < channelCount; ++ch)
             {
                 const auto c = static_cast<size_t> (ch);
                 const auto wet = converters[c].downsample (highRate[c]);
                 const auto dry = bypassDelay[c][delayPosition];
-                bypassDelay[c][delayPosition] = input[c];
+                reference[c] = dry;
+                bypassDelay[c][delayPosition] = hostInput[c];
                 // Keep the full wet engine hot in bypass. Only the original
                 // host-rate reference bypasses the anti-aliasing filters.
                 channels[ch][sample] = values[bypass] > 0.99999f ? dry
                                     : wet + values[bypass] * (dry - wet);
             }
+            for (int ch = 0; ch < channelCount; ++ch) processed[static_cast<size_t> (ch)] = channels[ch][sample];
+            observe (reference,processed,channelCount);
             delayPosition = (delayPosition + 1) % static_cast<size_t> (latencySamples);
         }
     }
