@@ -113,10 +113,11 @@ The history line runs oldest at left to current at right. **Click the trace to
 show the waveform overlay**, then click again to hide it. The
 waveform view overlays the uncompressed input in pale grey and the actual
 plugin output in gold as semi-transparent, one-sided peak envelopes behind
-the GR trace. Peaks use the same dB positions as the gain labels: −6 dBFS
-aligns with −6 dB, rather than using a separate linear amplitude scale. Yang's
-overlay labels show 0/−6/−12/−18 dB; Yin retains +12/+6/0/−6 dB. Lower levels
-fall below the plot. The envelopes fold positive and negative peaks into one
+the GR trace. The overlay expands the shared dB axis to **0 to −48 dB** in
+Yang, keeping quieter waveform detail visible. Yin retains +12 dB of headroom
+above zero while also extending down to −48 dB. Waveform peaks and the gain
+history stay aligned on that expanded axis; hiding the overlay restores the
+original gain-only range. The envelopes fold positive and negative peaks into one
 magnitude, with no mirrored lower half. It includes Mix, Output and
 the optional transformer in the output trace. The original input is delayed by
 64 samples for visual alignment with the output. Signed min/max buckets at

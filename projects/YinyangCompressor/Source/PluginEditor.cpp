@@ -9,7 +9,7 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
 {
     addAndMakeVisible (titleHint);
     addAndMakeVisible (historyToggle);
-    historyToggle.setTooltip ("Click to show or hide translucent input and output waveforms behind the gain history.");
+    historyToggle.setTooltip ("Click to show or hide translucent input and output waveforms on a zero to minus forty-eight dBFS scale behind the gain history.");
     historyToggle.setToggleState (processor.waveformDisplay.load(),juce::dontSendNotification);
     historyToggle.onClick = [this]
     {
@@ -551,10 +551,10 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
     g.fillRoundedRectangle (bar, 4);
     const auto meterY = [&] (float db)
     {
-        return plot.getY()+plot.getHeight()*historyDisplay::positionForDb (yinMode ? db : -db,yinMode);
+        return plot.getY()+plot.getHeight()*historyDisplay::positionForDb (yinMode ? db : -db,yinMode,waveformMode);
     };
-    const auto tickStart = yinMode ? -6 : 0;
-    const auto tickEnd = yinMode ? 12 : static_cast<int> (GainReductionHistory::maxReductionDb);
+    const auto tickStart = yinMode ? (waveformMode ? -48 : -6) : 0;
+    const auto tickEnd = yinMode ? 12 : waveformMode ? 48 : static_cast<int> (GainReductionHistory::maxReductionDb);
     for (int db = tickStart; db <= tickEnd; db += 6)
     {
         const auto y = meterY (static_cast<float> (db));
@@ -575,7 +575,7 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
     const auto meterMaximum = yinMode ? 12.0f : GainReductionHistory::maxReductionDb;
     const auto glow = std::clamp (0.22f + displayedReduction / (meterMaximum * 2.1f), 0.22f, 0.95f);
     const auto fillAmount = std::clamp (displayedReduction / meterMaximum, 0.0f, 1.0f);
-    const auto baselineY = yinMode ? meterY (0.0f) : bar.getBottom();
+    const auto baselineY = yinMode ? plot.getY()+plot.getHeight()*historyDisplay::positionForDb (0,true) : bar.getBottom();
     const auto availableHeight = baselineY - bar.getY();
     const juce::Rectangle<float> visibleFill (bar.getX(), baselineY - availableHeight * fillAmount,
                                                bar.getWidth(), availableHeight * fillAmount);

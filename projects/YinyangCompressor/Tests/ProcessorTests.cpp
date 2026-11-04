@@ -31,17 +31,27 @@ void set (YinyangCompressorProcessor& p, const char* id, float value)
 
 void waveformTests()
 {
-    const auto minus6 = std::pow (10.f,-6.f/20.f);
-    check (std::abs (historyDisplay::waveformPosition (-minus6,minus6,false)-1.f/3) < 1.e-6f,
-           "minus-six-dBFS peaks align with the Yang six-dB reduction line");
-    check (std::abs (historyDisplay::waveformPosition (-minus6,minus6,true)-1) < 1.e-6f,
-           "minus-six-dBFS peaks align with the Yin minus-six-dB label");
-    check (std::abs (historyDisplay::waveformPosition (-.001f,std::pow(10.f,-12.f/20.f),false)-2.f/3) < 1.e-6f,
-           "minus-twelve-dBFS peaks align with the matching gain line");
+    for (bool yin : {false,true})
+        for (float db : {0.f,-6.f,-12.f,-24.f,-36.f,-48.f})
+        {
+            const auto peak = std::pow (10.f,db/20.f);
+            const auto expected = yin ? (12.f-db)/60.f : -db/48.f;
+            check (std::abs (historyDisplay::waveformPosition (-peak,peak,yin)-expected) < 1.e-6f,
+                   "expanded waveform range reaches minus forty-eight dBFS with Yin gain headroom");
+            check (std::abs (historyDisplay::waveformPosition (-peak,peak,yin)
+                            -historyDisplay::positionForDb (db,yin,true)) < 1.e-6f,
+                   "waveform peaks stay aligned with the expanded gain history axis");
+        }
     check (std::abs (historyDisplay::waveformPosition (-1,0,false)) < 1.e-6f,
            "one-sided envelope preserves negative-only full-scale peaks");
     check (std::abs (historyDisplay::waveformPosition (0,0,false)-1) < 1.e-6f,
            "silence collapses to the bottom of the envelope");
+    check (std::abs (historyDisplay::waveformPosition (-2,2,false)) < 1.e-6f
+           && std::abs (historyDisplay::waveformPosition (-.001f,.001f,false)-1) < 1.e-6f,
+           "waveform levels outside the visible range clip to the display edges");
+    check (std::abs (historyDisplay::positionForDb (-6,false)-1.f/3) < 1.e-6f
+           && std::abs (historyDisplay::positionForDb (-6,true)-1) < 1.e-6f,
+           "gain-only history retains its existing Yang and Yin ranges");
     WaveformHistory history; history.prepare (8000); history.beginBlock (3,24000);
     for (int i = 0; i < 24000; ++i)
         history.push ({i%40 == 0 ? .8f : 0.f,i%40 == 0 ? -.8f : 0.f},
@@ -531,8 +541,11 @@ int runTests (int argc, char** argv)
             const auto overlay = editor->createComponentSnapshot (editor->getLocalBounds());
             int retainedInk = 0;
             for (int y = 174; y < 480; ++y) for (int x = 411; x < 507; ++x)
-                if (gainOnly.getPixelAt(x,y).getBrightness() > .55f
-                    && closeColour(gainOnly.getPixelAt(x,y),overlay.getPixelAt(x,y),12)) ++retainedInk;
+            {
+                const auto colour = overlay.getPixelAt(x,y);
+                if (int(colour.getBlue())-int(colour.getGreen()) > 20
+                    && int(colour.getRed())-int(colour.getGreen()) > 10 && colour.getBrightness() > .4f) ++retainedInk;
+            }
             check (retainedInk > 5,"gain history remains visible above the translucent waveform overlay");
             int translucentWavePixels = 0;
             for (int y = 455; y < 478; ++y) for (int x = 411; x < 507; ++x)
