@@ -47,6 +47,7 @@ public:
                             ? newSampleRate : 44100;
         sampleRate = hostRate * oversamplingFactor;
         for (auto& converter : converters) converter.prepare();
+        for (auto& converter : sidechainConverters) converter.prepare();
         smoothing = coefficient (20);
         for (auto& t : transformers)
             t.prepare (sampleRate);
@@ -61,6 +62,7 @@ public:
         // the host starts a new playback or explicitly resets the processor.
         states = {};
         for (auto& converter : converters) converter.reset();
+        for (auto& converter : sidechainConverters) converter.reset();
         for (auto& t : transformers)
             t.reset();
         for (auto& shelf : sidechainShelves)
@@ -144,7 +146,7 @@ public:
     { process (channels,channelCount,frames,[] (const auto&, const auto&, int) noexcept {}); }
 
     template<typename Observer>
-    void process (float* const* channels, int channelCount, int frames, Observer&& observe) noexcept
+    void process (float* const* channels, int channelCount, int frames, Observer&& observe, const float* const* sidechain = nullptr, int sidechainChannels = 0) noexcept
     {
         channelCount = std::clamp (channelCount, 0, 2);
         if (channelCount == 0 || frames <= 0)
@@ -162,10 +164,23 @@ public:
                 hostInput[c] = std::isfinite (channels[ch][sample]) ? channels[ch][sample] : 0.0f;
                 highRate[c] = converters[c].upsample (hostInput[c]);
             }
+            std::array<Oversampling4x::Frame,2> sidechainHigh {};
+            if (sidechain != nullptr && sidechainChannels > 0)
+                for (int ch = 0; ch < channelCount; ++ch)
+                {
+                    auto value = sidechain[std::min(ch,sidechainChannels-1)][sample];
+                    if (channelCount == 1 && sidechainChannels == 2)
+                    {
+                        const auto other = sidechain[1][sample];
+                        if (std::isfinite(other) && (! std::isfinite(value) || std::abs(other) > std::abs(value))) value = other;
+                    }
+                    sidechainHigh[static_cast<size_t>(ch)] = sidechainConverters[static_cast<size_t>(ch)].upsample (std::isfinite(value) ? value : 0.f);
+                }
             float* highChannels[] { highRate[0].data(), highRate[1].data() };
+            const float* detectorChannels[] {sidechainHigh[0].data(),sidechainHigh[1].data()};
             // Detection, control smoothing, compression, M/S, mix, output and
             // transformer share this rate. There is no nested 16x converter.
-            processHighRate (highChannels, channelCount, oversamplingFactor);
+            processHighRate (highChannels, channelCount, oversamplingFactor, sidechain != nullptr && sidechainChannels > 0 ? detectorChannels : nullptr);
             std::array<float,2> reference {}, processed {};
             for (int ch = 0; ch < channelCount; ++ch)
             {
@@ -186,7 +201,7 @@ public:
     }
 
 private:
-    void processHighRate (float* const* channels, int channelCount, int frames) noexcept
+    void processHighRate (float* const* channels, int channelCount, int frames, const float* const* external) noexcept
     {
         for (int sample = 0; sample < frames; ++sample)
         {
@@ -230,10 +245,18 @@ private:
                 // Input gain feeds the compressor branch. The untouched input
                 // is retained separately for the wet/dry mix and host bypass.
                 driven[c] = std::clamp (dry[c] * values[input], -64.0f, 64.0f);
-                const auto hp = driven[c] - hpInput[c] + hpCoefficient * hpOutput[c];
-                hpInput[c] = driven[c];
+                auto detectorInput = external != nullptr ? external[ch][sample] : dry[c];
+                if (external != nullptr && channelCount == 2 && values[midSide] > 0)
+                {
+                    const auto other = external[1-ch][sample];
+                    detectorInput = detectorInput * (1.0f-values[midSide])
+                        + (ch == 0 ? detectorInput+other : other-detectorInput)*encode;
+                }
+                detectorInput = std::clamp (detectorInput * values[input], -64.0f, 64.0f);
+                const auto hp = detectorInput - hpInput[c] + hpCoefficient * hpOutput[c];
+                hpInput[c] = detectorInput;
                 hpOutput[c] = hp;
-                const auto sidechain = hpEnabled ? hp : driven[c];
+                const auto sidechain = hpEnabled ? hp : detectorInput;
                 // Tilt only the signed detector signal, before rectification
                 // and stereo linking. Keep filter history warm when disabled.
                 const auto sensed = sidechainShelves[c].process (sidechain);
@@ -412,7 +435,7 @@ private:
     std::array<float, 15> values {}, targets {};
     std::array<float, 4> weights {}, attacks {}, releases {};
     std::array<std::array<Detector, 4>, 2> states {};
-    std::array<Oversampling4x, 2> converters {};
+    std::array<Oversampling4x, 2> converters {}, sidechainConverters {};
     std::array<TransformerCore, 2> transformers {};
     std::array<HighTilt, 2> sidechainShelves {};
     std::array<std::array<float, latencySamples>, 2> bypassDelay {};

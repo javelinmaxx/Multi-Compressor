@@ -98,10 +98,42 @@ void waveformTests()
            "waveform observes actual attenuation instead of reusing the uncompressed signal");
 }
 
+void externalSidechainTests()
+{
+    const auto render = [] (float sideLevel, float ratio)
+    {
+        YinyangCompressorProcessor processor;
+        auto layout = processor.getBusesLayout();
+        layout.inputBuses.set (1,juce::AudioChannelSet::stereo());
+        check (processor.isBusesLayoutSupported (layout) && processor.setBusesLayout (layout),"stereo external sidechain bus is supported");
+        set (processor,"threshold",-30); set (processor,"ratio",ratio); set (processor,"sidechain",0);
+        set (processor,"attack",.1f); set (processor,"mix",100); processor.prepareToPlay (48000,256);
+        juce::AudioBuffer<float> audio (4,256); juce::MidiBuffer midi; double energy = 0;
+        for (int block = 0; block < 100; ++block)
+        {
+            for (int i = 0; i < 256; ++i)
+            {
+                const auto phase = 2*juce::MathConstants<double>::pi*(block*256+i)/48000;
+                const auto signal = float(.1*std::sin(997*phase));
+                audio.setSample (0,i,signal); audio.setSample (1,i,signal);
+                audio.setSample (2,i,float(sideLevel*std::sin(331*phase))); audio.setSample (3,i,float(sideLevel*std::sin(331*phase)));
+            }
+            processor.processBlock (audio,midi);
+            if (block >= 80) for (int i = 0; i < 256; ++i) energy += audio.getSample(0,i)*audio.getSample(0,i);
+        }
+        return energy;
+    };
+    const auto quiet = render (0,10), loud = render (.8f,10);
+    check (loud < quiet*.5,"external sidechain drives compression of the main input");
+    const auto unityQuiet = render (0,1), unityLoud = render (.8f,1);
+    check (std::abs (unityQuiet-unityLoud) < unityQuiet*.001,"external sidechain is not mixed into audible output");
+}
+
 int runTests (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juce;
     waveformTests();
+    externalSidechainTests();
     YinyangCompressorProcessor p;
     check (p.getParameters().size() == 20, "all host parameters registered");
     check (std::abs (p.parameters.getParameter ("ratio")->getNormalisableRange().interval - 0.01f) < 1.0e-7f,

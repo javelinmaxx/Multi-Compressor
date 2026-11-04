@@ -59,8 +59,9 @@ void LanReverbProcessor::setStateInformation (const void* data, int size)
 void LanReverbProcessor::prepareToPlay (double rate, int) { engine.prepare(rate); setLatencySamples(0); }
 bool LanReverbProcessor::isBusesLayoutSupported (const BusesLayout& layout) const
 {
-    return layout.getMainInputChannelSet() == layout.getMainOutputChannelSet()
-        && (layout.getMainOutputChannelSet() == juce::AudioChannelSet::stereo() || layout.getMainOutputChannelSet() == juce::AudioChannelSet::mono());
+    const auto input = layout.getMainInputChannelSet(), output = layout.getMainOutputChannelSet();
+    return (input == juce::AudioChannelSet::mono() || input == juce::AudioChannelSet::stereo())
+        && (output == input || (input == juce::AudioChannelSet::mono() && output == juce::AudioChannelSet::stereo()));
 }
 void LanReverbProcessor::processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) { process(b,false); }
 void LanReverbProcessor::processBlockBypassed (juce::AudioBuffer<float>& b, juce::MidiBuffer&) { process(b,true); }
@@ -74,6 +75,8 @@ void LanReverbProcessor::process (juce::AudioBuffer<float>& b, bool hostBypass)
             if (const auto bpm = position->getBpm())
                 if (std::isfinite(*bpm) && *bpm >= lan::minimumTempo && *bpm <= lan::maximumTempo)
                     hostTempo.store(*bpm);
+    if (getMainBusNumInputChannels() == 1 && getMainBusNumOutputChannels() == 2 && b.getNumChannels() >= 2)
+        b.copyFrom(1,0,b,0,0,b.getNumSamples());
     engine.process(b,settings(),hostBypass);
 }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new LanReverbProcessor(); }

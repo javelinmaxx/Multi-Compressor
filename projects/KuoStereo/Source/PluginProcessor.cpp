@@ -355,7 +355,8 @@ void KuoStereoProcessor::HaasSearchWorker::process (const SearchJob& input) noex
 
 bool KuoStereoProcessor::isBusesLayoutSupported (const BusesLayout& buses) const
 {
-    return buses.getMainInputChannelSet() == juce::AudioChannelSet::stereo()
+    return (buses.getMainInputChannelSet() == juce::AudioChannelSet::mono()
+            || buses.getMainInputChannelSet() == juce::AudioChannelSet::stereo())
         && buses.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 
@@ -435,10 +436,14 @@ void KuoStereoProcessor::readScope (int band,
     }
 }
 
-void KuoStereoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void KuoStereoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) { process (buffer,false); }
+void KuoStereoProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) { process (buffer,true); }
+void KuoStereoProcessor::process (juce::AudioBuffer<float>& buffer, bool hostBypass)
 {
     juce::ScopedNoDenormals noDenormals;
     if (buffer.getNumChannels() < 2 || rightHistory.empty()) return;
+    if (getMainBusNumInputChannels() == 1)
+        buffer.copyFrom (1,0,buffer,0,0,buffer.getNumSamples());
     const auto centerDelay = parameters.getRawParameterValue ("haasCenter")->load();
     const auto variability = parameters.getRawParameterValue ("haasRange")->load();
     if (variability <= 0.0f)
@@ -474,7 +479,7 @@ void KuoStereoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             parameters.getRawParameterValue ("velvetMid")->load() * 0.01f,
             parameters.getRawParameterValue ("velvetHigh")->load() * 0.01f });
     const auto gain = juce::Decibels::decibelsToGain (parameters.getRawParameterValue ("output")->load());
-    const auto bypass = parameters.getRawParameterValue ("bypass")->load() >= 0.5f;
+    const auto bypass = hostBypass || parameters.getRawParameterValue ("bypass")->load() >= 0.5f;
     auto* left = buffer.getWritePointer (0);
     auto* right = buffer.getWritePointer (1);
     for (int i = 0; i < buffer.getNumSamples(); ++i)
