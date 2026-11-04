@@ -61,6 +61,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout YinyangCompressorProcessor::
 
 YinyangCompressorProcessor::YinyangCompressorProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo(), true)
+                                      .withInput ("Sidechain", juce::AudioChannelSet::stereo(), false)
                                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       // Keep the legacy state identifier so existing host sessions remain compatible.
       parameters (*this, nullptr, "YinyangCompressorState", layout())
@@ -105,8 +106,10 @@ void YinyangCompressorProcessor::prepareToPlay (double rate, int)
 bool YinyangCompressorProcessor::isBusesLayoutSupported (const BusesLayout& buses) const
 {
     const auto in = buses.getMainInputChannelSet();
+    const auto sidechain = buses.getChannelSet (true,1);
     return in == buses.getMainOutputChannelSet()
-        && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo());
+        && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo())
+        && (sidechain.isDisabled() || sidechain == juce::AudioChannelSet::mono() || sidechain == juce::AudioChannelSet::stereo());
 }
 
 void YinyangCompressorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -128,22 +131,24 @@ juce::AudioProcessorParameter* YinyangCompressorProcessor::getBypassParameter() 
 void YinyangCompressorProcessor::process (juce::AudioBuffer<float>& buffer, bool hostBypassed)
 {
     juce::ScopedNoDenormals noDenormals;
-    const auto channels = std::min ({ getTotalNumInputChannels(), buffer.getNumChannels(), 2 });
-    for (int ch = channels; ch < buffer.getNumChannels(); ++ch)
-        buffer.clear (ch, 0, buffer.getNumSamples());
+    auto main = getBusBuffer (buffer,true,0);
+    const auto channels = std::min (main.getNumChannels(),2);
+    auto side = getBusBuffer (buffer,true,1);
+    const auto sideChannels = std::min (side.getNumChannels(),2);
     if (buffer.getNumSamples() == 0 || channels == 0)
         return;
     float in = 0, out = 0;
     for (int ch = 0; ch < channels; ++ch)
-        in = std::max (in, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
+        in = std::max (in, main.getMagnitude (ch, 0, buffer.getNumSamples()));
     auto p = readParameters();
     p.bypass = p.bypass || hostBypassed;
     engine.setParameters (p);
     waveform.beginBlock (juce::Time::getMillisecondCounterHiRes()*.001,buffer.getNumSamples());
-    engine.process (buffer.getArrayOfWritePointers(), channels, buffer.getNumSamples(),
-        [this] (const auto& dry, const auto& wet, int count) noexcept { waveform.push (dry,wet,count); });
+    engine.process (main.getArrayOfWritePointers(), channels, buffer.getNumSamples(),
+        [this] (const auto& dry, const auto& wet, int count) noexcept { waveform.push (dry,wet,count); },
+        sideChannels > 0 ? side.getArrayOfReadPointers() : nullptr, sideChannels);
     for (int ch = 0; ch < channels; ++ch)
-        out = std::max (out, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
+        out = std::max (out, main.getMagnitude (ch, 0, buffer.getNumSamples()));
     inputPeak.store (character::Compressor::db (in), std::memory_order_relaxed);
     outputPeak.store (character::Compressor::db (out), std::memory_order_relaxed);
     reduction.store (engine.reductionDb(), std::memory_order_relaxed);

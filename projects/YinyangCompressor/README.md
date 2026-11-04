@@ -141,6 +141,18 @@ switches between Yin (upward compression) and Yang (normal compression), resets
 the trace, and labels the meter accordingly. The palette follows model automation
 and session recall.
 
+## External sidechain
+
+Enable and route the host's **Sidechain** input to drive the compressor detector
+from another track; in Logic Pro, select the source in the Audio Unit's Side Chain
+menu. With the sidechain bus disabled, the detector follows the main input.
+An enabled but silent bus is treated as a silent external signal. Mono and stereo
+sidechains are supported; a mono signal is shared across stereo detectors, while
+stereo-to-mono uses the louder instantaneous channel. Input gain, Detector HPF,
+SC High Tilt, stereo linking and Mid/Side affect the detector as applicable.
+The sidechain is not mixed into the output. The external input uses its own 4×
+conversion and the plugin retains its existing reported latency.
+
 ## Measured characteristics
 
 See [the measurement report](Measurements/README.md) for current compression
