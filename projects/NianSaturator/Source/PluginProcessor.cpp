@@ -18,10 +18,13 @@ juce::AudioProcessorEditor* NianSaturatorProcessor::createEditor() { return new 
 void NianSaturatorProcessor::getStateInformation(juce::MemoryBlock& data) { if(auto xml=parameters.copyState().createXml()) copyXmlToBinary(*xml,data); }
 void NianSaturatorProcessor::setStateInformation(const void* data,int size) { if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName(parameters.state.getType())) parameters.replaceState(juce::ValueTree::fromXml(*xml)); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new NianSaturatorProcessor(); }
-void NianSaturatorProcessor::prepareToPlay(double rate,int) { sampleRate=float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; ringPosition=analysisCounter=0; peakFrequency={150,3000};
+void NianSaturatorProcessor::prepareToPlay(double rate,int) { sampleRate=4.f*float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; ringPosition=analysisCounter=0; peakFrequency={150,3000};
+    for (auto& converter : converters) converter.prepare();
+    dryHistory = {}; dryPosition = displayDecimation = 0;
+    displayFifo.reset(); setLatencySamples (latency);
     for(size_t i=0;i<window.size();++i)
         window[i]=.5f-.5f*std::cos(juce::MathConstants<float>::twoPi*float(i)/float(window.size()-1));
-    crossoverAlpha.reset(sampleRate,.02); modeBlend.reset(sampleRate,.02); bypassBlend.reset(sampleRate,.02);
+    crossoverAlpha.reset(sampleRate,.02); modeBlend.reset(sampleRate,.02); bypassBlend.reset(sampleRate/4.f,.02);
     const auto frequency=std::clamp(parameters.getRawParameterValue("crossover")->load(),80.f,std::min(8000.f,sampleRate*.4f));
     crossoverAlpha.setCurrentAndTargetValue(1-std::exp(-juce::MathConstants<float>::twoPi*frequency/sampleRate));
     modeBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("mode")->load()>.5f ? 1.f : 0.f);
@@ -55,6 +58,16 @@ void NianSaturatorProcessor::analyse(float crossover)
 }
 void NianSaturatorProcessor::processBlock(juce::AudioBuffer<float>& b,juce::MidiBuffer&) { process(b,false); }
 void NianSaturatorProcessor::processBlockBypassed(juce::AudioBuffer<float>& b,juce::MidiBuffer&) { process(b,true); }
+int NianSaturatorProcessor::readDisplay(DisplaySample* destination, int capacity) noexcept
+{
+    const auto count=std::min(capacity,displayFifo.getNumReady());
+    int start1,size1,start2,size2;
+    displayFifo.prepareToRead(count,start1,size1,start2,size2);
+    for(int i=0;i<size1;++i) destination[i]=displayQueue[size_t(start1+i)];
+    for(int i=0;i<size2;++i) destination[size1+i]=displayQueue[size_t(start2+i)];
+    displayFifo.finishedRead(size1+size2);
+    return size1+size2;
+}
 void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass)
 {
     juce::ScopedNoDenormals guard;
@@ -83,35 +96,65 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
     updateCoefficients();
     for(int i=0;i<b.getNumSamples();++i)
     {
-        const auto alpha=crossoverAlpha.getNextValue(), mode=modeBlend.getNextValue(), bypassAmount=bypassBlend.getNextValue();
-        for(size_t band=0;band<2;++band)
-        {
-            const auto target=coefficients[band];
-            coefficientState[band][0]+=coefficientStep*(target.b0-coefficientState[band][0]);
-            coefficientState[band][1]+=coefficientStep*(target.a1-coefficientState[band][1]);
-            coefficientState[band][2]+=coefficientStep*(target.a2-coefficientState[band][2]);
-        }
-        float signal=0;
-        for(int ch=0;ch<b.getNumChannels() && ch<2;++ch) { auto x=b.getSample(ch,i); if(std::isfinite(x)&&std::abs(x)>std::abs(signal)) signal=x; }
-        ring[size_t(ringPosition)]=signal; ringPosition=(ringPosition+1)%4096;
-        if(peakMode && ++analysisCounter>=1024) { analysisCounter=0; analyse(crossover); updateCoefficients(); }
+        std::array<character::Oversampling4x::Frame,2> frames {};
+        std::array<float,2> dry {};
         for(int ch=0;ch<b.getNumChannels() && ch<2;++ch)
         {
-            const auto index=size_t(ch); auto x=b.getSample(ch,i); if(!std::isfinite(x)) x=0;
-            lowState[index]+=alpha*(x-lowState[index]); const std::array<float,2> bands {lowState[index],x-lowState[index]};
-            float output=0;
+            const auto index=size_t(ch);
+            auto input=b.getSample(ch,i); if(!std::isfinite(input)) input=0;
+            dry[index]=dryHistory[index][size_t(dryPosition)];
+            dryHistory[index][size_t(dryPosition)]=input;
+            frames[index]=converters[index].upsample(input);
+        }
+        for(int phase=0;phase<4;++phase)
+        {
+            const auto alpha=crossoverAlpha.getNextValue(), mode=modeBlend.getNextValue();
             for(size_t band=0;band<2;++band)
             {
-                // Narrow bandpass adds the detected detail; update its state in both modes.
-                const auto& c=coefficientState[band];
-                const auto filtered=c[0]*bands[band]+z1[index][band];
-                z1[index][band]=-c[1]*filtered+z2[index][band]; z2[index][band]=-c[0]*bands[band]-c[2]*filtered;
-                const auto peak=bands[band]+filtered*amount[band]*2;
-                const auto driven=mode>0 ? bands[band]+amount[band]*(std::tanh(bands[band]*drives[band])*driveNormalization[band]-bands[band]) : bands[band];
-                output+=peak+mode*(driven-peak);
+                const auto target=coefficients[band];
+                coefficientState[band][0]+=coefficientStep*(target.b0-coefficientState[band][0]);
+                coefficientState[band][1]+=coefficientStep*(target.a1-coefficientState[band][1]);
+                coefficientState[band][2]+=coefficientStep*(target.a2-coefficientState[band][2]);
             }
-            const auto wet=output*gain;
-            b.setSample(ch,i,wet+bypassAmount*(x-wet));
+            float signal=0;
+            for(int ch=0;ch<b.getNumChannels() && ch<2;++ch)
+                if(std::abs(frames[size_t(ch)][size_t(phase)])>std::abs(signal)) signal=frames[size_t(ch)][size_t(phase)];
+            ring[size_t(ringPosition)]=signal; ringPosition=(ringPosition+1)%4096;
+            if(peakMode && ++analysisCounter>=1024) { analysisCounter=0; analyse(crossover); updateCoefficients(); }
+            for(int ch=0;ch<b.getNumChannels() && ch<2;++ch)
+            {
+                const auto index=size_t(ch);
+                const auto x=frames[index][size_t(phase)];
+                lowState[index]+=alpha*(x-lowState[index]); const std::array<float,2> bands {lowState[index],x-lowState[index]};
+                float output=0;
+                for(size_t band=0;band<2;++band)
+                {
+                    const auto& c=coefficientState[band];
+                    const auto filtered=c[0]*bands[band]+z1[index][band];
+                    z1[index][band]=-c[1]*filtered+z2[index][band]; z2[index][band]=-c[0]*bands[band]-c[2]*filtered;
+                    const auto peak=bands[band]+filtered*amount[band]*2;
+                    const auto driven=mode>0 ? bands[band]+amount[band]*(std::tanh(bands[band]*drives[band])*driveNormalization[band]-bands[band]) : bands[band];
+                    output+=peak+mode*(driven-peak);
+                }
+                frames[index][size_t(phase)]=output*gain;
+            }
         }
+        const auto bypassAmount=bypassBlend.getNextValue();
+        for(int ch=0;ch<b.getNumChannels() && ch<2;++ch)
+        {
+            const auto index=size_t(ch);
+            const auto wet=converters[index].downsample(frames[index]);
+            const auto delta=wet-dry[index];
+            b.setSample(ch,i,dry[index]+(1-bypassAmount)*delta);
+            if(ch==0 && ++displayDecimation>=16)
+            {
+                displayDecimation=0;
+                int start1,size1,start2,size2;
+                displayFifo.prepareToWrite(1,start1,size1,start2,size2);
+                if(size1) displayQueue[size_t(start1)]={dry[index],(1-bypassAmount)*delta};
+                displayFifo.finishedWrite(size1);
+            }
+        }
+        dryPosition=(dryPosition+1)%latency;
     }
 }

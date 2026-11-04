@@ -8,3 +8,4 @@
 | High | Sets the high-band peak enhancement or drive. |
 | Output | Adjusts the final stereo output level. |
 | Bypass | Bypasses processing while preserving the plugin's latency. |
+| Signal display | Shows the latency-aligned input, generated delta, resulting waveform, and low/high crossover. |

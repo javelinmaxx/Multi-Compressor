@@ -10,7 +10,20 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 private:
-    static constexpr int designWidth = 444, designHeight = 260;
+    class SignalDisplay final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
+    {
+    public:
+        explicit SignalDisplay (NianSaturatorProcessor& p) : processor (p) { startTimerHz (30); }
+        void paint (juce::Graphics&) override;
+        void refresh();
+    private:
+        void timerCallback() override { refresh(); }
+        NianSaturatorProcessor& processor;
+        std::array<NianSaturatorProcessor::DisplaySample, 256> history {};
+        int position = 0;
+    };
+    static constexpr int designWidth = 444, designHeight = 432;
+    SignalDisplay signalDisplay;
     StageLookAndFeel look;
     juce::TooltipWindow tooltipWindow { this };
     editorTooltips::TitleHint titleHint { JucePlugin_VersionString };

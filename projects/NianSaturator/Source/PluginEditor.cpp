@@ -2,9 +2,11 @@
 #include "../../EditorScaling.h"
 #include "../../EditorTooltips.h"
 using namespace stageStyle;
-NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProcessorEditor (&p)
+NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProcessorEditor (&p), signalDisplay (p)
 {
     addAndMakeVisible (titleHint);
+    addAndMakeVisible (signalDisplay);
+    signalDisplay.setTooltip ("Shows the latency-aligned input, generated delta, resulting waveform, and low/high crossover.");
     setOpaque (true); setLookAndFeel (&look);
     look.setColour (juce::TooltipWindow::backgroundColourId, panel);
     look.setColour (juce::TooltipWindow::textColourId, foreground);
@@ -46,6 +48,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
     mode.setTooltip ("Selects automatic narrow peak enhancement or conventional drive.");
     addAndMakeVisible (mode); modeAttachment = std::make_unique<State::ComboBoxAttachment> (p.parameters,"mode",mode);
     editorScaling::enable (*this, designWidth, designHeight);
+    signalDisplay.refresh();
 }
 void NianSaturatorEditor::resized()
 {
@@ -58,7 +61,9 @@ void NianSaturatorEditor::resized()
         labels[i].setBounds (x, 140, 96, 16);
         sliders[i].setBounds (x, 156, 96, 76);
     }
+    signalDisplay.setBounds (16, 254, 412, 162);
     const auto scale = editorScaling::transform (*this, designWidth, designHeight);
+    signalDisplay.setTransform (scale);
     titleHint.setTransform (scale);
     bypass.setTransform (scale);
     mode.setTransform (scale);
@@ -83,4 +88,54 @@ void NianSaturatorEditor::paint (juce::Graphics& g)
     g.setColour (secondary); g.setFont (juce::FontOptions (9.0f));
     g.drawText ("Adaptive peak emphasis or two-band drive", 28, 116, 380, 16, juce::Justification::centredLeft);
     g.restoreState();
+}
+void NianSaturatorEditor::SignalDisplay::refresh()
+{
+    std::array<NianSaturatorProcessor::DisplaySample, 256> incoming {};
+    int count = 0, read = 0;
+    do
+    {
+        read = processor.readDisplay (incoming.data(), int(incoming.size()));
+        for(int i=0;i<read;++i) { history[size_t(position)]=incoming[size_t(i)]; position=(position+1)%int(history.size()); }
+        count += read;
+    } while(read==int(incoming.size()));
+    if(count) repaint();
+}
+void NianSaturatorEditor::SignalDisplay::paint (juce::Graphics& g)
+{
+    drawPanel (g, getLocalBounds().toFloat());
+    g.setColour (foreground); g.setFont (juce::FontOptions (13.f).withStyle ("bold"));
+    g.drawText ("SIGNAL / GENERATED DELTA",12,8,300,19,juce::Justification::centredLeft);
+    const auto left=20.f, right=float(getWidth()-20), width=right-left;
+    const auto frequency=std::clamp(processor.parameters.getRawParameterValue("crossover")->load(),80.f,8000.f);
+    const auto fraction=std::clamp(std::log(frequency/80.f)/std::log(100.f),0.f,1.f);
+    const auto marker=left+width*fraction;
+    g.setColour (grid); g.drawLine(left,49,right,49,1.f);
+    g.setColour (amber); g.drawLine(marker,35,marker,57,1.5f);
+    g.setFont (juce::FontOptions (9.f));
+    g.setColour (secondary); g.drawText ("LOW",int(left),31,40,13,juce::Justification::centredLeft);
+    g.drawText ("HIGH",int(right-40),31,40,13,juce::Justification::centredRight);
+    g.setColour (amber); g.drawText (juce::String(int(frequency))+" Hz",int(std::clamp(marker-28,left,right-56)),57,56,13,juce::Justification::centred);
+    const auto mid=111.f, amplitude=34.f;
+    g.setColour (grid); g.drawLine(left,mid,right,mid,.8f);
+    const auto drawTrace=[&](int trace,juce::Colour colour,float thickness)
+    {
+        juce::Path path;
+        for(int n=0;n<int(history.size());++n)
+        {
+            const auto& point=history[size_t((position+n)%int(history.size()))];
+            const auto value=trace==0 ? point.input : trace==1 ? point.delta : point.input+point.delta;
+            const auto x=left+width*float(n)/float(history.size()-1);
+            const auto y=mid-amplitude*std::clamp(value,-1.f,1.f);
+            if(n==0) path.startNewSubPath(x,y); else path.lineTo(x,y);
+        }
+        g.setColour(colour); g.strokePath(path,juce::PathStrokeType(thickness));
+    };
+    drawTrace(0,secondary.withAlpha(.75f),1.f);
+    drawTrace(1,amber.withAlpha(.85f),1.4f);
+    drawTrace(2,foreground.withAlpha(.9f),1.2f);
+    g.setFont (juce::FontOptions (9.f));
+    g.setColour (secondary); g.drawText ("INPUT",20,139,49,12,juce::Justification::centredLeft);
+    g.setColour (amber); g.drawText ("DELTA",85,139,48,12,juce::Justification::centredLeft);
+    g.setColour (foreground); g.drawText ("INPUT + DELTA",147,139,110,12,juce::Justification::centredLeft);
 }
