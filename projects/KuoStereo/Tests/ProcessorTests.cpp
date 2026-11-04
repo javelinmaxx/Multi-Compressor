@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../../MonoStereoRoutingTests.h"
 #include "../Measurements/SynthPad.h"
 #include <cmath>
 #include <chrono>
@@ -399,6 +400,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        monoStereoTests::run<KuoStereoProcessor> ("haasRange",true);
         KuoStereoProcessor processor;
         check (processor.getName() == "Kuo Stereo", "plug-in identity is Kuo Stereo");
         check (std::abs (processor.getCurrentDelayMs() - 12.0f) < 0.001f,

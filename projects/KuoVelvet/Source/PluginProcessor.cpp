@@ -58,7 +58,8 @@ void KuoVelvetProcessor::prepareToPlay (double rate, int)
 }
 bool KuoVelvetProcessor::isBusesLayoutSupported (const BusesLayout& layout) const
 {
-    return layout.getMainInputChannelSet() == juce::AudioChannelSet::stereo()
+    return (layout.getMainInputChannelSet() == juce::AudioChannelSet::mono()
+            || layout.getMainInputChannelSet() == juce::AudioChannelSet::stereo())
         && layout.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 void KuoVelvetProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) { process (buffer, false); }
@@ -67,6 +68,8 @@ void KuoVelvetProcessor::process (juce::AudioBuffer<float>& buffer, bool hostByp
 {
     juce::ScopedNoDenormals noDenormals;
     if (buffer.getNumChannels() < 2 || dryHistory[0].empty()) return;
+    if (getMainBusNumInputChannels() == 1)
+        buffer.copyFrom (1,0,buffer,0,0,buffer.getNumSamples());
     velvet.setParameters (parameters.getRawParameterValue ("width")->load() * 0.01f,
         parameters.getRawParameterValue ("transientProtect")->load() * 0.01f,
         parameters.getRawParameterValue ("guardAttack")->load(), { 1, 1, 1 });

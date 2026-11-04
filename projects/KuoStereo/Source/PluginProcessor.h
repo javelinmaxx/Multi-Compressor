@@ -17,6 +17,8 @@ public:
     bool isBusesLayoutSupported (const BusesLayout&) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     using AudioProcessor::processBlock;
+    using AudioProcessor::processBlockBypassed;
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     void getStateInformation (juce::MemoryBlock&) override;
     void setStateInformation (const void*, int) override;
     juce::AudioProcessorEditor* createEditor() override;
@@ -39,6 +41,7 @@ public:
     juce::AudioProcessorValueTreeState parameters;
 
 private:
+    void process (juce::AudioBuffer<float>&, bool hostBypass);
     class HaasSearchWorker final : public juce::Thread
     {
     public:

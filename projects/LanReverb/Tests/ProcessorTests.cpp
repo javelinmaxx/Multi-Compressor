@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../../MonoStereoRoutingTests.h"
 #include "../../StagePluginTests.h"
 #include <filesystem>
 #include <random>
@@ -1173,6 +1174,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        monoStereoTests::run<LanReverbProcessor> ("automatic",true);
         const auto directory = argc > 2 && (juce::String(argv[1]) == "--report" || juce::String(argv[1]) == "--shimmer")
             ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[2])
             : juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("lan-reverb-report");

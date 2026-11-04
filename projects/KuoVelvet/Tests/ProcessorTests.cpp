@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../../MonoStereoRoutingTests.h"
 #include "../../StagePluginTests.h"
 using namespace stageTests;
 namespace
@@ -197,6 +198,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        monoStereoTests::run<KuoVelvetProcessor> (nullptr,true);
         stateTests<KuoVelvetProcessor> (5); referenceTests(); velvetTests(); legacyStateTests();
         blockSizeTests<KuoVelvetProcessor>();
         if (argc > 2 && juce::String (argv[1]) == "--editor") editorTests<KuoVelvetProcessor> (juce::File (argv[2]), 260, 4, 444);
