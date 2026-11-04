@@ -110,6 +110,14 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
     midSide.snapToState();
     lastTick = juce::Time::getMillisecondCounterHiRes() * 0.001;
     editorScaling::enable (*this, designWidth, designHeight);
+    // JUCE paints this component hierarchy through its OpenGL graphics context.
+    // The audio callback never waits for the render thread, and the component
+    // remains paintable by JUCE if a host cannot create an OpenGL surface.
+    openGLContext.setComponentPaintingEnabled (true);
+    openGLContext.setContinuousRepainting (false);
+    openGLContext.setRenderer (this);
+    softwareFallback = juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") == "1";
+    if (! softwareFallback) openGLContext.attachTo (*this);
     timerCallback();
     startTimerHz (30);
 }
@@ -742,6 +750,23 @@ void YinyangCompressorEditor::resized()
 void YinyangCompressorEditor::timerCallback()
 {
     const auto now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    if (! softwareFallback && (! isShowing() || getPeer() == nullptr))
+        gpuWaitStart = 0;
+    else if (! softwareFallback)
+    {
+        if (isGpuRendering())
+            gpuWaitStart = now;
+        else if (gpuWaitStart <= 0)
+            gpuWaitStart = now;
+        else if (now - gpuWaitStart > 1.0)
+        {
+            // A failed context can leave JUCE's cached image in place, which
+            // would otherwise make the editor appear blank in a plugin host.
+            openGLContext.detach();
+            softwareFallback = true;
+            repaint();
+        }
+    }
     const auto elapsed = static_cast<float> (std::max (0.0, now - lastTick));
     lastTick = now;
     transformer.advance (elapsed);

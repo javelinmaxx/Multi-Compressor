@@ -36,7 +36,7 @@ target_sources(YinyangCompressor PRIVATE
 target_compile_features(YinyangCompressor PUBLIC cxx_std_17)
 target_compile_definitions(YinyangCompressor PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(YinyangCompressor PRIVATE juce::juce_audio_utils
+target_link_libraries(YinyangCompressor PRIVATE juce::juce_audio_utils juce::juce_opengl
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 option(YINYANG_COMPRESSOR_BUILD_TESTS "Build DSP and plug-in integration tests" ON)

@@ -820,10 +820,47 @@ int renderThemePreviews (const char* directory)
     return 0;
 }
 
+int runGpuSmoke()
+{
+    juce::ScopedJuceInitialiser_GUI juce;
+    const auto expectGpu = juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") != "1";
+    YinyangCompressorProcessor processor;
+    processor.prepareToPlay (48000, 256);
+    std::unique_ptr<YinyangCompressorEditor> editor (
+        static_cast<YinyangCompressorEditor*> (processor.createEditor()));
+    editor->addToDesktop (0);
+    editor->setVisible (true);
+    struct CaptureTimer final : juce::Timer
+    {
+        std::function<void()> tick;
+        void timerCallback() override { tick(); }
+    } timer;
+    int frame = 0;
+    bool gpuActive = false;
+    timer.tick = [&]
+    {
+        ++frame;
+        processor.reduction.store (12.f + 4.f * std::sin (float(frame) * .1f));
+        if (frame == 10) editor->setSize (274, 363);
+        if (frame == 20) editor->setSize (658, 871);
+        gpuActive |= editor->isGpuRendering();
+        if (frame >= 80) juce::MessageManager::getInstance()->stopDispatchLoop();
+    };
+    timer.startTimer (20);
+    juce::MessageManager::getInstance()->runDispatchLoop();
+    timer.stopTimer();
+    check (gpuActive == expectGpu, "visible editor must use the selected GPU or software renderer");
+    editor.reset();
+    std::cout << "Yinyang " << (expectGpu ? "OpenGL" : "software") << " editor smoke check passed\n";
+    return 0;
+}
+
 int main (int argc, char** argv)
 {
     try
     {
+        if (argc > 1 && juce::String (argv[1]) == "--gpu-smoke")
+            return runGpuSmoke();
         if (argc > 2 && juce::String (argv[1]) == "--preview-modes")
             return renderThemePreviews (argv[2]);
         if (argc > 1 && juce::String (argv[1]) == "--output-stage")

@@ -1,8 +1,25 @@
 # Yinyang Visage integration: Logic Pro test plan
 
-Status: **integration not implemented**. These are acceptance tests, not results.
-The local Visage static library configured and built on Linux; this does not
-establish that a GPU surface embeds correctly in an Audio Unit host.
+Status: **experimental GPU renderer implemented on the `visage` branch**.
+The existing JUCE editor now paints through JUCE's OpenGL component renderer,
+with an automatic software fallback if the context fails to start. This does
+not integrate the Visage UI library: doing that would require porting the JUCE
+controls and their host event handling. `YINYANG_SOFTWARE_UI=1` forces the
+software editor for comparison. A Linux virtual-display smoke test confirms
+that OpenGL render callbacks occur while resizing; it does not prove that a
+physical GPU or a Logic Pro Audio Unit host accepts the surface.
+
+## Linux results
+
+Release VST3 and Standalone builds pass. The four CTest suites pass, and the
+visible-editor smoke test receives OpenGL frame callbacks while switching
+between 50% and 120% sizes. A captured Xvfb frame shows the controls and live
+gain-reduction trace rather than a blank editor. Repeating the visible-editor
+test with `YINYANG_SOFTWARE_UI=1` confirms that the software path remains
+available. Xvfb may use a software OpenGL driver, so hardware acceleration
+and AU/Logic behavior remain unverified here.
+
+![Visible OpenGL editor at 120% under Xvfb](../../Previews/visage-opengl-smoke.png)
 
 ## macOS build and validation
 
@@ -30,6 +47,8 @@ establish that a GPU surface embeds correctly in an Audio Unit host.
 
 - Build the plugin and existing processor, DSP, upward-compression and
   oversampling tests. Run the editor checks for each supported scale.
+- Run `YinyangCompressorTests --gpu-smoke` in a visible desktop session and
+  repeat with `YINYANG_SOFTWARE_UI=1` to check both renderer selections.
 - Exercise creation, resize, hide/show, teardown and recreation of the embedded
   surface on the UI thread. Verify no graphics access after editor destruction.
 - Test event forwarding and focus for mouse, keyboard, text entry and tooltips;
@@ -40,6 +59,5 @@ establish that a GPU surface embeds correctly in an Audio Unit host.
 - Run GPU-backed window tests on macOS and Linux with real graphics devices;
   a virtual display alone is not evidence of Logic or Metal compatibility.
 
-Do not mark the feature complete until both GPU and fallback paths pass these
-checks in Logic with the Audio Unit loaded. No Logic or AU result is available
-from the current Linux environment.
+The Logic acceptance steps remain open; no AU or Logic result is available from
+the current Linux environment.

@@ -12,7 +12,7 @@ struct CompressorTestAccess
     // The same equations at 1x isolate converter/processing-rate effects; no
     // alternate production mode or legacy implementation is added to the DSP.
     static void native (Compressor& dsp, float* const* channels, int count)
-    { dsp.processHighRate (channels, 2, count); }
+    { dsp.processHighRate (channels, 2, count, nullptr); }
     static double rate (const Compressor& dsp) { return dsp.sampleRate; }
 };
 }

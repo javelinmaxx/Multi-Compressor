@@ -2,6 +2,7 @@
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
 #include "GainReductionHistory.h"
+#include <juce_opengl/juce_opengl.h>
 
 struct CompressorTheme
 {
@@ -78,20 +79,29 @@ public:
     }
 };
 
-class YinyangCompressorEditor final : public juce::AudioProcessorEditor, private juce::Timer
+class YinyangCompressorEditor final : public juce::AudioProcessorEditor,
+                                      private juce::Timer, private juce::OpenGLRenderer
 {
 public:
     explicit YinyangCompressorEditor (YinyangCompressorProcessor&);
-    ~YinyangCompressorEditor() override { stopTimer(); setLookAndFeel (nullptr); }
+    ~YinyangCompressorEditor() override { stopTimer(); openGLContext.detach(); setLookAndFeel (nullptr); }
     void paint (juce::Graphics&) override;
     void resized() override;
+    bool isGpuRendering() const noexcept { return openGLContext.isAttached() && gpuFrameSeen.load (std::memory_order_acquire) && ! softwareFallback; }
 
 private:
     static constexpr int designWidth = 548, designHeight = 726;
     void timerCallback() override;
+    void newOpenGLContextCreated() override { gpuFrameSeen.store (false, std::memory_order_relaxed); }
+    void renderOpenGL() override { gpuFrameSeen.store (true, std::memory_order_release); }
+    void openGLContextClosing() override { gpuFrameSeen.store (false, std::memory_order_relaxed); }
     void paintMeter (juce::Graphics&);
     void applyTheme();
     YinyangCompressorProcessor& processor;
+    juce::OpenGLContext openGLContext;
+    std::atomic<bool> gpuFrameSeen { false };
+    double gpuWaitStart = 0;
+    bool softwareFallback = false;
     CompressorLookAndFeel look;
     juce::TooltipWindow tooltipWindow { this };
     editorTooltips::TitleHint titleHint { JucePlugin_VersionString };

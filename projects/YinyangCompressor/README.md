@@ -1,5 +1,13 @@
 # Yinyang Compressor
 
+On the experimental `visage` branch, the existing JUCE editor uses an OpenGL
+component renderer for the controls, knob glows, and gain-reduction trace.
+The rendering thread is separate from audio processing and the meter keeps its
+partial redraw. If the graphics context cannot start, the editor returns to
+JUCE software painting; set `YINYANG_SOFTWARE_UI=1` before launching a host to
+force that path. This is a JUCE OpenGL integration, not a port to the Visage
+UI library. The Audio Unit still needs a Logic Pro validation on macOS.
+
 A first working compressor plug-in with selectable **feed-forward FET**,
 **feedback VCA**, **variable-mu**, and **optical** behavior, plus an optional
 output transformer stage. Built with JUCE and C++17.
