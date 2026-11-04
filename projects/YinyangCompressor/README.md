@@ -110,14 +110,19 @@ plug-in name. Sidechain combines Detector HPF, SC High Tilt, and Mid/Side.
 Transformer enable, Core Drive, and DC Bias share a Transformer Stage section.
 The compact analog switches show ON/OFF or M/S/L/R at either end of the lever.
 The history line runs oldest at left to current at right. **Click the trace to
-switch to waveform display**, then click again to restore gain history. The
+show the waveform overlay**, then click again to hide it. The
 waveform view overlays the uncompressed input in pale grey and the actual
-plugin output in gold on a shared linear ±1 scale. It includes Mix, Output and
+plugin output in gold as semi-transparent, one-sided peak envelopes behind
+the GR trace. Peaks use the same dB positions as the gain labels: −6 dBFS
+aligns with −6 dB, rather than using a separate linear amplitude scale. Yang's
+overlay labels show 0/−6/−12/−18 dB; Yin retains +12/+6/0/−6 dB. Lower levels
+fall below the plot. The envelopes fold positive and negative peaks into one
+magnitude, with no mirrored lower half. It includes Mix, Output and
 the optional transformer in the output trace. The original input is delayed by
 64 samples for visual alignment with the output. Signed min/max buckets at
 approximately 200 Hz preserve short transients and anti-phase stereo without
 mid-channel cancellation; the view covers the same three seconds and expires
-when audio stops. The gain bar and dB readout remain visible in both views.
+when audio stops. The GR history, gain bar and dB readout remain visible with the overlay on.
 The display choice is retained when reopening the editor on the same instance.
 
 ![Waveform view comparing input and output](Previews/yinyang-waveform.png)

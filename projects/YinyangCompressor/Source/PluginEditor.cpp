@@ -2,13 +2,14 @@
 #include "../../EditorScaling.h"
 #include "../../EditorTooltips.h"
 #include "RatioMapping.h"
+#include "HistoryDisplayScale.h"
 
 YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
     addAndMakeVisible (titleHint);
     addAndMakeVisible (historyToggle);
-    historyToggle.setTooltip ("Click to switch between gain history and the uncompressed input and compressed output waveforms.");
+    historyToggle.setTooltip ("Click to show or hide translucent input and output waveforms behind the gain history.");
     historyToggle.setToggleState (processor.waveformDisplay.load(),juce::dontSendNotification);
     historyToggle.onClick = [this]
     {
@@ -543,16 +544,14 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
     const auto waveformMode = historyToggle.getToggleState();
     g.setColour (juce::Colour (0xffb9c8c4));
     g.setFont (juce::FontOptions (11.0f));
-    g.drawText (waveformMode ? "INPUT / OUTPUT" : yinMode ? "YIN GAIN" : "YANG GAIN REDUCTION",
+    g.drawText (yinMode ? "YIN GAIN" : "YANG GAIN REDUCTION",
                 356, 158, 156, 20, juce::Justification::centred);
     const juce::Rectangle<float> bar (360, 202, 14, 310), plot (410, 202, 98, 310);
     g.setColour (theme.gaugeTrack);
     g.fillRoundedRectangle (bar, 4);
     const auto meterY = [&] (float db)
     {
-        return yinMode
-            ? plot.getY() + plot.getHeight() * (12.0f - db) / 18.0f
-            : plot.getY() + plot.getHeight() * db / GainReductionHistory::maxReductionDb;
+        return plot.getY()+plot.getHeight()*historyDisplay::positionForDb (yinMode ? db : -db,yinMode);
     };
     const auto tickStart = yinMode ? -6 : 0;
     const auto tickEnd = yinMode ? 12 : static_cast<int> (GainReductionHistory::maxReductionDb);
@@ -560,9 +559,10 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
     {
         const auto y = meterY (static_cast<float> (db));
         g.setColour (theme.grid);
-        if (! waveformMode) g.drawLine (plot.getX(), y, plot.getRight(), y);
+        g.drawLine (plot.getX(), y, plot.getRight(), y);
         g.setColour (juce::Colour (0xffb9c8c4));
-        const auto caption = yinMode && db > 0 ? "+" + juce::String (db) : juce::String (db);
+        const auto caption = yinMode && db > 0 ? "+" + juce::String (db)
+                           : ! yinMode && waveformMode && db > 0 ? "-" + juce::String (db) : juce::String (db);
         g.drawText (caption, 378, juce::roundToInt (y) - 8, 26, 16, juce::Justification::centred);
     }
     for (int second = 0; second <= static_cast<int> (GainReductionHistory::duration); ++second)
@@ -593,7 +593,44 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
         g.drawVerticalLine (juce::roundToInt (visibleFill.getCentreX()), visibleFill.getY() + 2, visibleFill.getBottom() - 2);
     }
     const auto now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-    if (! waveformMode)
+    if (waveformMode)
+    {
+        const auto inputColour = juce::Colour (0xffb9c8c4);
+        const auto outputColour = juce::Colour (0xffe7ac58);
+        g.setFont (juce::FontOptions (9.f));
+        g.setColour (inputColour); g.drawText ("IN",410,183,25,15,juce::Justification::centredLeft);
+        g.setColour (outputColour); g.drawText ("OUT",442,183,30,15,juce::Justification::centred);
+        g.setColour (meterAccent); g.drawText (yinMode ? "GAIN" : "GR",478,183,30,15,juce::Justification::centredRight);
+        g.saveState(); g.reduceClipRegion (plot.toNearestInt());
+        std::array<WaveformHistory::Frame,100> columns {};
+        std::array<bool,100> valid {};
+        processor.waveform.visit (now,[&] (float position, const auto& frame)
+        {
+            const auto index = static_cast<size_t> (std::clamp (int(position*plot.getWidth()),0,int(plot.getWidth())-1));
+            auto& column = columns[index];
+            if (! valid[index]) { column = frame; valid[index] = true; }
+            else
+            {
+                column.inputMin = std::min (column.inputMin,frame.inputMin); column.inputMax = std::max (column.inputMax,frame.inputMax);
+                column.outputMin = std::min (column.outputMin,frame.outputMin); column.outputMax = std::max (column.outputMax,frame.outputMax);
+            }
+        });
+        for (int trace = 0; trace < 2; ++trace)
+        {
+            g.setColour (trace == 0 ? inputColour.withAlpha (historyDisplay::inputAlpha) : outputColour.withAlpha (historyDisplay::outputAlpha));
+            for (size_t i = 0; i < columns.size(); ++i)
+                if (valid[i])
+                {
+                    const auto& frame = columns[i];
+                    const auto position = historyDisplay::waveformPosition (trace == 0 ? frame.inputMin : frame.outputMin,
+                                                                          trace == 0 ? frame.inputMax : frame.outputMax,yinMode);
+                    const auto top = plot.getY()+position*plot.getHeight();
+                    if (top < plot.getBottom()) g.drawVerticalLine (int(plot.getX())+int(i),top,plot.getBottom());
+                }
+        }
+        g.restoreState();
+    }
+    // Keep the gain trace above the translucent waveform in both display modes.
     {
         juce::Path trace;
         bool started = false;
@@ -621,46 +658,6 @@ void YinyangCompressorEditor::paintMeter (juce::Graphics& g)
         g.strokePath (trace, juce::PathStrokeType (1.7f));
         g.setColour (juce::Colours::white.withAlpha (glow * 0.78f));
         g.strokePath (trace, juce::PathStrokeType (0.75f));
-        g.restoreState();
-    }
-    else
-    {
-        const auto inputColour = juce::Colour (0xffb9c8c4);
-        const auto outputColour = juce::Colour (0xffe7ac58);
-        g.setFont (juce::FontOptions (9.f));
-        g.setColour (inputColour); g.drawText ("IN",410,183,43,15,juce::Justification::centredLeft);
-        g.setColour (outputColour); g.drawText ("OUT",465,183,43,15,juce::Justification::centredRight);
-        g.saveState(); g.reduceClipRegion (plot.toNearestInt());
-        const auto yFor = [&] (float value) { return plot.getCentreY()-std::clamp (value,-1.f,1.f)*plot.getHeight()*.5f; };
-        g.setColour (theme.grid);
-        for (float level : {-1.f,-.5f,0.f,.5f,1.f}) g.drawHorizontalLine (juce::roundToInt (yFor (level)),plot.getX(),plot.getRight());
-        std::array<WaveformHistory::Frame,100> columns {};
-        std::array<bool,100> valid {};
-        processor.waveform.visit (now,[&] (float position, const auto& frame)
-        {
-            const auto index = static_cast<size_t> (std::clamp (int(position*plot.getWidth()),0,int(plot.getWidth())-1));
-            auto& column = columns[index];
-            if (! valid[index]) { column = frame; valid[index] = true; }
-            else
-            {
-                column.inputMin = std::min (column.inputMin,frame.inputMin); column.inputMax = std::max (column.inputMax,frame.inputMax);
-                column.outputMin = std::min (column.outputMin,frame.outputMin); column.outputMax = std::max (column.outputMax,frame.outputMax);
-            }
-        });
-        for (int trace = 0; trace < 2; ++trace)
-        {
-            g.setColour (trace == 0 ? inputColour.withAlpha (.7f) : outputColour);
-            for (size_t i = 0; i < columns.size(); ++i)
-                if (valid[i])
-                {
-                    const auto& frame = columns[i];
-                    const auto top = yFor (trace == 0 ? frame.inputMax : frame.outputMax);
-                    const auto bottom = yFor (trace == 0 ? frame.inputMin : frame.outputMin);
-                    g.drawVerticalLine (int(plot.getX())+int(i),top,std::max (top+.75f,bottom));
-                }
-        }
-        g.setColour (inputColour); g.drawText ("+1",412,203,24,12,juce::Justification::centredLeft);
-        g.drawText ("-1",412,498,24,12,juce::Justification::centredLeft);
         g.restoreState();
     }
     g.setColour (juce::Colour (0xffb9c8c4));

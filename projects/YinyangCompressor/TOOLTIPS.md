@@ -24,4 +24,4 @@
 | DC bias | Adds transformer asymmetry to increase even harmonics. |
 | VariTransient | Slows attack and speeds release as Yang gain reduction increases. |
 | SC High Tilt | Boosts high frequencies in the sidechain to increase their compression sensitivity. |
-| History display | Click to switch between gain history and the uncompressed input and compressed output waveforms. |
+| History display | Click to show or hide translucent input and output waveforms behind the gain history. |

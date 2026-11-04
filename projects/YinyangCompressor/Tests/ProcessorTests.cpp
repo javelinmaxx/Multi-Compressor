@@ -1,5 +1,6 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/HistoryDisplayScale.h"
 #include <cstdlib>
 #include <iostream>
 #include <cstring>
@@ -30,6 +31,17 @@ void set (YinyangCompressorProcessor& p, const char* id, float value)
 
 void waveformTests()
 {
+    const auto minus6 = std::pow (10.f,-6.f/20.f);
+    check (std::abs (historyDisplay::waveformPosition (-minus6,minus6,false)-1.f/3) < 1.e-6f,
+           "minus-six-dBFS peaks align with the Yang six-dB reduction line");
+    check (std::abs (historyDisplay::waveformPosition (-minus6,minus6,true)-1) < 1.e-6f,
+           "minus-six-dBFS peaks align with the Yin minus-six-dB label");
+    check (std::abs (historyDisplay::waveformPosition (-.001f,std::pow(10.f,-12.f/20.f),false)-2.f/3) < 1.e-6f,
+           "minus-twelve-dBFS peaks align with the matching gain line");
+    check (std::abs (historyDisplay::waveformPosition (-1,0,false)) < 1.e-6f,
+           "one-sided envelope preserves negative-only full-scale peaks");
+    check (std::abs (historyDisplay::waveformPosition (0,0,false)-1) < 1.e-6f,
+           "silence collapses to the bottom of the envelope");
     WaveformHistory history; history.prepare (8000); history.beginBlock (3,24000);
     for (int i = 0; i < 24000; ++i)
         history.push ({i%40 == 0 ? .8f : 0.f,i%40 == 0 ? -.8f : 0.f},
@@ -485,36 +497,48 @@ int runTests (int argc, char** argv)
         check (! restored.waveformDisplay.load(),"clicking again restores gain history");
         if (argc > 3 && juce::String (argv[3]) == "--waveform")
         {
-            using Pair = std::array<float,2>;
-            std::vector<Pair> original, compressed; original.reserve (144000); compressed.reserve (144000);
-            juce::AudioBuffer<float> audio (2,256);
-            std::vector<Pair> source; source.reserve (144000);
+            // Stream real audio through the UI loop so GR and waveform share
+            // the same time window, rather than replaying an offline waveform.
+            set (restored,"upward",0);
+            juce::AudioBuffer<float> audio (2,1632);
             juce::MidiBuffer previewMidi;
-            for (int at = 0; at < 144000; at += 256)
+            int previewFrame = 0, samplePosition = 0;
+            displayToggle->setToggleState (true,juce::sendNotificationSync);
+            capture.tick = [&]
             {
-                const auto n = std::min (256,144000-at);
-                for (int sampleIndex = 0; sampleIndex < n; ++sampleIndex)
+                for (int sampleIndex = 0; sampleIndex < audio.getNumSamples(); ++sampleIndex)
                 {
-                    const auto time = (at+sampleIndex)/48000.;
+                    const auto time = (samplePosition+sampleIndex)/48000.;
                     const auto level = float(.12+.7*std::exp(-std::fmod(time,.6)*8));
                     const auto x = level*float(std::sin(juce::MathConstants<double>::twoPi*220*time));
                     audio.setSample (0,sampleIndex,x); audio.setSample (1,sampleIndex,-x);
-                    source.push_back ({x,-x});
                 }
-                if (n < audio.getNumSamples()) audio.setSize (2,n,true,false,true);
                 restored.processBlock (audio,previewMidi);
-                for (int sampleIndex = 0; sampleIndex < n; ++sampleIndex)
-                {
-                    const auto index = at+sampleIndex-character::Compressor::latencySamples;
-                    original.push_back (index >= 0 ? source[static_cast<size_t> (index)] : Pair {});
-                    compressed.push_back ({audio.getSample(0,sampleIndex),audio.getSample(1,sampleIndex)});
-                }
+                samplePosition += audio.getNumSamples();
+                if (++previewFrame == 90) juce::MessageManager::getInstance()->stopDispatchLoop();
+            };
+            // The earlier message loop has already received its quit message;
+            // pump the editor timers directly while streaming this preview.
+            for (int tick = 0; tick < 90; ++tick)
+            {
+                juce::Thread::sleep (34);
+                capture.tick();
+                juce::Timer::callPendingTimersSynchronously();
             }
-            restored.waveform.prepare (48000);
-            restored.waveform.beginBlock (juce::Time::getMillisecondCounterHiRes()*.001,144000);
-            for (size_t sampleIndex = 0; sampleIndex < original.size(); ++sampleIndex)
-                restored.waveform.push (original[sampleIndex],compressed[sampleIndex],2);
+            displayToggle->setToggleState (false,juce::sendNotificationSync);
+            const auto gainOnly = editor->createComponentSnapshot (editor->getLocalBounds());
             displayToggle->setToggleState (true,juce::sendNotificationSync);
+            const auto overlay = editor->createComponentSnapshot (editor->getLocalBounds());
+            int retainedInk = 0;
+            for (int y = 174; y < 480; ++y) for (int x = 411; x < 507; ++x)
+                if (gainOnly.getPixelAt(x,y).getBrightness() > .55f
+                    && closeColour(gainOnly.getPixelAt(x,y),overlay.getPixelAt(x,y),12)) ++retainedInk;
+            check (retainedInk > 5,"gain history remains visible above the translucent waveform overlay");
+            int translucentWavePixels = 0;
+            for (int y = 455; y < 478; ++y) for (int x = 411; x < 507; ++x)
+                if (! closeColour(gainOnly.getPixelAt(x,y),overlay.getPixelAt(x,y),10)
+                    && overlay.getPixelAt(x,y).getBrightness() < .55f) ++translucentWavePixels;
+            check (translucentWavePixels > 100,"actual waveform envelopes are present and translucent behind the gain history");
         }
         // Exercise actual component rendering, not only construction.
         auto image = editor->createComponentSnapshot (editor->getLocalBounds());
