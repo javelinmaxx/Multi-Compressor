@@ -1,6 +1,6 @@
 # Multi-Compressor
 
-Eight J-SONIC audio plugins for dynamics, de-essing, stereo width, overdrive,
+Nine J-SONIC audio plugins for dynamics, de-essing, stereo width, overdrive,
 transformer coloration, phase alignment, and adaptive reverb/delay. Built with JUCE and C++17, with VST3 and Standalone
 targets on Windows, macOS, and Linux, plus Audio Units on macOS.
 
@@ -27,6 +27,7 @@ the JUCE framework is included in this repository.
 | [Kuo Velvet](projects/KuoVelvet/README.md) | `KuoVelvet` | Convolution widening | Kuo's Velvet stage with Width, Transient, Attack, and Output controls |
 | [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
 | [Lan Reverb](projects/LanReverb/README.md) | `LanReverb` | Reverb / delay | Long stereo tails, live feedback-tap scattering, automatic resonance EQ and phase dispersion |
+| [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | Adaptive narrow peak enhancement or soft drive, shared crossover |
 
 ### Yinyang Compressor
 
@@ -171,6 +172,14 @@ feedback unchanged; Auto reduces detected ringing.
 [Controls and signal path](projects/LanReverb/README.md) ·
 [Measurements](projects/LanReverb/Tests/Reports/README.md)
 
+### Nian Saturator
+
+![Nian Saturator with crossover, low and high amounts, mode selector, and output](projects/NianSaturator/Previews/nian-saturator.png)
+
+Split the signal at a shared crossover. **F** tracks prominent spectral peaks
+and adds narrow emphasis in each band; **T** applies independent soft drive.
+[Controls and processing](projects/NianSaturator/README.md).
+
 ## Measured examples
 
 ### Four approaches to compression
@@ -207,7 +216,7 @@ git clone --branch master https://github.com/javelinmaxx/Multi-Compressor.git
 cd Multi-Compressor
 ```
 
-**macOS — build all eight plugins as VST3 and AU:** install full Xcode and CMake,
+**macOS — build all nine plugins as VST3 and AU:** install full Xcode and CMake,
 then run:
 
 ```bash
