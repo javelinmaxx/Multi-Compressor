@@ -2,6 +2,9 @@
 #include <juce_dsp/juce_dsp.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 #include "../../YinyangCompressor/Source/Oversampling4x.h"
 
 class NianSaturatorProcessor final : public juce::AudioProcessor
@@ -10,7 +13,8 @@ public:
     static constexpr int fBandCount = 12;
     NianSaturatorProcessor();
     void prepareToPlay (double, int) override;
-    void releaseResources() override {}
+    ~NianSaturatorProcessor() override;
+    void releaseResources() override;
     bool isBusesLayoutSupported (const BusesLayout&) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
@@ -61,7 +65,20 @@ private:
     float sampleRate = 48000;
     bool fSuspended = false, tubeSuspended = false;
     float recentInputPeak = 0, recoveryMix = 1;
-    void analyse (float crossover);
+    struct AnalysisJob { std::array<float,4096> samples {}; float crossover = 1000, rate = 48000; unsigned generation = 0; };
+    struct AnalysisResult { std::array<float,fBandCount> frequency {}, target {}; float crossover = 1000; unsigned generation = 0; };
+    std::mutex jobMutex, resultMutex;
+    std::condition_variable jobReady;
+    std::thread analysisThread;
+    AnalysisJob pendingJob;
+    AnalysisResult pendingResult;
+    bool stopAnalysis = false, hasJob = false, hasResult = false, lastPeakMode = true;
+    unsigned analysisGeneration = 0;
+    void startAnalysisWorker();
+    void stopAnalysisWorker();
+    void submitAnalysis(float crossover) noexcept;
+    bool takeAnalysis(AnalysisResult& result) noexcept;
+    AnalysisResult analyse(const AnalysisJob& job);
     void process (juce::AudioBuffer<float>&, bool hostBypass);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NianSaturatorProcessor)
 };

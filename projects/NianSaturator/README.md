@@ -19,6 +19,9 @@ but their unprocessed sum reconstructs the input. F mode analyzes a 4096-point
 Hann-windowed host-rate spectrum, allowing useful resolution in the bass. Six
 logarithmic cells below the crossover and six above it each select one prominent
 peak and add a Q=24 bandpass. The detector refines peaks between FFT bins;
+the FFT and candidate search run on a separate worker thread using preallocated
+snapshots and a nonblocking audio-thread handoff. A busy worker may skip a
+snapshot, and results from an earlier mode or crossover setting are discarded.
 band gain rises in 4 ms and falls in 25 ms, while retuning takes 5 ms.
 Crossover, mode, Mix and bypass transitions are smoothed over 20 ms. The F
 detector reads the live input while the audio path is delayed by 5 ms, so its

@@ -14,12 +14,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout NianSaturatorProcessor::crea
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"bypass",1},"Bypass",false)); return result;
 }
 NianSaturatorProcessor::NianSaturatorProcessor() : AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true).withOutput("Output",juce::AudioChannelSet::stereo(),true)), parameters(*this,nullptr,"NianSaturatorState",createParameterLayout()) {}
+NianSaturatorProcessor::~NianSaturatorProcessor() { stopAnalysisWorker(); }
+void NianSaturatorProcessor::releaseResources() { stopAnalysisWorker(); }
 juce::AudioProcessorParameter* NianSaturatorProcessor::getBypassParameter() const { return parameters.getParameter("bypass"); }
 juce::AudioProcessorEditor* NianSaturatorProcessor::createEditor() { return new NianSaturatorEditor(*this); }
 void NianSaturatorProcessor::getStateInformation(juce::MemoryBlock& data) { if(auto xml=parameters.copyState().createXml()) copyXmlToBinary(*xml,data); }
 void NianSaturatorProcessor::setStateInformation(const void* data,int size) { if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName(parameters.state.getType())) parameters.replaceState(juce::ValueTree::fromXml(*xml)); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new NianSaturatorProcessor(); }
-void NianSaturatorProcessor::prepareToPlay(double rate,int) { sampleRate=4.f*float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; tubeDcState={}; tubeRmsState={}; tubeGainState={{{1,1},{1,1}}}; peakTarget={}; peakEnvelope={}; ringPosition=analysisCounter=0; fSuspended=tubeSuspended=false; recentInputPeak=0; recoveryMix=1;
+void NianSaturatorProcessor::prepareToPlay(double rate,int) { stopAnalysisWorker(); sampleRate=4.f*float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; tubeDcState={}; tubeRmsState={}; tubeGainState={{{1,1},{1,1}}}; peakTarget={}; peakEnvelope={}; ringPosition=analysisCounter=0; fSuspended=tubeSuspended=false; recentInputPeak=0; recoveryMix=1; analysisGeneration=0; lastPeakMode=parameters.getRawParameterValue("mode")->load()<.5f;
     displaySampleRate.store(sampleRate/4.f,std::memory_order_relaxed);
     for (auto& converter : converters) converter.prepare();
     dryHistory = {}; dryPosition = 0;
@@ -41,15 +43,76 @@ void NianSaturatorProcessor::prepareToPlay(double rate,int) { sampleRate=4.f*flo
     crossoverAlpha.setCurrentAndTargetValue(1-std::exp(-juce::MathConstants<float>::twoPi*frequency/sampleRate));
     modeBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("mode")->load()>.5f ? 1.f : 0.f);
     bypassBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("bypass")->load()>.5f ? 1.f : 0.f);
-    mixBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("mix")->load()*.01f); }
+    mixBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("mix")->load()*.01f);
+    startAnalysisWorker(); }
 bool NianSaturatorProcessor::isBusesLayoutSupported(const BusesLayout& layout) const { return layout.getMainInputChannelSet()==layout.getMainOutputChannelSet() && (layout.getMainInputChannelSet()==juce::AudioChannelSet::mono() || layout.getMainInputChannelSet()==juce::AudioChannelSet::stereo()); }
-void NianSaturatorProcessor::analyse(float crossover)
+void NianSaturatorProcessor::startAnalysisWorker()
+{
+    stopAnalysis=false; hasJob=hasResult=false;
+    analysisThread=std::thread([this]
+    {
+        AnalysisJob job;
+        for(;;)
+        {
+            {
+                std::unique_lock<std::mutex> lock(jobMutex);
+                jobReady.wait(lock,[this]{return stopAnalysis || hasJob;});
+                if(stopAnalysis) break;
+                job=pendingJob;
+                hasJob=false;
+            }
+            auto result=analyse(job);
+            {
+                std::lock_guard<std::mutex> lock(resultMutex);
+                pendingResult=result;
+                hasResult=true;
+            }
+        }
+    });
+}
+void NianSaturatorProcessor::stopAnalysisWorker()
+{
+    if(!analysisThread.joinable()) return;
+    {
+        std::lock_guard<std::mutex> lock(jobMutex);
+        stopAnalysis=true;
+    }
+    jobReady.notify_one();
+    analysisThread.join();
+    hasJob=hasResult=false;
+}
+void NianSaturatorProcessor::submitAnalysis(float crossover) noexcept
+{
+    if(!jobMutex.try_lock()) return;
+    if(!hasJob)
+    {
+        for(size_t i=0;i<ring.size();++i)
+            pendingJob.samples[i]=ring[(size_t(ringPosition)+i)%ring.size()];
+        pendingJob.crossover=crossover;
+        pendingJob.rate=sampleRate*.25f;
+        pendingJob.generation=analysisGeneration;
+        hasJob=true;
+        jobMutex.unlock();
+        jobReady.notify_one();
+    }
+    else jobMutex.unlock();
+}
+bool NianSaturatorProcessor::takeAnalysis(AnalysisResult& result) noexcept
+{
+    if(!resultMutex.try_lock()) return false;
+    const auto available=hasResult;
+    if(available) { result=pendingResult; hasResult=false; }
+    resultMutex.unlock();
+    return available;
+}
+NianSaturatorProcessor::AnalysisResult NianSaturatorProcessor::analyse(const AnalysisJob& job)
 {
     constexpr int size=4096;
-    const auto analysisRate=sampleRate*.25f;
+    const auto analysisRate=job.rate, crossover=job.crossover;
+    AnalysisResult result; result.generation=job.generation; result.crossover=crossover;
     const auto maxFrequency=std::min(20000.f,analysisRate*.45f);
     spectrum.fill(0);
-    for(int i=0;i<size;++i) spectrum[size_t(i)]=ring[size_t((ringPosition+i)%size)]*window[size_t(i)];
+    for(int i=0;i<size;++i) spectrum[size_t(i)]=job.samples[size_t(i)]*window[size_t(i)];
     fft.performFrequencyOnlyForwardTransform(spectrum.data());
     for(int slot=0;slot<fBandCount;++slot)
     {
@@ -61,7 +124,7 @@ void NianSaturatorProcessor::analyse(float crossover)
         const auto hi=sideLo*std::pow(ratio,float(cell+1)/6.f);
         const auto start=std::max(1,int(std::ceil(lo*size/analysisRate)));
         const auto end=std::min(size/2-1,int(std::ceil(hi*size/analysisRate))-1);
-        float best=0, selected=peakFrequency[size_t(slot)];
+        float best=0, selected=0;
         for(int bin=start;bin<=end;++bin)
         {
             float floor=0; int neighbors=0;
@@ -81,20 +144,10 @@ void NianSaturatorProcessor::analyse(float crossover)
                 selected=(float(bin)+offset)*analysisRate/size;
             }
         }
-        const auto index=size_t(slot);
         if(best>1.e-3f)
-        {
-            if(peakTarget[index]<.5f)
-            {
-                peakEnvelope[index]=0;
-                for(int ch=0;ch<2;++ch) z1[size_t(ch)][index]=z2[size_t(ch)][index]=0;
-            }
-            peakFrequency[index]=std::clamp(selected,lo,hi);
-            peakTarget[index]=1;
-        }
-        else peakTarget[index]=0;
+        { result.frequency[size_t(slot)]=std::clamp(selected,lo,hi); result.target[size_t(slot)]=1; }
     }
-    fSuspended=false;
+    return result;
 }
 void NianSaturatorProcessor::processBlock(juce::AudioBuffer<float>& b,juce::MidiBuffer&) { process(b,false); }
 void NianSaturatorProcessor::processBlockBypassed(juce::AudioBuffer<float>& b,juce::MidiBuffer&) { process(b,true); }
@@ -122,6 +175,7 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
         1.f/(std::atan(drives[0]*(1.f+biases[0]))-centers[0]),
         1.f/(std::atan(drives[1]*(1.f+biases[1]))-centers[1])};
     const bool peakMode=get("mode")<.5f, bypass=hostBypass || get("bypass")>.5f;
+    if(peakMode!=lastPeakMode) { ++analysisGeneration; lastPeakMode=peakMode; }
     crossoverAlpha.setTargetValue(1-std::exp(-juce::MathConstants<float>::twoPi*crossover/sampleRate));
     modeBlend.setTargetValue(peakMode ? 0.f : 1.f); bypassBlend.setTargetValue(bypass ? 1.f : 0.f);
     mixBlend.setTargetValue(std::clamp(get("mix")*.01f,0.f,1.f));
@@ -160,7 +214,31 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
             if(std::isfinite(input) && std::abs(input)>std::abs(signal)) signal=input;
         }
         ring[size_t(ringPosition)]=signal; ringPosition=(ringPosition+1)%int(ring.size());
-        if(peakMode && ++analysisCounter>=256) { analysisCounter=0; analyse(crossover); updateCoefficients(); }
+        if((analysisCounter&63)==0)
+        {
+            AnalysisResult result;
+            if(takeAnalysis(result) && peakMode && result.generation==analysisGeneration
+               && std::abs(result.crossover-crossover)<1.f)
+            {
+                for(int slot=0;slot<fBandCount;++slot)
+                {
+                    const auto index=size_t(slot);
+                    if(result.target[index]>.5f)
+                    {
+                        if(peakTarget[index]<.5f)
+                        {
+                            peakEnvelope[index]=0;
+                            for(int ch=0;ch<2;++ch) z1[size_t(ch)][index]=z2[size_t(ch)][index]=0;
+                        }
+                        peakFrequency[index]=result.frequency[index];
+                    }
+                    peakTarget[index]=result.target[index];
+                }
+                fSuspended=false;
+                updateCoefficients();
+            }
+        }
+        if(peakMode && ++analysisCounter>=256) { analysisCounter=0; submitAnalysis(crossover); }
         std::array<character::Oversampling4x::Frame,2> frames {};
         std::array<float,2> dry {};
         for(int ch=0;ch<b.getNumChannels() && ch<2;++ch)

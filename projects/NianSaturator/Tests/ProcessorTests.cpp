@@ -279,6 +279,21 @@ int main(int argc,char** argv)
                 }
             }
             if(maxOutput>20) throw std::runtime_error("stress output spiked excessively");
+            stressed.releaseResources();
+            stressed.prepareToPlay(rate,128);
+            signal.setSize(2,128,false,false,true);
+            for(int block=0;block<20;++block)
+            {
+                for(int i=0;i<128;++i)
+                {
+                    const auto x=float(.2*std::sin(juce::MathConstants<double>::twoPi*700*(block*128+i)/rate));
+                    signal.setSample(0,i,x); signal.setSample(1,i,x);
+                }
+                stressed.processBlock(signal,empty);
+                for(int i=0;i<128;++i)
+                    if(!std::isfinite(signal.getSample(0,i)))
+                        throw std::runtime_error("FFT worker must restart after release and prepare");
+            }
         }
         {
             NianSaturatorProcessor recovering;

@@ -21,7 +21,8 @@ processor test are built from the project CMake file.
 - F and T mode are stressed at 44.1, 48, 96, and 192 kHz with changing buffer
   sizes and rapid crossover/mode automation. An injected non-finite filter
   state must fall back to dry audio and restore finite, audible output after
-  the 10 ms recovery fade.
+  the 10 ms recovery fade. The F-mode FFT worker must also restart after
+  release and prepare without corrupting the audio path.
 - Three synthetic piano notes at 48 kHz exercise F mode with a sharp hammer
   attack, inharmonic partials, and staggered harmonic decays. Their output
   stays finite and audible without tripping fault recovery or producing an
