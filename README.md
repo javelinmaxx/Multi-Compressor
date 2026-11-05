@@ -30,7 +30,7 @@ OpenGL with a software fallback. See [GPU rendering and validation](projects/GPU
 | [Kuo Velvet](projects/KuoVelvet/README.md) | `KuoVelvet` | Convolution widening | Kuo's Velvet stage with Width, Transient, Attack, and Output controls |
 | [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
 | [Lan Reverb](projects/LanReverb/README.md) | `LanReverb` | Reverb / delay | Long stereo tails, live feedback-tap scattering, automatic resonance EQ and phase dispersion |
-| [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | 4× twelve-band peak enhancement with 5 ms lookahead or dynamically softened tube-style drive, Mix, and crossover spectrum display |
+| [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | 4× twelve-band transient enhancement with 5 ms lookahead or dynamically softened tube-style drive, Mix, and crossover spectrum display |
 
 ### Yinyang Compressor
 
@@ -179,8 +179,8 @@ feedback unchanged; Auto reduces detected ringing.
 
 ![Nian Saturator with crossover, low and high amounts, Mix, mode selector, and input, delta, and output spectra](projects/NianSaturator/Previews/nian-saturator.png)
 
-Split the signal at a shared crossover. **F** tracks twelve spectral peaks
-with narrow Q=24 filters and 5 ms lookahead; **T** applies gentle, slightly
+Split the signal at a shared crossover. **F** gives detected onsets short pulses
+through twelve narrow Q=24 filters with 5 ms lookahead; **T** applies gentle, slightly
 asymmetric tube-style drive with dynamic smoothing of the added harmonics.
 Both modes run at 4×. The lower display marks the crossover and overlays the
 input, generated delta, and resulting spectra.

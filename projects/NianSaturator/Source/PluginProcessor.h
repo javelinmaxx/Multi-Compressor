@@ -48,6 +48,8 @@ private:
     std::array<float,2> lowState {};
     std::array<std::array<float,fBandCount>,2> z1 {}, z2 {};
     std::array<float,fBandCount> peakFrequency {}, peakTarget {}, peakEnvelope {};
+    std::array<int,fBandCount> peakHoldSamples {}, peakCooldownSamples {};
+    std::array<int,fBandCount> recentPeakSamples {};
     std::array<float,fBandCount> pendingPeakFrequency {};
     std::array<bool,fBandCount> retuning {};
     std::array<std::array<float,3>,fBandCount> coefficientState {};
@@ -67,6 +69,9 @@ private:
     float sampleRate = 48000;
     bool fSuspended = false, tubeSuspended = false;
     float recentInputPeak = 0, recoveryMix = 1;
+    float onsetFast = 0, onsetSlow = 0;
+    int onsetRefractory = 0;
+    bool onsetArmed = true;
     struct AnalysisJob { std::array<float,4096> samples {}; float crossover = 1000, rate = 48000; unsigned generation = 0; };
     struct AnalysisResult { std::array<float,fBandCount> frequency {}, target {}; float crossover = 1000; unsigned generation = 0; };
     std::mutex jobMutex, resultMutex;

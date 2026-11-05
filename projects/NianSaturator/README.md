@@ -2,7 +2,7 @@
 
 Two-band processor with a shared crossover, preventing overlapping cutoff
 settings. F mode tracks twelve spectrally prominent peaks in separate frequency
-cells and adds narrow bandpass emphasis; T mode applies gentle tube-style drive
+cells and adds short bandpass pulses to detected onsets; T mode applies gentle tube-style drive
 independently to the two bands.
 Low and High set their respective amounts, Mix blends the dry and processed
 signals, and Output sets the final level.
@@ -24,9 +24,14 @@ peak and add a Q=24 bandpass. The detector refines peaks between FFT bins;
 the FFT and candidate search run on a separate worker thread using preallocated
 snapshots and a nonblocking audio-thread handoff. A busy worker may skip a
 snapshot, and results from an earlier mode or crossover setting are discarded.
-Band gain rises in 4 ms and falls in 25 ms. A pitch jump exceeding 3% within
-an active cell fades that band's gain down over 8 ms, resets its filter state,
-and fades the newly tuned band in; smaller retunes use 5 ms coefficient smoothing.
+Each new peak gets a 2 ms hold with a 1 ms attack and a 6 ms exponential decay,
+then returns toward dry even if the tone sustains. A 35 ms cooldown prevents
+brief detector dropouts from repeatedly lifting the same tone. A pitch jump
+exceeding 3% within an active cell fades that band's gain down over 8 ms,
+resets its filter state, and starts a fresh short pulse at the new pitch;
+smaller retunes use 5 ms coefficient smoothing.
+An independent level-rise detector can retrigger a recently tracked band when
+the same note is struck again, even if the long FFT still reports that pitch.
 Crossover, mode, Mix and bypass transitions are smoothed over 20 ms. The F
 detector reads the live input while the audio path is delayed by 5 ms, so its
 peak decisions lead the sound reaching the filters. T mode uses a lightly

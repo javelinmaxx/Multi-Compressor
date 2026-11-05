@@ -46,7 +46,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
     mode.setColour (juce::ComboBox::outlineColourId, grid);
     mode.setColour (juce::ComboBox::arrowColourId, amber);
     mode.addItem ("F / PEAK",1); mode.addItem ("T / DRIVE",2);
-    mode.setTooltip ("Selects twelve-band peak enhancement or dynamically softened tube-style drive.");
+    mode.setTooltip ("Selects short twelve-band transient enhancement or dynamically softened tube-style drive.");
     addAndMakeVisible (mode); modeAttachment = std::make_unique<State::ComboBoxAttachment> (p.parameters,"mode",mode);
     editorScaling::enable (*this, designWidth, designHeight);
     gpu.attach (*this);
@@ -88,7 +88,7 @@ void NianSaturatorEditor::paint (juce::Graphics& g)
     g.setColour (foreground); g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
     g.drawText ("SATURATION", 28, 94, 380, 20, juce::Justification::centredLeft);
     g.setColour (secondary); g.setFont (juce::FontOptions (9.0f));
-    g.drawText ("Twelve-band peak lift or gentle tube-style drive", 28, 116, 380, 16, juce::Justification::centredLeft);
+    g.drawText ("Twelve-band transient lift or gentle tube-style drive", 28, 116, 380, 16, juce::Justification::centredLeft);
     g.restoreState();
 }
 NianSaturatorEditor::SignalDisplay::SignalDisplay (NianSaturatorProcessor& p) : processor (p)
