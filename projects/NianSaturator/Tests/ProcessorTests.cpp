@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <complex>
@@ -278,6 +279,59 @@ int main(int argc,char** argv)
             }
             if(!detectedFault || !completedRecovery || recoveredPower<1)
                 throw std::runtime_error("filter fault must trigger a short dry fallback and recover");
+        }
+        {
+            NianSaturatorProcessor piano;
+            set(piano,"lowDrive",100); set(piano,"highDrive",100);
+            piano.prepareToPlay(48000,128);
+            juce::AudioBuffer<float> signal(2,128); juce::MidiBuffer empty;
+            double maxOutput=0,maxJump=0; float previous=0;
+            std::array<double,3> notePower {};
+            int faults=0;
+            for(int block=0;block<2400;++block)
+            {
+                for(int i=0;i<128;++i)
+                {
+                    const auto n=block*128+i;
+                    const auto sinceOnset=std::max(0,n-4800);
+                    const auto event=sinceOnset/(48000*2);
+                    const auto age=double(sinceOnset-event*48000*2)/48000.;
+                    const auto base=event%3==0 ? 110. : event%3==1 ? 261.626 : 523.251;
+                    double sample=0;
+                    if(n>=4800)
+                        for(int harmonic=1;harmonic<=18;++harmonic)
+                        {
+                            const auto frequency=base*harmonic*(1+.0003*harmonic*harmonic);
+                            if(frequency<22000)
+                                sample+=.25*std::pow(double(harmonic),-1.3)*std::exp(-age*(.4+.16*harmonic))
+                                    *std::sin(juce::MathConstants<double>::twoPi*frequency*age);
+                        }
+                    if(n>=4800 && age<.004)
+                        sample+=.18*std::exp(-age*1200)*std::sin(juce::MathConstants<double>::twoPi*6500*age);
+                    signal.setSample(0,i,float(sample)); signal.setSample(1,i,float(sample));
+                }
+                piano.processBlock(signal,empty);
+                if(NianSaturatorTestAccess::recovery(piano)<1) ++faults;
+                for(int i=0;i<128;++i)
+                {
+                    const auto sinceOnset=block*128+i-4800;
+                    const auto value=signal.getSample(0,i);
+                    if(!std::isfinite(value)) throw std::runtime_error("piano F output became non-finite");
+                    maxOutput=std::max(maxOutput,double(std::abs(value)));
+                    maxJump=std::max(maxJump,double(std::abs(value-previous)));
+                    previous=value;
+                    if(sinceOnset>=0)
+                    {
+                        const auto event=sinceOnset/(48000*2);
+                        const auto eventSample=sinceOnset%(48000*2);
+                        if(event<3 && eventSample>48000/5 && eventSample<48000)
+                            notePower[size_t(event)]+=double(value)*value;
+                    }
+                }
+            }
+            if(faults!=0 || maxOutput>3 || maxJump>.4
+                || std::any_of(notePower.begin(),notePower.end(),[](double power){return power<1;}))
+                throw std::runtime_error("F mode must process repeated piano attacks without spikes or silence");
         }
         set(p,"mode",1); set(p,"crossover",1000); set(p,"lowDrive",85); set(p,"highDrive",85);
         for(int block=0;block<40;++block)

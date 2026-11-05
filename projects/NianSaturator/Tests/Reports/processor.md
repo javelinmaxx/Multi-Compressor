@@ -20,6 +20,10 @@ processor test are built from the project CMake file.
   sizes and rapid crossover/mode automation. An injected non-finite filter
   state must fall back to dry audio and restore finite, audible output after
   the 10 ms recovery fade.
+- Three synthetic piano notes at 48 kHz exercise F mode with a sharp hammer
+  attack, inharmonic partials, and staggered harmonic decays. Their output
+  stays finite and audible without tripping fault recovery or producing an
+  excessive sample jump.
 - Mix at 0% must produce latency-aligned dry audio, while 50% must sit midway
   between the dry and fully processed outputs; the spectrum queue receives
   full-rate host samples rather than a decimated waveform.
