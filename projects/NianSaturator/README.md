@@ -1,8 +1,9 @@
 # Nian Saturator
 
 Two-band processor with a shared crossover, preventing overlapping cutoff
-settings. F mode tracks spectrally prominent peaks in each band and adds narrow
-bandpass emphasis; T mode applies soft drive independently to the two bands.
+settings. F mode tracks twelve spectrally prominent peaks in separate frequency
+cells and adds narrow bandpass emphasis; T mode applies gentle tube-style drive
+independently to the two bands.
 Low and High set their respective amounts, Mix blends the dry and processed
 signals, and Output sets the final level.
 
@@ -14,17 +15,19 @@ Output, and bypass, so input plus delta matches the actual output.
 
 The split is complementary: the high-band signal is the input minus a
 one-pole low-pass. Its bands therefore overlap around the single crossover,
-but their unprocessed sum reconstructs the input. F mode uses a 4096-point
-Hann-windowed spectrum and a local spectral-floor test to track one prominent
-peak per band, then adds a narrow Q=12 bandpass. The filter coefficients,
-crossover, mode, Mix and bypass transitions are smoothed over 20 ms. T mode uses
-two independent soft-clipping curves. The complete split, F detector and both
-saturation modes run at 4× the host sample rate through a linear-phase FIR
+but their unprocessed sum reconstructs the input. F mode analyzes a 4096-point
+Hann-windowed host-rate spectrum, allowing useful resolution in the bass. Six
+logarithmic cells below the crossover and six above it each select one prominent
+peak and add a Q=24 bandpass. The detector refines peaks between FFT bins;
+band gain rises in 4 ms and falls in 25 ms, while retuning takes 5 ms.
+Crossover, mode, Mix and bypass transitions are smoothed over 20 ms. T mode
+uses a lightly biased arctangent curve with a DC-blocked residual, at a lower
+drive than the former tanh curve. The split and both saturation modes run at
+4× the host sample rate through a linear-phase FIR
 converter. The converter reports 64 host samples of latency; bypass uses an
 equally delayed dry path. The audio thread sends host-rate samples through a
 fixed-size queue; the editor computes a 2048-point Hann-windowed spectrum at
 up to 30 Hz without an FFT on the audio callback.
 
-[Editor preview](Previews/nian-saturator.png) · [Processor test report](Tests/Reports/processor.md). Processor tests check neutral
-reconstruction, both-band F peak enhancement, T drive, settled bypass and
-editor hit targets at 50% and 120%, mode attachment, and finite output while automating mode and crossover.
+[Editor preview](Previews/nian-saturator.png) · [Processor test report](Tests/Reports/processor.md). Processor tests cover all twelve F bands, bass onset,
+the gentler T curve, Mix, bypass, alias suppression, and scaled editor controls.

@@ -1,6 +1,6 @@
 # Yinyang Visage integration: Logic Pro test plan
 
-Status: **experimental GPU renderer implemented on the `visage` branch**.
+Status: **experimental GPU renderer implemented**.
 The existing JUCE editor now paints through JUCE's OpenGL component renderer,
 with an automatic software fallback if the context fails to start. This does
 not integrate the Visage UI library: doing that would require porting the JUCE

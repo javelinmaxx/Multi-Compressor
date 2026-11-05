@@ -10,7 +10,12 @@ processor test are built from the project CMake file.
   remains below 3% of the fundamental after 4× processing and downsampling.
 - Simultaneous 700 Hz and 4 kHz tones, split at 1 kHz, verify that F mode
   enhances each detected component by at least 20% relative to zero amounts.
-- T mode at maximum amounts must change the test signal.
+- Twelve simultaneous tones verify that all six low and six high F cells track
+  distinct peaks, while an 88 Hz onset reaches the new band-gain target within
+  512 host samples without a waveform jump above 0.08.
+- T mode at maximum amounts must change the signal while its 3 kHz output
+  remains within 1.05–1.6 times dry RMS and below 0.01 average DC level; its
+  second harmonic must be present and its third below 10% of the fundamental.
 - Mix at 0% must produce latency-aligned dry audio, while 50% must sit midway
   between the dry and fully processed outputs; the spectrum queue receives
   full-rate host samples rather than a decimated waveform.

@@ -1,6 +1,6 @@
 # Yinyang Compressor
 
-On the experimental `visage` branch, the existing JUCE editor uses an OpenGL
+The existing JUCE editor uses an experimental OpenGL
 component renderer for the controls, knob glows, and gain-reduction trace.
 The rendering thread is separate from audio processing and the meter keeps its
 partial redraw. If the graphics context cannot start, the editor returns to

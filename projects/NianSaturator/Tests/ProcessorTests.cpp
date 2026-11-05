@@ -3,6 +3,17 @@
 #include <iostream>
 #include <complex>
 #include <stdexcept>
+struct NianSaturatorTestAccess
+{
+    static int active(const NianSaturatorProcessor& p)
+    {
+        int count=0; for(const auto target : p.peakTarget) if(target>.5f) ++count;
+        return count;
+    }
+    static float envelope(const NianSaturatorProcessor& p,int slot) { return p.peakEnvelope[size_t(slot)]; }
+    static float frequency(const NianSaturatorProcessor& p,int slot) { return p.peakFrequency[size_t(slot)]; }
+    static float target(const NianSaturatorProcessor& p,int slot) { return p.peakTarget[size_t(slot)]; }
+};
 static void set (NianSaturatorProcessor& p, const char* id, float value)
 { auto* parameter=p.parameters.getParameter(id); parameter->setValueNotifyingHost(parameter->convertTo0to1(value)); }
 int main(int argc,char** argv)
@@ -99,6 +110,93 @@ int main(int argc,char** argv)
             { const auto hz=band==0?700.:4000.; const auto phase=std::polar(1.,-juce::MathConstants<double>::twoPi*hz*(block*128+i)/48000); before[size_t(band)]+=double(clean.getSample(0,i))*phase; after[size_t(band)]+=double(shaped.getSample(0,i))*phase; }
         }
         for(int band=0;band<2;++band) if(std::abs(after[size_t(band)])<std::abs(before[size_t(band)])*1.2) throw std::runtime_error("F mode must enhance detected peaks in both bands");
+        {
+            if(NianSaturatorProcessor::fBandCount!=12) throw std::runtime_error("F mode needs twelve peak bands");
+            constexpr std::array<double,12> frequencies {53,88,150,260,445,760,1280,2090,3400,5550,9050,14750};
+            NianSaturatorProcessor many;
+            set(many,"crossover",1000); set(many,"lowDrive",80); set(many,"highDrive",80);
+            many.prepareToPlay(48000,128);
+            juce::AudioBuffer<float> tones(2,128); juce::MidiBuffer empty;
+            for(int block=0;block<320;++block)
+            {
+                for(int i=0;i<128;++i)
+                {
+                    const auto n=block*128+i;
+                    double value=0;
+                    for(const auto hz : frequencies) value+=.012*std::sin(juce::MathConstants<double>::twoPi*hz*n/48000);
+                    tones.setSample(0,i,float(value)); tones.setSample(1,i,float(value));
+                }
+                many.processBlock(tones,empty);
+            }
+            if(NianSaturatorTestAccess::active(many)!=12)
+            {
+                for(int slot=0;slot<12;++slot)
+                    std::cerr << "F slot " << slot << " target=" << NianSaturatorTestAccess::target(many,slot)
+                              << " frequency=" << NianSaturatorTestAccess::frequency(many,slot) << '\n';
+                throw std::runtime_error("F detector must track twelve simultaneous peaks across both sides of the crossover");
+            }
+            for(size_t slot=0;slot<frequencies.size();++slot)
+                if(std::abs(NianSaturatorTestAccess::frequency(many,int(slot))-frequencies[slot])
+                   >std::max(15.,frequencies[slot]*.04))
+                    throw std::runtime_error("F bands must track distinct peaks in their own frequency cells");
+        }
+        {
+            NianSaturatorProcessor bass;
+            set(bass,"crossover",1000); set(bass,"lowDrive",100); set(bass,"highDrive",0);
+            bass.prepareToPlay(48000,128);
+            juce::AudioBuffer<float> pulse(2,128); juce::MidiBuffer empty; pulse.clear();
+            for(int block=0;block<50;++block) bass.processBlock(pulse,empty);
+            int detected=-1,risen=-1; float previous=0,maxJump=0;
+            for(int block=0;block<35;++block)
+            {
+                for(int i=0;i<128;++i)
+                {
+                    const auto x=float(.12*std::sin(juce::MathConstants<double>::twoPi*88*(block*128+i)/48000));
+                    pulse.setSample(0,i,x); pulse.setSample(1,i,x);
+                }
+                bass.processBlock(pulse,empty);
+                for(int i=0;i<128;++i)
+                {
+                    const auto value=pulse.getSample(0,i);
+                    maxJump=std::max(maxJump,std::abs(value-previous)); previous=value;
+                }
+                if(detected<0 && NianSaturatorTestAccess::envelope(bass,1)>0) detected=block*128;
+                if(risen<0 && NianSaturatorTestAccess::envelope(bass,1)>.63f) risen=block*128;
+            }
+            if(detected<0 || risen<0 || risen-detected>512 || maxJump>.08f)
+                throw std::runtime_error("low F band must acquire quickly without an abrupt waveform jump");
+        }
+        {
+            NianSaturatorProcessor tube;
+            set(tube,"mode",1); set(tube,"crossover",1000); set(tube,"lowDrive",0); set(tube,"highDrive",100);
+            tube.prepareToPlay(48000,128);
+            juce::AudioBuffer<float> tone(2,128); juce::MidiBuffer empty;
+            double inputPower=0,outputPower=0,mean=0; int count=0;
+            std::array<std::complex<double>,3> harmonics {};
+            for(int block=0;block<240;++block)
+            {
+                for(int i=0;i<128;++i)
+                {
+                    const auto x=float(.25*std::sin(juce::MathConstants<double>::twoPi*3000*(block*128+i)/48000));
+                    tone.setSample(0,i,x); tone.setSample(1,i,x);
+                }
+                tube.processBlock(tone,empty);
+                if(block>60) for(int i=0;i<128;++i)
+                {
+                    const auto n=block*128+i;
+                    const auto x=.25*std::sin(juce::MathConstants<double>::twoPi*3000*n/48000);
+                    const auto y=double(tone.getSample(0,i));
+                    inputPower+=x*x; outputPower+=y*y; mean+=y; ++count;
+                    for(int order=1;order<=3;++order)
+                        harmonics[size_t(order-1)]+=y*std::polar(1.,-juce::MathConstants<double>::twoPi*3000*order*n/48000);
+                }
+            }
+            const auto rmsRatio=std::sqrt(outputPower/inputPower);
+            if(rmsRatio<1.05 || rmsRatio>1.6 || std::abs(mean/count)>.01
+               || std::abs(harmonics[1])<std::abs(harmonics[0])*.0002
+               || std::abs(harmonics[2])>std::abs(harmonics[0])*.1)
+                throw std::runtime_error("T mode must give subtle drive without a DC offset");
+        }
         set(p,"bypass",1);
         for(int block=0;block<12;++block)
         {

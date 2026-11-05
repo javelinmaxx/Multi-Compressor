@@ -12,7 +12,7 @@ The editors support 50%–120% resizing, one-sentence hover hints, host automati
 and session recall. Each plugin is an independent project under `projects/`;
 the JUCE framework is included in this repository.
 
-On the experimental `visage` branch, all nine editors can paint through JUCE
+All nine editors can paint through experimental JUCE
 OpenGL with a software fallback. See [GPU rendering and validation](projects/GPU_RENDERING.md).
 
 [Plugin collection](#plugin-collection) · [Measured examples](#measured-examples) ·
@@ -30,7 +30,7 @@ OpenGL with a software fallback. See [GPU rendering and validation](projects/GPU
 | [Kuo Velvet](projects/KuoVelvet/README.md) | `KuoVelvet` | Convolution widening | Kuo's Velvet stage with Width, Transient, Attack, and Output controls |
 | [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
 | [Lan Reverb](projects/LanReverb/README.md) | `LanReverb` | Reverb / delay | Long stereo tails, live feedback-tap scattering, automatic resonance EQ and phase dispersion |
-| [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | 4× adaptive peak enhancement or soft drive, Mix, and crossover spectrum display |
+| [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | 4× twelve-band peak enhancement or gentle tube-style drive, Mix, and crossover spectrum display |
 
 ### Yinyang Compressor
 
@@ -179,8 +179,8 @@ feedback unchanged; Auto reduces detected ringing.
 
 ![Nian Saturator with crossover, low and high amounts, Mix, mode selector, and input, delta, and output spectra](projects/NianSaturator/Previews/nian-saturator.png)
 
-Split the signal at a shared crossover. **F** tracks prominent spectral peaks
-and adds narrow emphasis in each band; **T** applies independent soft drive.
+Split the signal at a shared crossover. **F** tracks twelve spectral peaks
+with narrow filters; **T** applies gentle, slightly asymmetric tube-style drive.
 Both modes run at 4×. The lower display marks the crossover and overlays the
 input, generated delta, and resulting spectra.
 [Controls and processing](projects/NianSaturator/README.md).

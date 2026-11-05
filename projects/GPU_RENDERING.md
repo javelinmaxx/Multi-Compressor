@@ -1,4 +1,4 @@
-# Experimental GPU editors on `visage`
+# Experimental GPU editors
 
 All nine plugin editors attach a JUCE OpenGL context after their existing JUCE
 controls are laid out. The context paints the component tree, including meter
@@ -8,8 +8,8 @@ detached and JUCE software painting resumes. Set `J_SONIC_SOFTWARE_UI=1`
 before launching a host to force software painting for every plugin. Yinyang
 also accepts its earlier `YINYANG_SOFTWARE_UI=1` switch.
 
-This uses JUCE's OpenGL renderer, not the Visage UI library. It is an
-experimental branch: accelerated drawing may reduce UI CPU use on some
+This uses JUCE's OpenGL renderer, not the Visage UI library. Accelerated
+drawing may reduce UI CPU use on some
 systems, but driver overhead can increase it, and audio DSP CPU use is
 unchanged. A virtual Linux display can verify OpenGL attachment and visible
 frames but cannot establish hardware acceleration or Logic Pro AU behavior.

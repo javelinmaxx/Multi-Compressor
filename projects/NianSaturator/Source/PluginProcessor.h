@@ -6,6 +6,7 @@
 class NianSaturatorProcessor final : public juce::AudioProcessor
 {
 public:
+    static constexpr int fBandCount = 12;
     NianSaturatorProcessor();
     void prepareToPlay (double, int) override;
     void releaseResources() override {}
@@ -34,14 +35,16 @@ public:
     int readDisplay (DisplaySample* destination, int capacity) noexcept;
     float getDisplaySampleRate() const noexcept { return displaySampleRate.load (std::memory_order_relaxed); }
 private:
+    friend struct NianSaturatorTestAccess;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::dsp::FFT fft {12};
     std::array<float,8192> spectrum {};
     std::array<float,4096> ring {}, window {};
     std::array<float,2> lowState {};
-    std::array<std::array<float,2>,2> z1 {}, z2 {};
-    std::array<float,2> peakFrequency {150,3000};
-    std::array<std::array<float,3>,2> coefficientState {};
+    std::array<std::array<float,fBandCount>,2> z1 {}, z2 {};
+    std::array<float,fBandCount> peakFrequency {}, peakTarget {}, peakEnvelope {};
+    std::array<std::array<float,3>,fBandCount> coefficientState {};
+    std::array<std::array<float,2>,2> tubeDcState {};
     juce::SmoothedValue<float> crossoverAlpha, modeBlend, bypassBlend, mixBlend;
     std::array<character::Oversampling4x, 2> converters;
     static constexpr int latency = character::Oversampling4x::latencySamples;
@@ -52,6 +55,7 @@ private:
     std::atomic<float> displaySampleRate { 48000.f };
     int ringPosition = 0, analysisCounter = 0;
     float sampleRate = 48000;
+    bool fSuspended = false;
     void analyse (float crossover);
     void process (juce::AudioBuffer<float>&, bool hostBypass);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NianSaturatorProcessor)
