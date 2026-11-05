@@ -6,7 +6,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
 {
     addAndMakeVisible (titleHint);
     addAndMakeVisible (signalDisplay);
-    signalDisplay.setTooltip ("Shows the latency-aligned input, generated delta, resulting waveform, and low/high crossover.");
+    signalDisplay.setTooltip ("Shows the left-channel input, output, and generated-delta spectra around the low/high crossover.");
     setOpaque (true); setLookAndFeel (&look);
     look.setColour (juce::TooltipWindow::backgroundColourId, panel);
     look.setColour (juce::TooltipWindow::textColourId, foreground);
@@ -14,19 +14,20 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
     addAndMakeVisible (bypass);
     bypass.setTooltip ("Bypasses processing while preserving the plugin's latency.");
     bypassAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "bypass", bypass);
-    constexpr std::array<const char*, 4> ids { "crossover", "lowDrive", "highDrive", "output" };
-    constexpr std::array<const char*, 4> names { "CROSSOVER", "LOW", "HIGH", "OUTPUT" };
-    constexpr std::array<const char*, 4> units { " Hz", " %", " %", " dB" };
-    constexpr std::array<const char*, 4> hints {
+    constexpr std::array<const char*, 5> ids { "crossover", "lowDrive", "highDrive", "mix", "output" };
+    constexpr std::array<const char*, 5> names { "CROSSOVER", "LOW", "HIGH", "MIX", "OUTPUT" };
+    constexpr std::array<const char*, 5> units { " Hz", " %", " %", " %", " dB" };
+    constexpr std::array<const char*, 5> hints {
         "Sets the frequency where the low and high bands meet.",
         "Sets the low-band peak enhancement or drive.",
         "Sets the high-band peak enhancement or drive.",
+        "Blends the processed sound with the latency-aligned original.",
         "Adjusts the final stereo output level." };
     for (size_t i = 0; i < sliders.size(); ++i)
     {
         auto& slider = sliders[i];
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 96, 18);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 76, 18);
         slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         slider.setColour (juce::Slider::textBoxTextColourId, foreground);
         slider.setTextValueSuffix (units[i]); slider.setName (names[i]); slider.setTitle (names[i]);
@@ -58,9 +59,9 @@ void NianSaturatorEditor::resized()
     mode.setBounds (260, 94, 150, 26);
     for (size_t i = 0; i < sliders.size(); ++i)
     {
-        const auto x = 30 + static_cast<int> (i) * 96;
-        labels[i].setBounds (x, 140, 96, 16);
-        sliders[i].setBounds (x, 156, 96, 76);
+        const auto x = 24 + static_cast<int> (i) * 80;
+        labels[i].setBounds (x, 140, 76, 16);
+        sliders[i].setBounds (x, 156, 76, 76);
     }
     signalDisplay.setBounds (16, 254, 412, 162);
     const auto scale = editorScaling::transform (*this, designWidth, designHeight);
@@ -90,53 +91,103 @@ void NianSaturatorEditor::paint (juce::Graphics& g)
     g.drawText ("Adaptive peak emphasis or two-band drive", 28, 116, 380, 16, juce::Justification::centredLeft);
     g.restoreState();
 }
+NianSaturatorEditor::SignalDisplay::SignalDisplay (NianSaturatorProcessor& p) : processor (p)
+{
+    for(size_t i=0;i<window.size();++i)
+        window[i]=.5f-.5f*std::cos(juce::MathConstants<float>::twoPi*float(i)/float(window.size()-1));
+    startTimerHz (30);
+}
 void NianSaturatorEditor::SignalDisplay::refresh()
 {
-    std::array<NianSaturatorProcessor::DisplaySample, 256> incoming {};
-    int count = 0, read = 0;
-    do
+    std::array<NianSaturatorProcessor::DisplaySample, 2048> incoming {};
+    int count=0;
+    for(int chunk=0;chunk<8;++chunk)
     {
-        read = processor.readDisplay (incoming.data(), int(incoming.size()));
-        for(int i=0;i<read;++i) { history[size_t(position)]=incoming[size_t(i)]; position=(position+1)%int(history.size()); }
-        count += read;
-    } while(read==int(incoming.size()));
-    if(count) repaint();
+        const auto read=processor.readDisplay(incoming.data(),int(incoming.size()));
+        for(int i=0;i<read;++i)
+        {
+            history[size_t(position)]=incoming[size_t(i)];
+            position=(position+1)%int(history.size());
+        }
+        count+=read;
+        if(read<int(incoming.size())) break;
+    }
+    const auto frequency=processor.parameters.getRawParameterValue("crossover")->load();
+    if(count>0)
+    {
+        for(int trace=0;trace<3;++trace)
+        {
+            std::array<float,4096> transform {};
+            for(size_t i=0;i<history.size();++i)
+            {
+                const auto& point=history[size_t((position+int(i))%int(history.size()))];
+                const auto value=trace==0 ? point.input : trace==1 ? point.delta : point.input+point.delta;
+                transform[i]=value*window[i];
+            }
+            fft.performFrequencyOnlyForwardTransform(transform.data());
+            for(size_t bin=1;bin<magnitudes[size_t(trace)].size();++bin)
+            {
+                const auto value=transform[bin];
+                auto& displayed=magnitudes[size_t(trace)][bin];
+                displayed=received==0 ? value : .35f*displayed+.65f*value;
+            }
+        }
+        received=std::min(received+count,int(history.size()));
+    }
+    if(count>0 || std::abs(frequency-lastCrossover)>.5f)
+    {
+        lastCrossover=frequency;
+        repaint();
+    }
 }
 void NianSaturatorEditor::SignalDisplay::paint (juce::Graphics& g)
 {
     drawPanel (g, getLocalBounds().toFloat());
     g.setColour (foreground); g.setFont (juce::FontOptions (13.f).withStyle ("bold"));
-    g.drawText ("SIGNAL / GENERATED DELTA",12,8,300,19,juce::Justification::centredLeft);
-    const auto left=20.f, right=float(getWidth()-20), width=right-left;
-    const auto frequency=std::clamp(processor.parameters.getRawParameterValue("crossover")->load(),80.f,8000.f);
-    const auto fraction=std::clamp(std::log(frequency/80.f)/std::log(100.f),0.f,1.f);
-    const auto marker=left+width*fraction;
-    g.setColour (grid); g.drawLine(left,49,right,49,1.f);
-    g.setColour (amber); g.drawLine(marker,35,marker,57,1.5f);
+    g.drawText ("SPECTRUM",12,8,150,19,juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (9.f));
-    g.setColour (secondary); g.drawText ("LOW",int(left),31,40,13,juce::Justification::centredLeft);
-    g.drawText ("HIGH",int(right-40),31,40,13,juce::Justification::centredRight);
-    g.setColour (amber); g.drawText (juce::String(int(frequency))+" Hz",int(std::clamp(marker-28,left,right-56)),57,56,13,juce::Justification::centred);
-    const auto mid=111.f, amplitude=34.f;
-    g.setColour (grid); g.drawLine(left,mid,right,mid,.8f);
+    g.setColour (secondary); g.drawText ("IN",235,12,25,13,juce::Justification::centredLeft);
+    g.setColour (amber); g.drawText ("DELTA",268,12,45,13,juce::Justification::centredLeft);
+    g.setColour (foreground); g.drawText ("OUT",328,12,44,13,juce::Justification::centredLeft);
+    const auto rate=processor.getDisplaySampleRate();
+    const auto maxHz=std::min(20000.f,rate*.48f);
+    const auto crossover=std::clamp(processor.parameters.getRawParameterValue("crossover")->load(),80.f,8000.f);
+    const auto left=20.f,right=float(getWidth()-20),top=52.f,bottom=132.f,width=right-left;
+    const auto xFor=[&](float hz){return left+width*std::clamp(std::log(hz/40.f)/std::log(maxHz/40.f),0.f,1.f);};
+    const auto marker=xFor(crossover);
+    g.setColour (amber.withAlpha(.045f)); g.fillRect(left,top,marker-left,bottom-top);
+    g.setColour (foreground.withAlpha(.025f)); g.fillRect(marker,top,right-marker,bottom-top);
+    for(int db=-96;db<=0;db+=24)
+    {
+        const auto y=bottom-float(db+96)/96.f*(bottom-top);
+        g.setColour(grid.withAlpha(.55f)); g.drawLine(left,y,right,y,.7f);
+    }
+    for(const float hz : {100.f,1000.f,10000.f})
+        if(hz<maxHz) { const auto x=xFor(hz); g.setColour(grid.withAlpha(.35f)); g.drawLine(x,top,x,bottom,.7f); }
     const auto drawTrace=[&](int trace,juce::Colour colour,float thickness)
     {
         juce::Path path;
-        for(int n=0;n<int(history.size());++n)
+        for(int pixel=0;pixel<=int(width);++pixel)
         {
-            const auto& point=history[size_t((position+n)%int(history.size()))];
-            const auto value=trace==0 ? point.input : trace==1 ? point.delta : point.input+point.delta;
-            const auto x=left+width*float(n)/float(history.size()-1);
-            const auto y=mid-amplitude*std::clamp(value,-1.f,1.f);
-            if(n==0) path.startNewSubPath(x,y); else path.lineTo(x,y);
+            const auto hz0=40.f*std::pow(maxHz/40.f,float(pixel)/width);
+            const auto hz1=40.f*std::pow(maxHz/40.f,float(pixel+1)/width);
+            const auto first=std::clamp(int(hz0*2048.f/rate),1,1024);
+            const auto last=std::clamp(int(std::ceil(hz1*2048.f/rate)),first,1024);
+            float value=0;
+            for(int bin=first;bin<=last;++bin)
+                value=std::max(value,magnitudes[size_t(trace)][size_t(bin)]);
+            const auto db=20.f*std::log10(std::max(value/512.f,1.e-6f));
+            const auto y=bottom-std::clamp((db+96.f)/96.f,0.f,1.f)*(bottom-top);
+            if(pixel==0) path.startNewSubPath(left,y); else path.lineTo(left+float(pixel),y);
         }
         g.setColour(colour); g.strokePath(path,juce::PathStrokeType(thickness));
     };
-    drawTrace(0,secondary.withAlpha(.75f),1.f);
-    drawTrace(1,amber.withAlpha(.85f),1.4f);
-    drawTrace(2,foreground.withAlpha(.9f),1.2f);
+    drawTrace(0,secondary.withAlpha(.8f),1.f);
+    drawTrace(2,foreground.withAlpha(.95f),1.25f);
+    drawTrace(1,amber.withAlpha(.9f),1.4f);
+    g.setColour(amber); g.drawLine(marker,top,marker,bottom,1.f);
     g.setFont (juce::FontOptions (9.f));
-    g.setColour (secondary); g.drawText ("INPUT",20,139,49,12,juce::Justification::centredLeft);
-    g.setColour (amber); g.drawText ("DELTA",85,139,48,12,juce::Justification::centredLeft);
-    g.setColour (foreground); g.drawText ("INPUT + DELTA",147,139,110,12,juce::Justification::centredLeft);
+    g.setColour (secondary); g.drawText ("LOW / 40 Hz",20,138,85,13,juce::Justification::centredLeft);
+    g.drawText ("HIGH / "+juce::String(maxHz/1000.f,1)+" kHz",int(right-103),138,103,13,juce::Justification::centredRight);
+    g.setColour (amber); g.drawText (juce::String(int(crossover))+" Hz",int(std::clamp(marker-28,left+85,right-153)),138,56,13,juce::Justification::centred);
 }

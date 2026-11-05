@@ -11,6 +11,9 @@ processor test are built from the project CMake file.
 - Simultaneous 700 Hz and 4 kHz tones, split at 1 kHz, verify that F mode
   enhances each detected component by at least 20% relative to zero amounts.
 - T mode at maximum amounts must change the test signal.
+- Mix at 0% must produce latency-aligned dry audio, while 50% must sit midway
+  between the dry and fully processed outputs; the spectrum queue receives
+  full-rate host samples rather than a decimated waveform.
 - Bypass must settle to the dry samples delayed by 64 samples after its fade.
 - Repeated mode and crossover changes must keep stereo samples finite and
   bounded; the editor mode control must update the host parameter.

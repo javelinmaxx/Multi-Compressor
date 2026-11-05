@@ -32,6 +32,7 @@ public:
     juce::AudioProcessorValueTreeState parameters;
     struct DisplaySample { float input = 0, delta = 0; };
     int readDisplay (DisplaySample* destination, int capacity) noexcept;
+    float getDisplaySampleRate() const noexcept { return displaySampleRate.load (std::memory_order_relaxed); }
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::dsp::FFT fft {12};
@@ -41,13 +42,14 @@ private:
     std::array<std::array<float,2>,2> z1 {}, z2 {};
     std::array<float,2> peakFrequency {150,3000};
     std::array<std::array<float,3>,2> coefficientState {};
-    juce::SmoothedValue<float> crossoverAlpha, modeBlend, bypassBlend;
+    juce::SmoothedValue<float> crossoverAlpha, modeBlend, bypassBlend, mixBlend;
     std::array<character::Oversampling4x, 2> converters;
     static constexpr int latency = character::Oversampling4x::latencySamples;
     std::array<std::array<float, latency>, 2> dryHistory {};
-    int dryPosition = 0, displayDecimation = 0;
-    juce::AbstractFifo displayFifo { 2048 };
-    std::array<DisplaySample, 2048> displayQueue {};
+    int dryPosition = 0;
+    juce::AbstractFifo displayFifo { 16384 };
+    std::array<DisplaySample, 16384> displayQueue {};
+    std::atomic<float> displaySampleRate { 48000.f };
     int ringPosition = 0, analysisCounter = 0;
     float sampleRate = 48000;
     void analyse (float crossover);

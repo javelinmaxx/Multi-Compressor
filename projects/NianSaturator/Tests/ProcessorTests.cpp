@@ -37,6 +37,39 @@ int main(int argc,char** argv)
         for(int i=0;i<128;++i) { const auto x=float(.5*std::sin(i*.1)); difference+=std::abs(audio.getSample(0,i)-x); }
         if(difference<1) throw std::runtime_error("drive must change the signal");
         {
+            NianSaturatorProcessor dry, half, wet;
+            for(auto* processor : {&dry,&half,&wet})
+            {
+                set(*processor,"mode",1); set(*processor,"lowDrive",90); set(*processor,"highDrive",90);
+            }
+            set(dry,"mix",0); set(half,"mix",50); set(wet,"mix",100);
+            for(auto* processor : {&dry,&half,&wet}) processor->prepareToPlay(48000,128);
+            juce::AudioBuffer<float> a(2,128), b(2,128), c(2,128); juce::MidiBuffer empty;
+            for(int block=0;block<60;++block)
+            {
+                for(int i=0;i<128;++i)
+                {
+                    const auto n=block*128+i;
+                    const auto x=float(.3*std::sin(juce::MathConstants<double>::twoPi*300*n/48000)
+                                      +.17*std::sin(juce::MathConstants<double>::twoPi*3200*n/48000));
+                    for(auto* target : {&a,&b,&c}) {target->setSample(0,i,x);target->setSample(1,i,-x);}
+                }
+                dry.processBlock(a,empty); half.processBlock(b,empty); wet.processBlock(c,empty);
+                if(block>3) for(int i=0;i<128;++i)
+                {
+                    const auto n=block*128+i-64;
+                    const auto delayed=float(.3*std::sin(juce::MathConstants<double>::twoPi*300*n/48000)
+                                             +.17*std::sin(juce::MathConstants<double>::twoPi*3200*n/48000));
+                    if(std::abs(a.getSample(0,i)-delayed)>1.e-6f) throw std::runtime_error("zero mix must retain latency-aligned dry audio");
+                    if(std::abs(b.getSample(0,i)-.5f*(a.getSample(0,i)+c.getSample(0,i)))>1.e-5f)
+                        throw std::runtime_error("half mix must sit midway between dry and wet");
+                }
+            }
+            std::array<NianSaturatorProcessor::DisplaySample,1024> captured {};
+            if(wet.readDisplay(captured.data(),int(captured.size()))!=int(captured.size()))
+                throw std::runtime_error("spectrum must receive full-rate audio samples");
+        }
+        {
             NianSaturatorProcessor alias;
             set(alias,"mode",1); set(alias,"highDrive",100); set(alias,"lowDrive",0); alias.prepareToPlay(48000,128);
             std::complex<double> fundamental {}, folded {};
@@ -103,6 +136,13 @@ int main(int argc,char** argv)
         if(!selector) throw std::runtime_error("mode selector missing");
         selector->setSelectedId(2,juce::sendNotificationSync);
         if(p.parameters.getRawParameterValue("mode")->load()<.5f) throw std::runtime_error("mode selector must update the host parameter");
+        juce::Slider* mixControl=nullptr;
+        for(auto* child : editor->getChildren()) if(auto* slider=dynamic_cast<juce::Slider*>(child))
+            if(slider->getName()=="MIX") mixControl=slider;
+        if(!mixControl) throw std::runtime_error("mix knob missing");
+        mixControl->setValue(37,juce::sendNotificationSync);
+        if(std::abs(p.parameters.getRawParameterValue("mix")->load()-37.f)>.11f)
+            throw std::runtime_error("mix knob must update the host parameter");
         for (float scale : {.5f,1.2f})
         {
             editor->setSize(juce::roundToInt(444*scale),juce::roundToInt(432*scale));
