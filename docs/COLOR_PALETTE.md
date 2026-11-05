@@ -8,5 +8,7 @@ This follows [Material's color-role guidance](https://github.com/material-compon
 | Xuan Phase | Black `#14171B` | `#AAA0A0` | Cool silver `#BFCAD4` | 7.06:1 | 10.80:1 |
 | Zao Drive | Vivid orange `#A94808` | `#FFF1DF` | Pale gold `#FFEFAD` | 5.22:1 | 5.03:1 |
 | Kuo Stereo / Velvet | Faint blue `#8CB9D3` | Navy `#183447` | Deep blue `#22536E` | 6.17:1 | 3.95:1 |
+| Nian Saturator | Sky blue `#29445A` | `#C9DDEC` | Icy blue `#8CD8FF` | 7.27:1 | 6.47:1 |
+| Shun De-Esser | Sapphire `#253A5B` | `#C8D7EE` | Ice blue `#A3C7FF` | 7.85:1 | 6.63:1 |
 
-Both Kuo editors use a light knob face and dark marks so the controls remain legible on the faint blue panel. Kuo Stereo keeps a dark sound-field inset with lighter blue traces. Zao uses white knob faces, dark pointers, and a pale gold active arc. Xuan's green/red early/late meter colors and separate left/right trace colors retain their signal meaning.
+Both Kuo editors use a light knob face and dark marks so the controls remain legible on the faint blue panel. Kuo Stereo keeps a dark sound-field inset with lighter blue traces. Nian and Shun use blue knob faces and icy-blue active arcs while their spectrum detail highlights remain gold. Zao uses white knob faces, dark pointers, and a pale gold active arc. Xuan's green/red early/late meter colors and separate left/right trace colors retain their signal meaning.

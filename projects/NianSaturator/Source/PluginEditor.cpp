@@ -2,15 +2,29 @@
 #include "../../EditorScaling.h"
 #include "../../EditorTooltips.h"
 using namespace stageStyle;
+namespace
+{
+const auto nianPanel = juce::Colour (0xff29445a);
+const auto nianAccent = juce::Colour (0xff8cd8ff);
+const auto nianLabel = juce::Colour (0xffc9ddec);
+const auto nianGrid = juce::Colour (0xff42627b);
+}
 NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProcessorEditor (&p), signalDisplay (p)
 {
+    look.accentColour = nianAccent;
+    look.markColour = nianLabel;
+    look.trackColour = nianGrid;
+    look.dialTopColour = juce::Colour (0xff41657d);
+    look.dialBottomColour = juce::Colour (0xff1d3448);
+    bypass.accentColour = nianAccent;
+    bypass.panelColour = nianPanel;
     addAndMakeVisible (titleHint);
     addAndMakeVisible (signalDisplay);
     signalDisplay.setTooltip ("Stacks the generated-delta spectrum above the input spectrum and shows the actual output around the crossover.");
     setOpaque (true); setLookAndFeel (&look);
-    look.setColour (juce::TooltipWindow::backgroundColourId, panel);
+    look.setColour (juce::TooltipWindow::backgroundColourId, nianPanel);
     look.setColour (juce::TooltipWindow::textColourId, foreground);
-    look.setColour (juce::TooltipWindow::outlineColourId, grid);
+    look.setColour (juce::TooltipWindow::outlineColourId, nianGrid);
     addAndMakeVisible (bypass);
     bypass.setTooltip ("Bypasses processing while preserving the plugin's latency.");
     bypassAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "bypass", bypass);
@@ -36,15 +50,15 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
         labels[i].setText (names[i], juce::dontSendNotification);
         labels[i].setJustificationType (juce::Justification::centred);
         labels[i].setFont (juce::FontOptions (10.0f));
-        labels[i].setColour (juce::Label::textColourId, secondary);
+        labels[i].setColour (juce::Label::textColourId, nianLabel);
         addAndMakeVisible (slider); addAndMakeVisible (labels[i]);
         attachments[i] = std::make_unique<State::SliderAttachment> (p.parameters, ids[i], slider);
         editorTooltips::setHint (slider, labels[i], hints[i]);
     }
-    mode.setColour (juce::ComboBox::backgroundColourId, panel);
+    mode.setColour (juce::ComboBox::backgroundColourId, nianPanel);
     mode.setColour (juce::ComboBox::textColourId, foreground);
-    mode.setColour (juce::ComboBox::outlineColourId, grid);
-    mode.setColour (juce::ComboBox::arrowColourId, amber);
+    mode.setColour (juce::ComboBox::outlineColourId, nianGrid);
+    mode.setColour (juce::ComboBox::arrowColourId, nianAccent);
     mode.addItem ("F / PEAK",1); mode.addItem ("T / DRIVE",2);
     mode.setTooltip ("Selects short twelve-band transient enhancement or dynamically softened tube-style drive.");
     addAndMakeVisible (mode); modeAttachment = std::make_unique<State::ComboBoxAttachment> (p.parameters,"mode",mode);
@@ -84,10 +98,10 @@ void NianSaturatorEditor::paint (juce::Graphics& g)
     g.drawText ("J-SONIC / ADAPTIVE SATURATION", 16, 12, 310, 16, juce::Justification::centredLeft);
     g.setColour (foreground); g.setFont (juce::FontOptions (25.0f));
     g.drawText ("NIAN SATURATOR", 16, 30, 310, 36, juce::Justification::centredLeft);
-    drawPanel (g, { 16, 82, 412, 162 }, juce::Colour (0xff29445a));
+    drawPanel (g, { 16, 82, 412, 162 }, nianPanel);
     g.setColour (foreground); g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
     g.drawText ("SATURATION", 28, 94, 380, 20, juce::Justification::centredLeft);
-    g.setColour (secondary); g.setFont (juce::FontOptions (9.0f));
+    g.setColour (nianLabel); g.setFont (juce::FontOptions (9.0f));
     g.drawText ("Twelve-band transient lift or gentle tube-style drive", 28, 116, 380, 16, juce::Justification::centredLeft);
     g.restoreState();
 }
@@ -143,11 +157,11 @@ void NianSaturatorEditor::SignalDisplay::refresh()
 }
 void NianSaturatorEditor::SignalDisplay::paint (juce::Graphics& g)
 {
-    drawPanel (g, getLocalBounds().toFloat(), juce::Colour (0xff29445a));
+    drawPanel (g, getLocalBounds().toFloat(), nianPanel);
     g.setColour (foreground); g.setFont (juce::FontOptions (13.f).withStyle ("bold"));
     g.drawText ("SPECTRUM",12,8,150,19,juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (9.f));
-    g.setColour (secondary); g.drawText ("IN",235,12,25,13,juce::Justification::centredLeft);
+    g.setColour (nianAccent); g.drawText ("IN",235,12,25,13,juce::Justification::centredLeft);
     g.setColour (amber); g.drawText ("DELTA",268,12,45,13,juce::Justification::centredLeft);
     g.setColour (foreground); g.drawText ("OUT",328,12,44,13,juce::Justification::centredLeft);
     const auto rate=processor.getDisplaySampleRate();
@@ -161,10 +175,10 @@ void NianSaturatorEditor::SignalDisplay::paint (juce::Graphics& g)
     for(int db=-96;db<=0;db+=24)
     {
         const auto y=bottom-float(db+96)/96.f*(bottom-top);
-        g.setColour(grid.withAlpha(.55f)); g.drawLine(left,y,right,y,.7f);
+        g.setColour(nianGrid.withAlpha(.55f)); g.drawLine(left,y,right,y,.7f);
     }
     for(const float hz : {100.f,1000.f,10000.f})
-        if(hz<maxHz) { const auto x=xFor(hz); g.setColour(grid.withAlpha(.35f)); g.drawLine(x,top,x,bottom,.7f); }
+        if(hz<maxHz) { const auto x=xFor(hz); g.setColour(nianGrid.withAlpha(.35f)); g.drawLine(x,top,x,bottom,.7f); }
     const auto magnitudeAt=[&](int trace,float center)
     {
         const auto nearest=int(std::floor(center));
@@ -208,12 +222,12 @@ void NianSaturatorEditor::SignalDisplay::paint (juce::Graphics& g)
         deltaArea.lineTo(left+float(pixel),inputY[size_t(pixel)]);
     deltaArea.closeSubPath();
     g.setColour(amber.withAlpha(.18f)); g.fillPath(deltaArea);
-    g.setColour(secondary.withAlpha(.85f)); g.strokePath(inputPath,juce::PathStrokeType(1.f));
+    g.setColour(nianAccent.withAlpha(.85f)); g.strokePath(inputPath,juce::PathStrokeType(1.f));
     g.setColour(amber.withAlpha(.95f)); g.strokePath(stackPath,juce::PathStrokeType(1.3f));
     g.setColour(foreground.withAlpha(.95f)); g.strokePath(outputPath,juce::PathStrokeType(1.25f));
     g.setColour(amber); g.drawLine(marker,top,marker,bottom,1.f);
     g.setFont (juce::FontOptions (9.f));
-    g.setColour (secondary); g.drawText ("LOW / 40 Hz",20,138,85,13,juce::Justification::centredLeft);
+    g.setColour (nianLabel); g.drawText ("LOW / 40 Hz",20,138,85,13,juce::Justification::centredLeft);
     g.drawText ("HIGH / "+juce::String(maxHz/1000.f,1)+" kHz",int(right-103),138,103,13,juce::Justification::centredRight);
     g.setColour (amber); g.drawText (juce::String(int(crossover))+" Hz",int(std::clamp(marker-28,left+85,right-153)),138,56,13,juce::Justification::centred);
 }
