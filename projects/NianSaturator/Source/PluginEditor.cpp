@@ -6,7 +6,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
 {
     addAndMakeVisible (titleHint);
     addAndMakeVisible (signalDisplay);
-    signalDisplay.setTooltip ("Shows the left-channel input, output, and generated-delta spectra around the low/high crossover.");
+    signalDisplay.setTooltip ("Stacks the generated-delta spectrum above the input spectrum and shows the actual output around the crossover.");
     setOpaque (true); setLookAndFeel (&look);
     look.setColour (juce::TooltipWindow::backgroundColourId, panel);
     look.setColour (juce::TooltipWindow::textColourId, foreground);
@@ -129,7 +129,8 @@ void NianSaturatorEditor::SignalDisplay::refresh()
             {
                 const auto value=transform[bin];
                 auto& displayed=magnitudes[size_t(trace)][bin];
-                displayed=received==0 ? value : .35f*displayed+.65f*value;
+                const auto weight=value>displayed ? .28f : .11f;
+                displayed=received==0 ? value : displayed+weight*(value-displayed);
             }
         }
         received=std::min(received+count,int(history.size()));
@@ -164,27 +165,52 @@ void NianSaturatorEditor::SignalDisplay::paint (juce::Graphics& g)
     }
     for(const float hz : {100.f,1000.f,10000.f})
         if(hz<maxHz) { const auto x=xFor(hz); g.setColour(grid.withAlpha(.35f)); g.drawLine(x,top,x,bottom,.7f); }
-    const auto drawTrace=[&](int trace,juce::Colour colour,float thickness)
+    const auto magnitudeAt=[&](int trace,float center)
     {
-        juce::Path path;
-        for(int pixel=0;pixel<=int(width);++pixel)
+        const auto nearest=int(std::floor(center));
+        float weighted=0, total=0;
+        for(int offset=-3;offset<=3;++offset)
         {
-            const auto hz0=40.f*std::pow(maxHz/40.f,float(pixel)/width);
-            const auto hz1=40.f*std::pow(maxHz/40.f,float(pixel+1)/width);
-            const auto first=std::clamp(int(hz0*2048.f/rate),1,1024);
-            const auto last=std::clamp(int(std::ceil(hz1*2048.f/rate)),first,1024);
-            float value=0;
-            for(int bin=first;bin<=last;++bin)
-                value=std::max(value,magnitudes[size_t(trace)][size_t(bin)]);
-            const auto db=20.f*std::log10(std::max(value/512.f,1.e-6f));
-            const auto y=bottom-std::clamp((db+96.f)/96.f,0.f,1.f)*(bottom-top);
-            if(pixel==0) path.startNewSubPath(left,y); else path.lineTo(left+float(pixel),y);
+            const auto bin=nearest+offset;
+            if(bin<1 || bin>1024) continue;
+            const auto distance=std::abs(float(bin)-center);
+            const auto taper=std::max(0.f,3.f-distance);
+            const auto weight=taper*taper;
+            weighted+=weight*magnitudes[size_t(trace)][size_t(bin)];
+            total+=weight;
         }
-        g.setColour(colour); g.strokePath(path,juce::PathStrokeType(thickness));
+        return total>0 ? weighted/total : 0.f;
     };
-    drawTrace(0,secondary.withAlpha(.8f),1.f);
-    drawTrace(2,foreground.withAlpha(.95f),1.25f);
-    drawTrace(1,amber.withAlpha(.9f),1.4f);
+    const auto yFor=[&](float value)
+    {
+        const auto db=20.f*std::log10(std::max(value/512.f,1.e-6f));
+        return bottom-std::clamp((db+96.f)/96.f,0.f,1.f)*(bottom-top);
+    };
+    juce::Path inputPath,stackPath,outputPath,deltaArea;
+    std::vector<float> inputY;
+    inputY.reserve(size_t(width)+1);
+    for(int pixel=0;pixel<=int(width);++pixel)
+    {
+        const auto x=left+float(pixel);
+        const auto hz=40.f*std::pow(maxHz/40.f,float(pixel)/width);
+        const auto center=hz*2048.f/rate;
+        const auto input=magnitudeAt(0,center), delta=magnitudeAt(1,center);
+        const auto inY=yFor(input), stackedY=yFor(input+delta), outY=yFor(magnitudeAt(2,center));
+        inputY.push_back(inY);
+        if(pixel==0)
+        { inputPath.startNewSubPath(x,inY); stackPath.startNewSubPath(x,stackedY);
+          outputPath.startNewSubPath(x,outY); deltaArea.startNewSubPath(x,stackedY); }
+        else
+        { inputPath.lineTo(x,inY); stackPath.lineTo(x,stackedY);
+          outputPath.lineTo(x,outY); deltaArea.lineTo(x,stackedY); }
+    }
+    for(int pixel=int(width);pixel>=0;--pixel)
+        deltaArea.lineTo(left+float(pixel),inputY[size_t(pixel)]);
+    deltaArea.closeSubPath();
+    g.setColour(amber.withAlpha(.18f)); g.fillPath(deltaArea);
+    g.setColour(secondary.withAlpha(.85f)); g.strokePath(inputPath,juce::PathStrokeType(1.f));
+    g.setColour(amber.withAlpha(.95f)); g.strokePath(stackPath,juce::PathStrokeType(1.3f));
+    g.setColour(foreground.withAlpha(.95f)); g.strokePath(outputPath,juce::PathStrokeType(1.25f));
     g.setColour(amber); g.drawLine(marker,top,marker,bottom,1.f);
     g.setFont (juce::FontOptions (9.f));
     g.setColour (secondary); g.drawText ("LOW / 40 Hz",20,138,85,13,juce::Justification::centredLeft);

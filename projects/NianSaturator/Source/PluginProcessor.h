@@ -48,6 +48,8 @@ private:
     std::array<float,2> lowState {};
     std::array<std::array<float,fBandCount>,2> z1 {}, z2 {};
     std::array<float,fBandCount> peakFrequency {}, peakTarget {}, peakEnvelope {};
+    std::array<float,fBandCount> pendingPeakFrequency {};
+    std::array<bool,fBandCount> retuning {};
     std::array<std::array<float,3>,fBandCount> coefficientState {};
     std::array<std::array<float,2>,2> tubeDcState {};
     std::array<std::array<float,2>,2> tubeRmsState {}, tubeGainState {};

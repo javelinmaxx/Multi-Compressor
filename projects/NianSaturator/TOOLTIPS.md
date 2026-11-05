@@ -9,4 +9,4 @@
 | Mix | Blends the processed sound with the latency-aligned original. |
 | Output | Adjusts the final stereo output level. |
 | Bypass | Bypasses processing while preserving the plugin's latency. |
-| Signal display | Shows the left-channel input, output, and generated-delta spectra around the low/high crossover. |
+| Signal display | Stacks the generated-delta spectrum above the input spectrum and shows the actual output around the crossover. |

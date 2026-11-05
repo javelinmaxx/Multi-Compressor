@@ -9,9 +9,11 @@ signals, and Output sets the final level.
 
 The editor follows the shared J-Sonic style and supports 50%–120% scaling.
 The bottom display shows the left-channel input, generated-delta, and output
-spectra on a logarithmic 40 Hz–20 kHz axis. A gold marker separates the Low
-and High regions at the shared crossover. The displayed delta includes Mix,
-Output, and bypass, so input plus delta matches the actual output.
+spectra on a logarithmic 40 Hz–20 kHz axis. It smooths neighboring FFT bins
+and stacks the delta magnitude in gold above the input magnitude; the white
+trace is the measured output spectrum. The gold stack is a visual comparison,
+because spectral magnitudes do not add exactly when phases differ. A gold
+marker separates the Low and High regions at the shared crossover.
 
 The split is complementary: the high-band signal is the input minus a
 one-pole low-pass. Its bands therefore overlap around the single crossover,
@@ -22,7 +24,9 @@ peak and add a Q=24 bandpass. The detector refines peaks between FFT bins;
 the FFT and candidate search run on a separate worker thread using preallocated
 snapshots and a nonblocking audio-thread handoff. A busy worker may skip a
 snapshot, and results from an earlier mode or crossover setting are discarded.
-band gain rises in 4 ms and falls in 25 ms, while retuning takes 5 ms.
+Band gain rises in 4 ms and falls in 25 ms. A pitch jump exceeding 3% within
+an active cell fades that band's gain down over 8 ms, resets its filter state,
+and fades the newly tuned band in; smaller retunes use 5 ms coefficient smoothing.
 Crossover, mode, Mix and bypass transitions are smoothed over 20 ms. The F
 detector reads the live input while the audio path is delayed by 5 ms, so its
 peak decisions lead the sound reaching the filters. T mode uses a lightly

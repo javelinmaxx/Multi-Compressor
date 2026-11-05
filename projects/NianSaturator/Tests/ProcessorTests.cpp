@@ -15,6 +15,7 @@ struct NianSaturatorTestAccess
     static float envelope(const NianSaturatorProcessor& p,int slot) { return p.peakEnvelope[size_t(slot)]; }
     static float frequency(const NianSaturatorProcessor& p,int slot) { return p.peakFrequency[size_t(slot)]; }
     static float target(const NianSaturatorProcessor& p,int slot) { return p.peakTarget[size_t(slot)]; }
+    static bool retuning(const NianSaturatorProcessor& p,int slot) { return p.retuning[size_t(slot)]; }
     static void poison(NianSaturatorProcessor& p)
     {
         p.peakTarget[0]=p.peakEnvelope[0]=1;
@@ -129,6 +130,39 @@ int main(int argc,char** argv)
             { const auto hz=band==0?700.:4000.; const auto phase=std::polar(1.,-juce::MathConstants<double>::twoPi*hz*(block*128+i)/48000); before[size_t(band)]+=double(clean.getSample(0,i))*phase; after[size_t(band)]+=double(shaped.getSample(0,i))*phase; }
         }
         for(int band=0;band<2;++band) if(std::abs(after[size_t(band)])<std::abs(before[size_t(band)])*1.2) throw std::runtime_error("F mode must enhance detected peaks in both bands");
+        {
+            NianSaturatorProcessor shifting;
+            set(shifting,"crossover",1000); set(shifting,"lowDrive",100); set(shifting,"highDrive",0);
+            shifting.prepareToPlay(48000,128);
+            juce::AudioBuffer<float> note(2,128); juce::MidiBuffer empty;
+            double phase=0, peakJump=0; float previous=0;
+            bool sawRetune=false;
+            for(int block=0;block<750;++block)
+            {
+                const auto hz=block<250 ? 700. : block<500 ? 850. : 700.;
+                for(int i=0;i<128;++i)
+                {
+                    const auto x=float(.18*std::sin(phase));
+                    phase+=juce::MathConstants<double>::twoPi*hz/48000.;
+                    note.setSample(0,i,x); note.setSample(1,i,x);
+                }
+                shifting.processBlock(note,empty);
+                if((block>=250 && block<400) || (block>=500 && block<650))
+                    sawRetune=sawRetune || NianSaturatorTestAccess::retuning(shifting,5);
+                if(block==400 && std::abs(NianSaturatorTestAccess::frequency(shifting,5)-850.f)>35.f)
+                    throw std::runtime_error("F detector must follow a changed pitch within a peak cell");
+                for(int i=0;i<128;++i)
+                {
+                    const auto value=note.getSample(0,i);
+                    if(!std::isfinite(value)) throw std::runtime_error("F retune became non-finite");
+                    if((block>=245 && block<270) || (block>=495 && block<520))
+                        peakJump=std::max(peakJump,double(std::abs(value-previous)));
+                    previous=value;
+                }
+            }
+            if(!sawRetune || peakJump>.16)
+                throw std::runtime_error("F retune must not click when piano pitch changes");
+        }
         {
             if(NianSaturatorProcessor::fBandCount!=12) throw std::runtime_error("F mode needs twelve peak bands");
             constexpr std::array<double,12> frequencies {53,88,150,260,445,760,1280,2090,3400,5550,9050,14750};
@@ -382,8 +416,8 @@ int main(int argc,char** argv)
                 || std::any_of(notePower.begin(),notePower.end(),[](double power){return power<1;}))
                 throw std::runtime_error("F mode must keep the first 5 ms of a piano attack clean without spikes or silence");
         }
-        set(p,"mode",1); set(p,"crossover",1000); set(p,"lowDrive",85); set(p,"highDrive",85);
-        for(int block=0;block<40;++block)
+        set(p,"mode",0); set(p,"crossover",1000); set(p,"lowDrive",85); set(p,"highDrive",85);
+        for(int block=0;block<80;++block)
         {
             for(int i=0;i<128;++i)
             {

@@ -10,6 +10,8 @@ processor test are built from the project CMake file.
   remains below 3% of the fundamental after 4× processing and downsampling.
 - Simultaneous 700 Hz and 4 kHz tones, split at 1 kHz, verify that F mode
   enhances each detected component by at least 20% relative to zero amounts.
+- A phase-continuous 700→850→700 Hz note verifies that one active F cell follows
+  the new pitch without a sample jump above 0.16.
 - Twelve simultaneous tones verify that all six low and six high F cells track
   distinct peaks, while an 88 Hz onset reaches the new band-gain target within
   512 host samples without a waveform jump above 0.08.
