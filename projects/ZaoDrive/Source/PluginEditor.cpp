@@ -6,12 +6,12 @@
 namespace
 {
 const auto background = juce::Colour (0xff100e12);
-const auto panel = juce::Colour (0xff4a2d20);
+const auto panel = juce::Colour (0xffa94808);
 const auto inset = juce::Colour (0xff130e0b);
-const auto foreground = juce::Colour (0xffeee9e2);
-const auto secondary = juce::Colour (0xffd6b8a2);
-const auto accent = juce::Colour (0xffffad66);
-const auto grid = juce::Colour (0xff503528);
+const auto foreground = juce::Colour (0xfffff7ed);
+const auto secondary = juce::Colour (0xfffff1df);
+const auto accent = juce::Colour (0xffffefad);
+const auto grid = juce::Colour (0xff6c3615);
 
 const juce::Image& analogGrain()
 {
@@ -40,7 +40,7 @@ void drawPanel (juce::Graphics& g, juce::Rectangle<float> bounds)
 {
     g.setColour (juce::Colours::black.withAlpha (0.24f));
     g.fillRoundedRectangle (bounds.translated (0, 3), 10);
-    g.setGradientFill (juce::ColourGradient (panel.brighter (0.1f), bounds.getTopLeft(),
+    g.setGradientFill (juce::ColourGradient (panel.brighter (0.03f), bounds.getTopLeft(),
                                             panel.darker (0.12f), bounds.getBottomLeft(), false));
     g.fillRoundedRectangle (bounds, 10);
     juce::Path clip;
@@ -86,8 +86,8 @@ void ZaoLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int widt
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6d4532), dial.getTopLeft(),
-                                            juce::Colour (0xff2d211d), dial.getBottomRight(), false));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffa45b25), dial.getTopLeft(),
+                                            juce::Colour (0xff492618), dial.getBottomRight(), false));
     g.fillEllipse (dial);
     g.setColour (secondary.withAlpha (0.25f));
     g.drawEllipse (dial.reduced (2), 0.7f);

@@ -11,6 +11,8 @@ class StageLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
     juce::Colour accentColour = stageStyle::amber;
+    juce::Colour markColour = stageStyle::secondary;
+    juce::Colour trackColour = stageStyle::grid;
     juce::Colour dialTopColour = juce::Colour (0xff65504a);
     juce::Colour dialBottomColour = juce::Colour (0xff30252a);
     void drawRotarySlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider&) override;

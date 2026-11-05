@@ -64,14 +64,14 @@ void StageLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int wi
     {
         const auto a = start + (end - start) * static_cast<float> (tick) / 10.0f;
         const auto inner = radius - (tick % 5 == 0 ? 4.0f : 2.0f);
-        g.setColour (secondary.withAlpha (tick % 5 == 0 ? 0.5f : 0.25f));
+        g.setColour (markColour.withAlpha (tick % 5 == 0 ? 0.5f : 0.25f));
         g.drawLine (centre.x + std::sin (a) * inner, centre.y - std::cos (a) * inner,
                     centre.x + std::sin (a) * radius, centre.y - std::cos (a) * radius, 1.0f);
     }
     juce::Path track, active;
     track.addCentredArc (centre.x, centre.y, radius, radius, 0, start, end, true);
     active.addCentredArc (centre.x, centre.y, radius, radius, 0, start, angle, true);
-    g.setColour (grid.brighter (0.25f));
+    g.setColour (trackColour.brighter (0.25f));
     g.strokePath (track, juce::PathStrokeType (2.0f));
     g.setColour (accentColour);
     g.strokePath (active, juce::PathStrokeType (2.2f));
@@ -81,7 +81,7 @@ void StageLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int wi
     g.setGradientFill (juce::ColourGradient (dialTopColour, dial.getTopLeft(),
                                             dialBottomColour, dial.getBottomRight(), false));
     g.fillEllipse (dial);
-    g.setColour (secondary.withAlpha (0.25f));
+    g.setColour (markColour.withAlpha (0.25f));
     g.drawEllipse (dial.reduced (2), 0.7f);
     g.setColour (accentColour);
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
@@ -152,7 +152,7 @@ void StageLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int wi
     const auto centre = static_cast<float> (x + width / 2);
     const auto top = static_cast<float> (y + 5);
     const auto bottom = static_cast<float> (y + height - 5);
-    g.setColour (grid.brighter (0.3f));
+    g.setColour (trackColour.brighter (0.3f));
     g.fillRoundedRectangle (centre - 2.0f, top, 4.0f, bottom - top, 2.0f);
     g.setColour (accentColour.withAlpha (0.72f));
     g.fillRoundedRectangle (centre - 1.0f, sliderPos, 2.0f,

@@ -6,7 +6,8 @@ This follows [Material's color-role guidance](https://github.com/material-compon
 | Editor | Panel | Secondary text | Active knob / accent | Text contrast | Accent contrast |
 | --- | --- | --- | --- | ---: | ---: |
 | Xuan Phase | Black `#14171B` | `#AAA0A0` | Cool silver `#BFCAD4` | 7.06:1 | 10.80:1 |
-| Zao Drive | Burnt orange `#4A2D20` | `#D6B8A2` | Warm orange `#FFAD66` | 6.66:1 | 6.77:1 |
-| Kuo Stereo / Velvet | Deep seafoam `#23483F` | `#C4D6CB` | Mint `#8DE2C0` | 6.68:1 | 6.65:1 |
+| Zao Drive | Vivid orange `#A94808` | `#FFF1DF` | Pale gold `#FFEFAD` | 5.22:1 | 5.03:1 |
+| Kuo Stereo | Deep seafoam `#23483F` | `#C4D6CB` | Mint `#8DE2C0` | 6.68:1 | 6.65:1 |
+| Kuo Velvet | Faint blue `#8CB9D3` | Navy `#183447` | Deep blue `#22536E` | 6.17:1 | 3.95:1 |
 
-The knob faces use darker shades of their panel hue so the active arc and pointer remain the clearest elements. Xuan's green/red early/late meter colors and separate left/right trace colors retain their signal meaning.
+Kuo Velvet uses a light knob face and dark marks so the controls remain legible on the faint blue panel. Zao keeps a darker knob face with a pale gold active arc. Xuan's green/red early/late meter colors and separate left/right trace colors retain their signal meaning.
