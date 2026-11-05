@@ -12,6 +12,9 @@ The editors support 50%–120% resizing, one-sentence hover hints, host automati
 and session recall. Each plugin is an independent project under `projects/`;
 the JUCE framework is included in this repository.
 
+On the experimental `visage` branch, all nine editors can paint through JUCE
+OpenGL with a software fallback. See [GPU rendering and validation](projects/GPU_RENDERING.md).
+
 [Plugin collection](#plugin-collection) · [Measured examples](#measured-examples) ·
 [Build and install](#build-and-install) · [Detailed build guide](docs/BUILDING.md)
 

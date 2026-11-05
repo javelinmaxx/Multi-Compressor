@@ -1,4 +1,5 @@
 #pragma once
+#include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
 #include "PreviewRenderer.h"
@@ -29,11 +30,12 @@ class ZaoDriveEditor final : public juce::AudioProcessorEditor, private juce::Ti
 {
 public:
     explicit ZaoDriveEditor (ZaoDriveProcessor&);
-    ~ZaoDriveEditor() override { stopTimer(); processor.setPreviewVisible (false); setLookAndFeel (nullptr); }
+    ~ZaoDriveEditor() override { stopTimer(); gpu.detach(); processor.setPreviewVisible (false); setLookAndFeel (nullptr); }
     void paint (juce::Graphics&) override;
     void resized() override;
     const std::array<float, 96>& getExpectedOutput() const noexcept { return previewAnimation.current().output; }
 private:
+    pluginGpu::Renderer gpu;
     static constexpr int designWidth = 548, designHeight = 690;
     void timerCallback() override;
     void updateInputControl (int circuit);

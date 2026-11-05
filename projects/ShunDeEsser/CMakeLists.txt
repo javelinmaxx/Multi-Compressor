@@ -28,7 +28,7 @@ target_sources(ShunDeEsser PRIVATE Source/PluginProcessor.cpp Source/PluginEdito
 target_compile_features(ShunDeEsser PUBLIC cxx_std_17)
 target_compile_definitions(ShunDeEsser PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(ShunDeEsser PRIVATE juce::juce_audio_utils juce::juce_dsp
+target_link_libraries(ShunDeEsser PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_opengl
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 option(SHUN_DE_ESSER_BUILD_TESTS "Build Shun De-Esser processor tests" ON)
@@ -39,4 +39,6 @@ if(SHUN_DE_ESSER_BUILD_TESTS)
     target_compile_definitions(ShunDeEsserTests PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)
     target_link_libraries(ShunDeEsserTests PRIVATE ShunDeEsser)
     add_test(NAME ShunDeEsserProcessor COMMAND ShunDeEsserTests)
+    include("${CMAKE_CURRENT_LIST_DIR}/../PluginGpuSmoke.cmake")
+    add_plugin_gpu_smoke(ShunDeEsser)
 endif()

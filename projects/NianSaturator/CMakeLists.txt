@@ -22,7 +22,7 @@ target_sources(NianSaturator PRIVATE Source/PluginProcessor.cpp Source/PluginEdi
 target_compile_features(NianSaturator PUBLIC cxx_std_17)
 target_compile_definitions(NianSaturator PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(NianSaturator PRIVATE juce::juce_audio_utils juce::juce_dsp
+target_link_libraries(NianSaturator PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_opengl
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 option(NIAN_SATURATOR_BUILD_TESTS "Build Nian Saturator tests" ON)
 if(NIAN_SATURATOR_BUILD_TESTS)
@@ -32,4 +32,6 @@ if(NIAN_SATURATOR_BUILD_TESTS)
     target_compile_definitions(NianSaturatorTests PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)
     target_link_libraries(NianSaturatorTests PRIVATE NianSaturator)
     add_test(NAME NianSaturatorProcessor COMMAND NianSaturatorTests)
+    include("${CMAKE_CURRENT_LIST_DIR}/../PluginGpuSmoke.cmake")
+    add_plugin_gpu_smoke(NianSaturator)
 endif()

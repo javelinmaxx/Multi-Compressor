@@ -39,6 +39,7 @@ RenTransformerEditor::RenTransformerEditor (RenTransformerProcessor& p) : AudioP
         editorTooltips::setHint (slider, labels[i], hints[i]);
     }
     editorScaling::enable (*this, designWidth, designHeight);
+    gpu.attach (*this);
 }
 void RenTransformerEditor::resized()
 {

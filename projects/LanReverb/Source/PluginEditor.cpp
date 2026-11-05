@@ -73,7 +73,7 @@ LanReverbEditor::LanReverbEditor (LanReverbProcessor& p) : AudioProcessorEditor(
     sliders[9].textFromValueFunction = [] (double value) { return value < .05 ? juce::String("OFF") : juce::String(value,1)+" %"; };
     sliders[9].setTextValueSuffix("");
     updateTimeMode();
-    editorScaling::enable(*this,designWidth,designHeight); startTimerHz(20);
+    editorScaling::enable(*this,designWidth,designHeight); gpu.attach(*this); startTimerHz(20);
 }
 void LanReverbEditor::updateTimeMode()
 {

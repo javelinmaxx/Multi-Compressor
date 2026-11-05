@@ -48,6 +48,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
     mode.setTooltip ("Selects automatic narrow peak enhancement or conventional drive.");
     addAndMakeVisible (mode); modeAttachment = std::make_unique<State::ComboBoxAttachment> (p.parameters,"mode",mode);
     editorScaling::enable (*this, designWidth, designHeight);
+    gpu.attach (*this);
     signalDisplay.refresh();
 }
 void NianSaturatorEditor::resized()

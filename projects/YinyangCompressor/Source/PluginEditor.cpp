@@ -116,7 +116,8 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
     openGLContext.setComponentPaintingEnabled (true);
     openGLContext.setContinuousRepainting (false);
     openGLContext.setRenderer (this);
-    softwareFallback = juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") == "1";
+    softwareFallback = juce::SystemStats::getEnvironmentVariable ("J_SONIC_SOFTWARE_UI", "") == "1"
+                    || juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") == "1";
     if (! softwareFallback) openGLContext.attachTo (*this);
     timerCallback();
     startTimerHz (30);

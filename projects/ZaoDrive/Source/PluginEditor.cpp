@@ -240,6 +240,7 @@ ZaoDriveEditor::ZaoDriveEditor (ZaoDriveProcessor& p) : AudioProcessorEditor (&p
     editorTooltips::setHint (model, modelLabel,
         "Selects BJT, op-amp feedback, diode shunt, or series-diode crossover distortion.");
     editorScaling::enable (*this, designWidth, designHeight);
+    gpu.attach (*this);
     timerCallback();
     startTimerHz (30);
 }

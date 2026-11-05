@@ -1,4 +1,5 @@
 #pragma once
+#include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
 #include "../../StagePluginStyle.h"
@@ -6,10 +7,11 @@ class NianSaturatorEditor final : public juce::AudioProcessorEditor
 {
 public:
     explicit NianSaturatorEditor (NianSaturatorProcessor&);
-    ~NianSaturatorEditor() override { setLookAndFeel (nullptr); }
+    ~NianSaturatorEditor() override { gpu.detach(); setLookAndFeel (nullptr); }
     void paint (juce::Graphics&) override;
     void resized() override;
 private:
+    pluginGpu::Renderer gpu;
     class SignalDisplay final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer
     {
     public:

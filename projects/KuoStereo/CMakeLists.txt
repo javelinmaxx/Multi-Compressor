@@ -28,7 +28,7 @@ target_sources(KuoStereo PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.
 target_compile_features(KuoStereo PUBLIC cxx_std_17)
 target_compile_definitions(KuoStereo PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(KuoStereo PRIVATE juce::juce_audio_utils juce::juce_dsp
+target_link_libraries(KuoStereo PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_opengl
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 option(KUO_STEREO_BUILD_TESTS "Build Kuo Stereo tests" ON)
@@ -43,4 +43,6 @@ if(KUO_STEREO_BUILD_TESTS)
     add_executable(KuoStereoFeatureMeasurements Measurements/FeatureMeasurements.cpp)
     target_include_directories(KuoStereoFeatureMeasurements PRIVATE "${JUCE_SOURCE_DIR}/modules")
     target_link_libraries(KuoStereoFeatureMeasurements PRIVATE KuoStereo)
+    include("${CMAKE_CURRENT_LIST_DIR}/../PluginGpuSmoke.cmake")
+    add_plugin_gpu_smoke(KuoStereo)
 endif()

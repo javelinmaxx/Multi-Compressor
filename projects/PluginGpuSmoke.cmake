@@ -1,0 +1,6 @@
+function(add_plugin_gpu_smoke plugin)
+    add_executable(${plugin}GpuSmoke "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/GpuEditorSmoke.cpp")
+    target_include_directories(${plugin}GpuSmoke PRIVATE "${JUCE_SOURCE_DIR}/modules")
+    target_compile_definitions(${plugin}GpuSmoke PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)
+    target_link_libraries(${plugin}GpuSmoke PRIVATE ${plugin})
+endfunction()

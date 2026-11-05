@@ -1,4 +1,5 @@
 #pragma once
+#include "../../PluginGpuRenderer.h"
 #include "PluginProcessor.h"
 #include "SpectrumShelfHandle.h"
 #include "../../StagePluginStyle.h"
@@ -7,10 +8,11 @@ class LanReverbEditor final : public juce::AudioProcessorEditor, private juce::T
 {
 public:
     explicit LanReverbEditor (LanReverbProcessor&);
-    ~LanReverbEditor() override { stopTimer(); setLookAndFeel(nullptr); }
+    ~LanReverbEditor() override { stopTimer(); gpu.detach(); setLookAndFeel(nullptr); }
     void paint (juce::Graphics&) override;
     void resized() override;
 private:
+    pluginGpu::Renderer gpu;
     void timerCallback() override;
     void updateTimeMode();
     void updateShelves();

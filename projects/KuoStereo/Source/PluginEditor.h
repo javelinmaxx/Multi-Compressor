@@ -1,4 +1,5 @@
 #pragma once
+#include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
 
@@ -23,11 +24,12 @@ class KuoStereoEditor final : public juce::AudioProcessorEditor, private juce::T
 {
 public:
     explicit KuoStereoEditor (KuoStereoProcessor&);
-    ~KuoStereoEditor() override { stopTimer(); setLookAndFeel (nullptr); }
+    ~KuoStereoEditor() override { stopTimer(); gpu.detach(); setLookAndFeel (nullptr); }
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
+    pluginGpu::Renderer gpu;
     static constexpr int designWidth = 548, designHeight = 721;
     void timerCallback() override;
     void paintScope (juce::Graphics&, int, juce::Rectangle<float>);

@@ -22,7 +22,7 @@ target_sources(KuoVelvet PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.
 target_compile_features(KuoVelvet PUBLIC cxx_std_17)
 target_compile_definitions(KuoVelvet PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(KuoVelvet PRIVATE juce::juce_audio_utils juce::juce_dsp
+target_link_libraries(KuoVelvet PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_opengl
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 option(KUO_VELVET_BUILD_TESTS "Build Kuo Velvet tests" ON)
 if(KUO_VELVET_BUILD_TESTS)
@@ -33,4 +33,6 @@ if(KUO_VELVET_BUILD_TESTS)
     target_link_libraries(KuoVelvetTests PRIVATE KuoVelvet)
     target_compile_definitions(KuoVelvetTests PRIVATE STAGE_PROJECT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME KuoVelvetProcessor COMMAND KuoVelvetTests)
+    include("${CMAKE_CURRENT_LIST_DIR}/../PluginGpuSmoke.cmake")
+    add_plugin_gpu_smoke(KuoVelvet)
 endif()

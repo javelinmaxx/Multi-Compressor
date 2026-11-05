@@ -567,6 +567,7 @@ ShunDeEsserEditor::ShunDeEsserEditor (ShunDeEsserProcessor& p)
     applyTheme();
     lastTick = juce::Time::getMillisecondCounterHiRes() * 0.001;
     editorScaling::enable (*this, designWidth, designHeight);
+    gpu.attach (*this);
     responseHint.setTooltip ("Shows the stereo input spectrum from minus 120 to 0 dBFS behind the response curves, with active Brilliant restoration or Smooth suppression bands shaded in gold.");
     addAndMakeVisible (responseHint);
     startTimerHz (30);

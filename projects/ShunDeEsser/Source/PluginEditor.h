@@ -2,6 +2,7 @@
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
 #include "GainReductionHistory.h"
+#include "../../PluginGpuRenderer.h"
 
 struct CompressorTheme
 {
@@ -74,10 +75,11 @@ class ShunDeEsserEditor final : public juce::AudioProcessorEditor, private juce:
 {
 public:
     explicit ShunDeEsserEditor (ShunDeEsserProcessor&);
-    ~ShunDeEsserEditor() override { stopTimer(); processor.setSpectrumVisible (false); setLookAndFeel (nullptr); }
+    ~ShunDeEsserEditor() override { stopTimer(); gpu.detach(); processor.setSpectrumVisible (false); setLookAndFeel (nullptr); }
     void paint (juce::Graphics&) override;
     void resized() override;
 private:
+    pluginGpu::Renderer gpu;
     static constexpr int designWidth = 548, designHeight = 741;
     void timerCallback() override;
     void paintMeter (juce::Graphics&);

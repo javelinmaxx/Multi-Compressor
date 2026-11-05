@@ -40,6 +40,7 @@ XuanPhaseEditor::XuanPhaseEditor (XuanPhaseProcessor& p) : AudioProcessorEditor 
         editorTooltips::setHint (slider, labels[i], hints[i]);
     }
     editorScaling::enable (*this, designWidth, designHeight);
+    gpu.attach (*this);
 }
 void XuanPhaseEditor::visibilityChanged() { updateVisibility(); }
 void XuanPhaseEditor::updateVisibility()

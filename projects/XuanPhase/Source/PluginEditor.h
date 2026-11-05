@@ -1,4 +1,5 @@
 #pragma once
+#include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
 #include "../../StagePluginStyle.h"
@@ -7,11 +8,12 @@ class XuanPhaseEditor final : public juce::AudioProcessorEditor, private juce::T
 {
 public:
     explicit XuanPhaseEditor (XuanPhaseProcessor&);
-    ~XuanPhaseEditor() override { stopTimer(); setLookAndFeel (nullptr); }
+    ~XuanPhaseEditor() override { stopTimer(); gpu.detach(); setLookAndFeel (nullptr); }
     void paint (juce::Graphics&) override;
     void resized() override;
     void visibilityChanged() override;
 private:
+    pluginGpu::Renderer gpu;
     using juce::ComponentMovementWatcher::componentMovedOrResized;
     using juce::ComponentMovementWatcher::componentVisibilityChanged;
     void updateVisibility();

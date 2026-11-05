@@ -22,7 +22,7 @@ target_sources(ZaoDrive PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.c
 target_compile_features(ZaoDrive PUBLIC cxx_std_17)
 target_compile_definitions(ZaoDrive PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(ZaoDrive PRIVATE juce::juce_audio_utils juce::juce_dsp
+target_link_libraries(ZaoDrive PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_opengl
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 option(ZAO_DRIVE_BUILD_TESTS "Build Zao Drive tests" ON)
 if(ZAO_DRIVE_BUILD_TESTS)
@@ -36,4 +36,6 @@ if(ZAO_DRIVE_BUILD_TESTS)
     target_include_directories(ZaoDrivePerformanceBench PRIVATE "${JUCE_SOURCE_DIR}/modules")
     target_compile_definitions(ZaoDrivePerformanceBench PRIVATE JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1)
     target_link_libraries(ZaoDrivePerformanceBench PRIVATE ZaoDrive)
+    include("${CMAKE_CURRENT_LIST_DIR}/../PluginGpuSmoke.cmake")
+    add_plugin_gpu_smoke(ZaoDrive)
 endif()

@@ -220,6 +220,7 @@ KuoStereoEditor::KuoStereoEditor (KuoStereoProcessor& p)
             p.parameters, bandIds[i], slider);
     }
     editorScaling::enable (*this, designWidth, designHeight);
+    gpu.attach (*this);
     startTimerHz (30);
 }
 

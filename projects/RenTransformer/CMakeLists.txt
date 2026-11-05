@@ -22,7 +22,7 @@ target_sources(RenTransformer PRIVATE Source/PluginProcessor.cpp Source/PluginEd
 target_compile_features(RenTransformer PUBLIC cxx_std_17)
 target_compile_definitions(RenTransformer PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(RenTransformer PRIVATE juce::juce_audio_utils juce::juce_dsp
+target_link_libraries(RenTransformer PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_opengl
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 option(REN_TRANSFORMER_BUILD_TESTS "Build Ren Transformer tests" ON)
 if(REN_TRANSFORMER_BUILD_TESTS)
@@ -33,4 +33,6 @@ if(REN_TRANSFORMER_BUILD_TESTS)
     target_link_libraries(RenTransformerTests PRIVATE RenTransformer)
     target_compile_definitions(RenTransformerTests PRIVATE STAGE_PROJECT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME RenTransformerProcessor COMMAND RenTransformerTests)
+    include("${CMAKE_CURRENT_LIST_DIR}/../PluginGpuSmoke.cmake")
+    add_plugin_gpu_smoke(RenTransformer)
 endif()
