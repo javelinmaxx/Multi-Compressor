@@ -899,7 +899,13 @@ void editor (const juce::File& path)
                 slider->setValue (100, juce::sendNotificationSync);
             }
             if (slider->getName() == "LOW PHASE")
-            { slider->setValue (90, juce::sendNotificationSync); check (std::abs (p.settings().low-90) < .01f, "manual knob changes its host parameter"); }
+            {
+                slider->setValue (90, juce::sendNotificationSync);
+                check (std::abs (p.settings().low-90) < .01f, "manual knob changes its host parameter");
+                check (slider->getTextFromValue (90).startsWith ("+90")
+                       && slider->getTextFromValue (-90).startsWith ("-90"),
+                       "manual phase values show positive and negative direction signs");
+            }
         }
     }
     set (p, "low", 0);

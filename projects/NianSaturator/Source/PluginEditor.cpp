@@ -84,7 +84,7 @@ void NianSaturatorEditor::paint (juce::Graphics& g)
     g.drawText ("J-SONIC / ADAPTIVE SATURATION", 16, 12, 310, 16, juce::Justification::centredLeft);
     g.setColour (foreground); g.setFont (juce::FontOptions (25.0f));
     g.drawText ("NIAN SATURATOR", 16, 30, 310, 36, juce::Justification::centredLeft);
-    drawPanel (g, { 16, 82, 412, 162 });
+    drawPanel (g, { 16, 82, 412, 162 }, juce::Colour (0xff29445a));
     g.setColour (foreground); g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
     g.drawText ("SATURATION", 28, 94, 380, 20, juce::Justification::centredLeft);
     g.setColour (secondary); g.setFont (juce::FontOptions (9.0f));
@@ -143,7 +143,7 @@ void NianSaturatorEditor::SignalDisplay::refresh()
 }
 void NianSaturatorEditor::SignalDisplay::paint (juce::Graphics& g)
 {
-    drawPanel (g, getLocalBounds().toFloat());
+    drawPanel (g, getLocalBounds().toFloat(), juce::Colour (0xff29445a));
     g.setColour (foreground); g.setFont (juce::FontOptions (13.f).withStyle ("bold"));
     g.drawText ("SPECTRUM",12,8,150,19,juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (9.f));

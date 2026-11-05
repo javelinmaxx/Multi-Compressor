@@ -3,9 +3,9 @@
 | Control | Tooltip |
 | --- | --- |
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.5.0 |
-| Low Phase | Rotates frequencies below the crossover relative to the fixed 50 ms compensated reference, with total correction capped at plus or minus 150 degrees. |
+| Low Phase | Rotates frequencies below the crossover, with positive values moving early and negative values moving late relative to the compensated reference. |
 | Crossover | Sets the smooth transition between the low and high manual phase controls. |
-| High Phase | Rotates frequencies above the crossover relative to the fixed 50 ms compensated reference, with total correction capped at plus or minus 150 degrees. |
+| High Phase | Rotates frequencies above the crossover, with positive values moving early and negative values moving late relative to the compensated reference. |
 | Auto | Saves CPU when Off; uses lookahead and transient spectrogram phases to align narrow frequency bands. |
 | Auto Depth | Sets automatic phase correction from reverse alignment at negative values to full alignment at positive values. |
 | Transient | Sets how quickly automatic phase correction releases after a transient, with longer times retaining it longer. |

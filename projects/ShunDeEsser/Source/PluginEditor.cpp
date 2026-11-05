@@ -87,7 +87,7 @@ void drawBrushedMetalPanel (juce::Graphics& g, juce::Rectangle<float> bounds, fl
 
 CompressorTheme ebonyTheme()
 {
-    return { juce::Colour (0xff100e12), juce::Colour (0xff1c1920), juce::Colour (0xff09080c),
+    return { juce::Colour (0xff100e12), juce::Colour (0xff253a5b), juce::Colour (0xff1a2944),
         juce::Colour (0xffeee9e2), juce::Colour (0xffaaa0a0), juce::Colour (0xffb77b45),
         juce::Colour (0xffe3a45b), juce::Colour (0xff211b20), juce::Colour (0xff33262a),
         juce::Colour (0xff30262c), juce::Colour (0xff65504a), juce::Colour (0xff30252a) };

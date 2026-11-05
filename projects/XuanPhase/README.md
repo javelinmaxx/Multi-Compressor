@@ -13,7 +13,9 @@ The 840 × 490 default panel includes a vertical phase-field meter beside the co
 Low Phase and High Phase range from −180° to +180°. Crossover, from 80 Hz to
 4 kHz, smoothly blends the two phase settings; at the crossover the requested
 angle is their average. Positive angles advance phase relative to the delayed
-reference, and negative angles retard it. Both channels share the manual
+reference toward **early**; negative angles retard it toward **late**. The manual
+knob values display an explicit `+` or `−` sign, and the panel shows this
+direction key. Both channels share the manual
 response; Stereo Link controls their automatic corrections.
 
 A 20 Hz cycle lasts 50 ms, so 180° at 20 Hz corresponds to 25 ms. The phase

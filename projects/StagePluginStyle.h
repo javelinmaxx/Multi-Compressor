@@ -5,7 +5,7 @@ namespace stageStyle
 inline const auto background = juce::Colour (0xff100e12), panel = juce::Colour (0xff1c1920),
     inset = juce::Colour (0xff09080c), foreground = juce::Colour (0xffeee9e2),
     secondary = juce::Colour (0xffaaa0a0), amber = juce::Colour (0xffe3a45b), grid = juce::Colour (0xff30262c);
-void drawPanel (juce::Graphics&, juce::Rectangle<float>);
+void drawPanel (juce::Graphics&, juce::Rectangle<float>, juce::Colour base = panel);
 }
 class StageLookAndFeel final : public juce::LookAndFeel_V4
 {

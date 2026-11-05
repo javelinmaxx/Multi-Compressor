@@ -6,7 +6,7 @@
 namespace
 {
 const auto background = juce::Colour (0xff100e12);
-const auto panel = juce::Colour (0xff1c1920);
+const auto panel = juce::Colour (0xff22474a);
 const auto inset = juce::Colour (0xff09080c);
 const auto foreground = juce::Colour (0xffeee9e2);
 const auto secondary = juce::Colour (0xffaaa0a0);

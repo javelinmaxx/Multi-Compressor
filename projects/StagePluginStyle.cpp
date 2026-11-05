@@ -26,12 +26,12 @@ const juce::Image& analogGrain()
     return grain;
 }
 
-void drawPanel (juce::Graphics& g, juce::Rectangle<float> bounds)
+void drawPanel (juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour base)
 {
     g.setColour (juce::Colours::black.withAlpha (0.24f));
     g.fillRoundedRectangle (bounds.translated (0, 3), 10);
-    g.setGradientFill (juce::ColourGradient (panel.brighter (0.1f), bounds.getTopLeft(),
-                                            panel.darker (0.12f), bounds.getBottomLeft(), false));
+    g.setGradientFill (juce::ColourGradient (base.brighter (0.1f), bounds.getTopLeft(),
+                                            base.darker (0.12f), bounds.getBottomLeft(), false));
     g.fillRoundedRectangle (bounds, 10);
     juce::Path clip;
     clip.addRoundedRectangle (bounds, 10);

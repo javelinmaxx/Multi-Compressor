@@ -69,7 +69,7 @@ void KuoVelvetEditor::paint (juce::Graphics& g)
     g.drawText ("J-SONIC / VELVET STEREO", 16, 12, 310, 16, juce::Justification::centredLeft);
     g.setColour (foreground); g.setFont (juce::FontOptions (25.0f));
     g.drawText ("KUO VELVET", 16, 30, 310, 36, juce::Justification::centredLeft);
-    drawPanel (g, { 16, 82, 412, 162 });
+    drawPanel (g, { 16, 82, 412, 162 }, juce::Colour (0xff22474a));
     g.setColour (foreground); g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
     g.drawText ("VELVET WIDTH", 28, 94, 380, 20, juce::Justification::centredLeft);
     g.setColour (secondary); g.setFont (juce::FontOptions (9.0f));

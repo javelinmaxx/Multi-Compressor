@@ -69,7 +69,7 @@ void RenTransformerEditor::paint (juce::Graphics& g)
     g.drawText ("J-SONIC / TRANSFORMER COLOR", 16, 12, 310, 16, juce::Justification::centredLeft);
     g.setColour (foreground); g.setFont (juce::FontOptions (25.0f));
     g.drawText ("REN TRANSFORMER", 16, 30, 310, 36, juce::Justification::centredLeft);
-    drawPanel (g, { 16, 82, 412, 162 });
+    drawPanel (g, { 16, 82, 412, 162 }, juce::Colour (0xff4a282d));
     g.setColour (foreground); g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
     g.drawText ("TRANSFORMER", 28, 94, 380, 20, juce::Justification::centredLeft);
     g.setColour (secondary); g.setFont (juce::FontOptions (9.0f));

@@ -19,9 +19,9 @@ XuanPhaseEditor::XuanPhaseEditor (XuanPhaseProcessor& p) : AudioProcessorEditor 
     constexpr std::array<const char*, 6> names { "LOW PHASE", "CROSSOVER", "HIGH PHASE", "AUTO DEPTH", "TRANSIENT", "STEREO LINK" };
     constexpr std::array<const char*, 6> units { " deg", " Hz", " deg", " %", " ms", " %" };
     constexpr std::array<const char*, 6> hints {
-        "Rotates frequencies below the crossover relative to the fixed 50 ms compensated reference, with total correction capped at plus or minus 150 degrees.",
+        "Rotates frequencies below the crossover, with positive values moving early and negative values moving late relative to the compensated reference.",
         "Sets the smooth transition between the low and high manual phase controls.",
-        "Rotates frequencies above the crossover relative to the fixed 50 ms compensated reference, with total correction capped at plus or minus 150 degrees.",
+        "Rotates frequencies above the crossover, with positive values moving early and negative values moving late relative to the compensated reference.",
         "Sets automatic phase correction from reverse alignment at negative values to full alignment at positive values.",
         "Sets how quickly automatic phase correction releases after a transient, with longer times retaining it longer.",
         "Links automatic correction at +100%, processes channels independently at 0%, and separates their transients toward -100%." };
@@ -37,6 +37,9 @@ XuanPhaseEditor::XuanPhaseEditor (XuanPhaseProcessor& p) : AudioProcessorEditor 
         labels[i].setFont (juce::FontOptions (10)); labels[i].setColour (juce::Label::textColourId, secondary);
         addAndMakeVisible (slider); addAndMakeVisible (labels[i]);
         attachments[i] = std::make_unique<State::SliderAttachment> (p.parameters, ids[i], slider);
+        if (i == 0 || i == 2)
+            slider.textFromValueFunction = [] (double value)
+            { return (value > 0 ? "+" : "") + juce::String (value, 1); };
         editorTooltips::setHint (slider, labels[i], hints[i]);
     }
     editorScaling::enable (*this, designWidth, designHeight);
@@ -77,10 +80,13 @@ void XuanPhaseEditor::paint (juce::Graphics& g)
     g.drawText ("J-SONIC / TRANSIENT PHASE", 24, 12, 370, 16, juce::Justification::centredLeft);
     g.setColour (foreground); g.setFont (juce::FontOptions (25));
     g.drawText ("XUAN PHASE", 24, 30, 370, 36, juce::Justification::centredLeft);
-    drawPanel (g, {24, 88, 500, 188}); drawPanel (g, {24, 288, 500, 186});
+    const auto deepGray = juce::Colour (0xff30343a);
+    drawPanel (g, {24, 88, 500, 188}, deepGray); drawPanel (g, {24, 288, 500, 186}, deepGray);
     g.setColour (foreground); g.setFont (juce::FontOptions (13).withStyle ("bold"));
     g.drawText ("MANUAL ROTATION", 38, 100, 340, 20, juce::Justification::centredLeft);
     g.drawText ("TRANSIENT ALIGNMENT", 38, 300, 340, 20, juce::Justification::centredLeft);
+    g.setColour (secondary); g.setFont (juce::FontOptions (10));
+    g.drawText ("+ EARLY  /  - LATE", 346, 101, 162, 18, juce::Justification::centredRight);
     g.setColour (secondary); g.setFont (juce::FontOptions (9));
     g.drawText ("25 ms phase + 25 ms lookahead / +/-150 degrees max / stereo phase control", 38, 120, 460, 16, juce::Justification::centredLeft);
     g.drawText ("Spectral phase targets: " + juce::String (processor.targetCount()), 38, 321, 300, 16, juce::Justification::centredLeft);
