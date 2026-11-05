@@ -4,9 +4,15 @@
 using namespace stageStyle;
 XuanPhaseEditor::XuanPhaseEditor (XuanPhaseProcessor& p) : AudioProcessorEditor (&p), ComponentMovementWatcher (this), processor (p), meter (p)
 {
+    look.accentColour = juce::Colour (0xffbfcad4);
+    look.dialTopColour = juce::Colour (0xff424b55);
+    look.dialBottomColour = juce::Colour (0xff20262d);
+    bypass.accentColour = look.accentColour;
+    automatic.accentColour = look.accentColour;
+    bypass.panelColour = automatic.panelColour = juce::Colour (0xff14171b);
     addAndMakeVisible (titleHint);
     setOpaque (true); setLookAndFeel (&look);
-    look.setColour (juce::TooltipWindow::backgroundColourId, panel);
+    look.setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (0xff14171b));
     look.setColour (juce::TooltipWindow::textColourId, foreground);
     look.setColour (juce::TooltipWindow::outlineColourId, grid);
     addAndMakeVisible (bypass); addAndMakeVisible (automatic); automatic.setButtonText ("AUTO");
@@ -80,8 +86,8 @@ void XuanPhaseEditor::paint (juce::Graphics& g)
     g.drawText ("J-SONIC / TRANSIENT PHASE", 24, 12, 370, 16, juce::Justification::centredLeft);
     g.setColour (foreground); g.setFont (juce::FontOptions (25));
     g.drawText ("XUAN PHASE", 24, 30, 370, 36, juce::Justification::centredLeft);
-    const auto deepGray = juce::Colour (0xff30343a);
-    drawPanel (g, {24, 88, 500, 188}, deepGray); drawPanel (g, {24, 288, 500, 186}, deepGray);
+    const auto blackPanel = juce::Colour (0xff14171b);
+    drawPanel (g, {24, 88, 500, 188}, blackPanel); drawPanel (g, {24, 288, 500, 186}, blackPanel);
     g.setColour (foreground); g.setFont (juce::FontOptions (13).withStyle ("bold"));
     g.drawText ("MANUAL ROTATION", 38, 100, 340, 20, juce::Justification::centredLeft);
     g.drawText ("TRANSIENT ALIGNMENT", 38, 300, 340, 20, juce::Justification::centredLeft);

@@ -6,12 +6,12 @@
 namespace
 {
 const auto background = juce::Colour (0xff100e12);
-const auto panel = juce::Colour (0xff4e3030);
-const auto inset = juce::Colour (0xff09080c);
+const auto panel = juce::Colour (0xff4a2d20);
+const auto inset = juce::Colour (0xff130e0b);
 const auto foreground = juce::Colour (0xffeee9e2);
-const auto secondary = juce::Colour (0xffaaa0a0);
-const auto amber = juce::Colour (0xffe3a45b);
-const auto grid = juce::Colour (0xff30262c);
+const auto secondary = juce::Colour (0xffd6b8a2);
+const auto accent = juce::Colour (0xffffad66);
+const auto grid = juce::Colour (0xff503528);
 
 const juce::Image& analogGrain()
 {
@@ -81,17 +81,17 @@ void ZaoLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int widt
     active.addCentredArc (centre.x, centre.y, radius, radius, 0, start, angle, true);
     g.setColour (grid.brighter (0.25f));
     g.strokePath (track, juce::PathStrokeType (2.0f));
-    g.setColour (amber);
+    g.setColour (accent);
     g.strokePath (active, juce::PathStrokeType (2.2f));
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff65504a), dial.getTopLeft(),
-                                            juce::Colour (0xff30252a), dial.getBottomRight(), false));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6d4532), dial.getTopLeft(),
+                                            juce::Colour (0xff2d211d), dial.getBottomRight(), false));
     g.fillEllipse (dial);
     g.setColour (secondary.withAlpha (0.25f));
     g.drawEllipse (dial.reduced (2), 0.7f);
-    g.setColour (amber);
+    g.setColour (accent);
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,
                 centre.x + std::sin (angle) * outer, centre.y - std::cos (angle) * outer, 1.8f);
@@ -108,10 +108,10 @@ void ZaoBypassButton::paintButton (juce::Graphics& g, bool highlighted, bool dow
 {
     const auto bounds = getLocalBounds().toFloat().reduced (1);
     const auto active = getToggleState();
-    const auto face = active ? panel.interpolatedWith (amber.darker (0.5f), 0.6f) : panel;
+    const auto face = active ? panel.interpolatedWith (accent.darker (0.5f), 0.6f) : panel;
     g.setColour (down ? face.darker (0.1f) : highlighted ? face.brighter (0.06f) : face);
     g.fillRoundedRectangle (bounds, 6);
-    g.setColour (active ? amber : secondary.withAlpha (0.7f));
+    g.setColour (active ? accent : secondary.withAlpha (0.7f));
     g.drawRoundedRectangle (bounds, 6, 1.0f);
     g.setColour (active ? foreground : secondary);
     g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
@@ -148,7 +148,7 @@ void ZaoTransformerSwitch::paintButton (juce::Graphics& g, bool, bool)
     g.setGradientFill (juce::ColourGradient (juce::Colour (0xffe0e3e5), cap.getTopLeft(),
                                              juce::Colour (0xff777f86), cap.getBottomRight(), false));
     g.fillEllipse (cap);
-    g.setColour (getToggleState() ? amber : secondary);
+    g.setColour (getToggleState() ? accent : secondary);
     g.setFont (juce::FontOptions (9.0f).withStyle ("bold"));
     g.drawText (getToggleState() ? "ON" : "OFF", 0, 88, getWidth(), 18, juce::Justification::centred);
     if (hasKeyboardFocus (true)) g.drawEllipse (cx - 18, pivotY - 18, 36, 36, 1);
@@ -313,10 +313,10 @@ void ZaoDriveEditor::paintExpectedOutput (juce::Graphics& g)
         g.setColour (colour); g.strokePath (wave, juce::PathStrokeType (thickness));
     };
     drawWave (preview.input, secondary.withAlpha (0.7f), 1.0f);
-    drawWave (preview.output, amber, 2.0f);
+    drawWave (preview.output, accent, 2.0f);
     g.setFont (juce::FontOptions (9.0f)); g.setColour (secondary);
     g.drawText ("INPUT", 44, 473, 45, 14, juce::Justification::centredLeft);
-    g.setColour (amber); g.drawText ("OUTPUT", 96, 473, 60, 14, juce::Justification::centredLeft);
+    g.setColour (accent); g.drawText ("OUTPUT", 96, 473, 60, 14, juce::Justification::centredLeft);
     g.drawText ("PEAK " + juce::String (juce::Decibels::gainToDecibels (preview.peak, -100.0f), 1) + " dBFS",
                 300, 473, 204, 14, juce::Justification::centredRight);
 }

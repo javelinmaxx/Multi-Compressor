@@ -10,6 +10,9 @@ void drawPanel (juce::Graphics&, juce::Rectangle<float>, juce::Colour base = pan
 class StageLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
+    juce::Colour accentColour = stageStyle::amber;
+    juce::Colour dialTopColour = juce::Colour (0xff65504a);
+    juce::Colour dialBottomColour = juce::Colour (0xff30252a);
     void drawRotarySlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider&) override;
     juce::Label* createSliderTextBox (juce::Slider&) override;
     void drawLinearSlider (juce::Graphics&, int, int, int, int, float, float, float,
@@ -19,6 +22,8 @@ class StageBypassButton final : public juce::ToggleButton
 {
 public:
     StageBypassButton() : ToggleButton ("BYPASS") {}
+    juce::Colour accentColour = stageStyle::amber;
+    juce::Colour panelColour = stageStyle::panel;
     void paintButton (juce::Graphics&, bool, bool) override;
 };
 class StageTransformerSwitch final : public juce::ToggleButton

@@ -4,9 +4,14 @@
 using namespace stageStyle;
 KuoVelvetEditor::KuoVelvetEditor (KuoVelvetProcessor& p) : AudioProcessorEditor (&p)
 {
+    look.accentColour = juce::Colour (0xff8de2c0);
+    look.dialTopColour = juce::Colour (0xff31564d);
+    look.dialBottomColour = juce::Colour (0xff182e2b);
+    bypass.accentColour = look.accentColour;
+    bypass.panelColour = juce::Colour (0xff23483f);
     addAndMakeVisible (titleHint);
     setOpaque (true); setLookAndFeel (&look);
-    look.setColour (juce::TooltipWindow::backgroundColourId, panel);
+    look.setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (0xff23483f));
     look.setColour (juce::TooltipWindow::textColourId, foreground);
     look.setColour (juce::TooltipWindow::outlineColourId, grid);
     addAndMakeVisible (bypass);
@@ -33,7 +38,7 @@ KuoVelvetEditor::KuoVelvetEditor (KuoVelvetProcessor& p) : AudioProcessorEditor 
         labels[i].setText (names[i], juce::dontSendNotification);
         labels[i].setJustificationType (juce::Justification::centred);
         labels[i].setFont (juce::FontOptions (10.0f));
-        labels[i].setColour (juce::Label::textColourId, secondary);
+        labels[i].setColour (juce::Label::textColourId, juce::Colour (0xffc4d6cb));
         addAndMakeVisible (slider); addAndMakeVisible (labels[i]);
         attachments[i] = std::make_unique<State::SliderAttachment> (p.parameters, ids[i], slider);
         editorTooltips::setHint (slider, labels[i], hints[i]);
@@ -65,14 +70,14 @@ void KuoVelvetEditor::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (background.brighter (0.035f), 0, 0,
                                             background.darker (0.13f), 0, designHeight, false));
     g.fillRect (0, 0, designWidth, designHeight);
-    g.setColour (secondary); g.setFont (juce::FontOptions (10.0f));
+    g.setColour (juce::Colour (0xffc4d6cb)); g.setFont (juce::FontOptions (10.0f));
     g.drawText ("J-SONIC / VELVET STEREO", 16, 12, 310, 16, juce::Justification::centredLeft);
     g.setColour (foreground); g.setFont (juce::FontOptions (25.0f));
     g.drawText ("KUO VELVET", 16, 30, 310, 36, juce::Justification::centredLeft);
-    drawPanel (g, { 16, 82, 412, 162 }, juce::Colour (0xff22474a));
+    drawPanel (g, { 16, 82, 412, 162 }, juce::Colour (0xff23483f));
     g.setColour (foreground); g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
     g.drawText ("VELVET WIDTH", 28, 94, 380, 20, juce::Justification::centredLeft);
-    g.setColour (secondary); g.setFont (juce::FontOptions (9.0f));
+    g.setColour (juce::Colour (0xffc4d6cb)); g.setFont (juce::FontOptions (9.0f));
     g.drawText ("Sparse stereo texture with transient protection", 28, 116, 380, 16, juce::Justification::centredLeft);
     g.restoreState();
 }

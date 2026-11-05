@@ -73,17 +73,17 @@ void StageLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int wi
     active.addCentredArc (centre.x, centre.y, radius, radius, 0, start, angle, true);
     g.setColour (grid.brighter (0.25f));
     g.strokePath (track, juce::PathStrokeType (2.0f));
-    g.setColour (amber);
+    g.setColour (accentColour);
     g.strokePath (active, juce::PathStrokeType (2.2f));
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff65504a), dial.getTopLeft(),
-                                            juce::Colour (0xff30252a), dial.getBottomRight(), false));
+    g.setGradientFill (juce::ColourGradient (dialTopColour, dial.getTopLeft(),
+                                            dialBottomColour, dial.getBottomRight(), false));
     g.fillEllipse (dial);
     g.setColour (secondary.withAlpha (0.25f));
     g.drawEllipse (dial.reduced (2), 0.7f);
-    g.setColour (amber);
+    g.setColour (accentColour);
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,
                 centre.x + std::sin (angle) * outer, centre.y - std::cos (angle) * outer, 1.8f);
@@ -100,10 +100,10 @@ void StageBypassButton::paintButton (juce::Graphics& g, bool highlighted, bool d
 {
     const auto bounds = getLocalBounds().toFloat().reduced (1);
     const auto active = getToggleState();
-    const auto face = active ? panel.interpolatedWith (amber.darker (0.5f), 0.6f) : panel;
+    const auto face = active ? panelColour.interpolatedWith (accentColour.darker (0.5f), 0.6f) : panelColour;
     g.setColour (down ? face.darker (0.1f) : highlighted ? face.brighter (0.06f) : face);
     g.fillRoundedRectangle (bounds, 6);
-    g.setColour (active ? amber : secondary.withAlpha (0.7f));
+    g.setColour (active ? accentColour : secondary.withAlpha (0.7f));
     g.drawRoundedRectangle (bounds, 6, 1.0f);
     g.setColour (active ? foreground : secondary);
     g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
@@ -154,9 +154,9 @@ void StageLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int wi
     const auto bottom = static_cast<float> (y + height - 5);
     g.setColour (grid.brighter (0.3f));
     g.fillRoundedRectangle (centre - 2.0f, top, 4.0f, bottom - top, 2.0f);
-    g.setColour (amber.withAlpha (0.72f));
+    g.setColour (accentColour.withAlpha (0.72f));
     g.fillRoundedRectangle (centre - 1.0f, sliderPos, 2.0f,
                             std::max (0.0f, bottom - sliderPos), 1.0f);
-    g.setColour (amber);
+    g.setColour (accentColour);
     g.fillRoundedRectangle (centre - 6.0f, sliderPos - 3.0f, 12.0f, 6.0f, 2.0f);
 }

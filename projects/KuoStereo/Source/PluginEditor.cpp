@@ -6,12 +6,12 @@
 namespace
 {
 const auto background = juce::Colour (0xff100e12);
-const auto panel = juce::Colour (0xff22474a);
-const auto inset = juce::Colour (0xff09080c);
+const auto panel = juce::Colour (0xff23483f);
+const auto inset = juce::Colour (0xff0c1e1b);
 const auto foreground = juce::Colour (0xffeee9e2);
-const auto secondary = juce::Colour (0xffaaa0a0);
-const auto amber = juce::Colour (0xffe3a45b);
-const auto grid = juce::Colour (0xff30262c);
+const auto secondary = juce::Colour (0xffc4d6cb);
+const auto accent = juce::Colour (0xff8de2c0);
+const auto grid = juce::Colour (0xff30574e);
 
 const juce::Image& analogGrain()
 {
@@ -81,17 +81,17 @@ void KuoLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int widt
     active.addCentredArc (centre.x, centre.y, radius, radius, 0, start, angle, true);
     g.setColour (grid.brighter (0.25f));
     g.strokePath (track, juce::PathStrokeType (2.0f));
-    g.setColour (amber);
+    g.setColour (accent);
     g.strokePath (active, juce::PathStrokeType (2.2f));
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff65504a), dial.getTopLeft(),
-                                            juce::Colour (0xff30252a), dial.getBottomRight(), false));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff31564d), dial.getTopLeft(),
+                                            juce::Colour (0xff182e2b), dial.getBottomRight(), false));
     g.fillEllipse (dial);
     g.setColour (secondary.withAlpha (0.25f));
     g.drawEllipse (dial.reduced (2), 0.7f);
-    g.setColour (amber);
+    g.setColour (accent);
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,
                 centre.x + std::sin (angle) * outer, centre.y - std::cos (angle) * outer, 1.8f);
@@ -112,10 +112,10 @@ void KuoLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int widt
     const auto bottom = static_cast<float> (y + height - 5);
     g.setColour (grid.brighter (0.3f));
     g.fillRoundedRectangle (centre - 2.0f, top, 4.0f, bottom - top, 2.0f);
-    g.setColour (amber.withAlpha (0.72f));
+    g.setColour (accent.withAlpha (0.72f));
     g.fillRoundedRectangle (centre - 1.0f, sliderPos, 2.0f,
                             std::max (0.0f, bottom - sliderPos), 1.0f);
-    g.setColour (amber);
+    g.setColour (accent);
     g.fillRoundedRectangle (centre - 6.0f, sliderPos - 3.0f, 12.0f, 6.0f, 2.0f);
 }
 
@@ -123,10 +123,10 @@ void KuoBypassButton::paintButton (juce::Graphics& g, bool highlighted, bool dow
 {
     const auto bounds = getLocalBounds().toFloat().reduced (1);
     const auto active = getToggleState();
-    const auto face = active ? panel.interpolatedWith (amber.darker (0.5f), 0.6f) : panel;
+    const auto face = active ? panel.interpolatedWith (accent.darker (0.5f), 0.6f) : panel;
     g.setColour (down ? face.darker (0.1f) : highlighted ? face.brighter (0.06f) : face);
     g.fillRoundedRectangle (bounds, 6);
-    g.setColour (active ? amber : secondary.withAlpha (0.7f));
+    g.setColour (active ? accent : secondary.withAlpha (0.7f));
     g.drawRoundedRectangle (bounds, 6, 1.0f);
     g.setColour (active ? foreground : secondary);
     g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
@@ -294,7 +294,7 @@ void KuoStereoEditor::paint (juce::Graphics& g)
     g.setColour (secondary);
     g.setFont (juce::FontOptions (7.2f));
     g.drawText ("ACTIVE DELAY", 362, 104, 82, 16, juce::Justification::centredRight);
-    g.setColour (amber);
+    g.setColour (accent);
     g.setFont (juce::FontOptions (17.6f));
     const auto activeDelayMs = processor.getCurrentDelayMs();
     const auto displayedDelayMs = std::abs (activeDelayMs) < 0.05f ? 0.0f : activeDelayMs;
@@ -345,7 +345,7 @@ void KuoStereoEditor::paintScope (juce::Graphics& g, int band, juce::Rectangle<f
                                     bounds.getX() + 5, bounds.getRight() - 5);
         const auto py = std::clamp (centre.y - (point.x + point.y) * scale * visualGain * 0.5f,
                                     bounds.getY() + 5, bounds.getBottom() - 5);
-        g.setColour (amber.withAlpha (0.12f + 0.62f * static_cast<float> (i) / points.size()));
+        g.setColour (accent.withAlpha (0.12f + 0.62f * static_cast<float> (i) / points.size()));
         g.fillEllipse (px - 1.2f, py - 1.2f, 2.4f, 2.4f);
     }
 }

@@ -130,7 +130,7 @@ juce::Path XuanPhaseMeter::rotationPath (const xuan::RotationFrame& frame, int c
 }
 void XuanPhaseMeter::paint (juce::Graphics& g)
 {
-    drawPanel (g, getLocalBounds().toFloat(), juce::Colour (0xff30343a));
+    drawPanel (g, getLocalBounds().toFloat(), juce::Colour (0xff14171b));
     g.setColour (foreground); g.setFont (juce::FontOptions (13).withStyle ("bold"));
     g.drawText ("PHASE FIELD", 14, 12, 250, 20, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (9));
