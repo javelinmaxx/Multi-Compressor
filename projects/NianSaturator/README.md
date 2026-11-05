@@ -25,9 +25,11 @@ uses a lightly biased arctangent curve with a DC-blocked residual, at a lower
 drive than the former tanh curve. The split and both saturation modes run at
 4× the host sample rate through a linear-phase FIR
 converter. The converter reports 64 host samples of latency; bypass uses an
-equally delayed dry path. The audio thread sends host-rate samples through a
+equally delayed dry path. If an internal filter or oversampling state becomes
+invalid, the processor resets that state, passes latency-aligned dry audio,
+and fades the wet path back over 10 ms. The audio thread sends host-rate samples through a
 fixed-size queue; the editor computes a 2048-point Hann-windowed spectrum at
 up to 30 Hz without an FFT on the audio callback.
 
 [Editor preview](Previews/nian-saturator.png) · [Processor test report](Tests/Reports/processor.md). Processor tests cover all twelve F bands, bass onset,
-the gentler T curve, Mix, bypass, alias suppression, and scaled editor controls.
+the gentler T curve, Mix, bypass, fault recovery, alias suppression, and scaled editor controls.

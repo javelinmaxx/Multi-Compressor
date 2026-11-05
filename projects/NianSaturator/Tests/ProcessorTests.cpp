@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <complex>
+#include <limits>
 #include <stdexcept>
 struct NianSaturatorTestAccess
 {
@@ -13,6 +14,13 @@ struct NianSaturatorTestAccess
     static float envelope(const NianSaturatorProcessor& p,int slot) { return p.peakEnvelope[size_t(slot)]; }
     static float frequency(const NianSaturatorProcessor& p,int slot) { return p.peakFrequency[size_t(slot)]; }
     static float target(const NianSaturatorProcessor& p,int slot) { return p.peakTarget[size_t(slot)]; }
+    static void poison(NianSaturatorProcessor& p)
+    {
+        p.peakTarget[0]=p.peakEnvelope[0]=1;
+        p.z1[0][0]=std::numeric_limits<float>::quiet_NaN();
+        p.coefficientState[0][1]=std::numeric_limits<float>::quiet_NaN();
+    }
+    static float recovery(const NianSaturatorProcessor& p) { return p.recoveryMix; }
 };
 static void set (NianSaturatorProcessor& p, const char* id, float value)
 { auto* parameter=p.parameters.getParameter(id); parameter->setValueNotifyingHost(parameter->convertTo0to1(value)); }
@@ -212,6 +220,64 @@ int main(int argc,char** argv)
             p.processBlock(audio,midi);
             for(int ch=0;ch<2;++ch) for(int i=0;i<128;++i)
                 if(!std::isfinite(audio.getSample(ch,i)) || std::abs(audio.getSample(ch,i))>4) throw std::runtime_error("automated crossover and mode must remain finite and bounded");
+        }
+        for(const auto rate : {44100.,48000.,96000.,192000.})
+        {
+            NianSaturatorProcessor stressed;
+            set(stressed,"lowDrive",100); set(stressed,"highDrive",100);
+            stressed.prepareToPlay(rate,2048);
+            juce::AudioBuffer<float> signal(2,2048); juce::MidiBuffer empty;
+            double maxOutput=0;
+            for(int block=0;block<150;++block)
+            {
+                const auto count=block%4==0 ? 1 : block%4==1 ? 17 : block%4==2 ? 128 : 2048;
+                signal.setSize(2,count,false,false,true);
+                if(block%3==0) set(stressed,"crossover",block%2==0 ? 80.f : 8000.f);
+                if(block%5==0) set(stressed,"mode",block%2==0 ? 0.f : 1.f);
+                for(int i=0;i<count;++i)
+                {
+                    const auto n=block*2048+i;
+                    const auto sample=float(.8*std::sin(juce::MathConstants<double>::twoPi*53*n/rate)
+                        +.6*std::sin(juce::MathConstants<double>::twoPi*2600*n/rate)
+                        +(i==0 && block%17==0 ? 2.0 : 0.0));
+                    signal.setSample(0,i,sample); signal.setSample(1,i,-sample);
+                }
+                stressed.processBlock(signal,empty);
+                for(int ch=0;ch<2;++ch) for(int i=0;i<count;++i)
+                {
+                    const auto value=double(signal.getSample(ch,i));
+                    if(!std::isfinite(value)) throw std::runtime_error("stress output became non-finite");
+                    maxOutput=std::max(maxOutput,std::abs(value));
+                }
+            }
+            if(maxOutput>20) throw std::runtime_error("stress output spiked excessively");
+        }
+        {
+            NianSaturatorProcessor recovering;
+            set(recovering,"lowDrive",100); set(recovering,"highDrive",100);
+            recovering.prepareToPlay(48000,128);
+            juce::AudioBuffer<float> signal(2,128); juce::MidiBuffer empty;
+            bool detectedFault=false, completedRecovery=false;
+            double recoveredPower=0;
+            for(int block=0;block<50;++block)
+            {
+                for(int i=0;i<128;++i)
+                {
+                    const auto x=float(.2*std::sin(juce::MathConstants<double>::twoPi*700*(block*128+i)/48000));
+                    signal.setSample(0,i,x); signal.setSample(1,i,x);
+                }
+                if(block==15) NianSaturatorTestAccess::poison(recovering);
+                recovering.processBlock(signal,empty);
+                if(block==15) detectedFault=NianSaturatorTestAccess::recovery(recovering)<1;
+                if(block==49) completedRecovery=NianSaturatorTestAccess::recovery(recovering)>.99f;
+                for(int ch=0;ch<2;++ch) for(int i=0;i<128;++i)
+                    if(!std::isfinite(signal.getSample(ch,i)) || std::abs(signal.getSample(ch,i))>4)
+                        throw std::runtime_error("poisoned filter state must not produce a click or sustained silence");
+                if(block>=45) for(int i=0;i<128;++i)
+                    recoveredPower+=double(signal.getSample(0,i))*signal.getSample(0,i);
+            }
+            if(!detectedFault || !completedRecovery || recoveredPower<1)
+                throw std::runtime_error("filter fault must trigger a short dry fallback and recover");
         }
         set(p,"mode",1); set(p,"crossover",1000); set(p,"lowDrive",85); set(p,"highDrive",85);
         for(int block=0;block<40;++block)

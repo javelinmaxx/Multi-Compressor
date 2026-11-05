@@ -16,6 +16,10 @@ processor test are built from the project CMake file.
 - T mode at maximum amounts must change the signal while its 3 kHz output
   remains within 1.05–1.6 times dry RMS and below 0.01 average DC level; its
   second harmonic must be present and its third below 10% of the fundamental.
+- F and T mode are stressed at 44.1, 48, 96, and 192 kHz with changing buffer
+  sizes and rapid crossover/mode automation. An injected non-finite filter
+  state must fall back to dry audio and restore finite, audible output after
+  the 10 ms recovery fade.
 - Mix at 0% must produce latency-aligned dry audio, while 50% must sit midway
   between the dry and fully processed outputs; the spectrum queue receives
   full-rate host samples rather than a decimated waveform.

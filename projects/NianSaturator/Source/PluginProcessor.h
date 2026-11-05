@@ -56,6 +56,7 @@ private:
     int ringPosition = 0, analysisCounter = 0;
     float sampleRate = 48000;
     bool fSuspended = false;
+    float recentInputPeak = 0, recoveryMix = 1;
     void analyse (float crossover);
     void process (juce::AudioBuffer<float>&, bool hostBypass);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NianSaturatorProcessor)

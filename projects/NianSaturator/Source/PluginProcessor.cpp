@@ -19,7 +19,7 @@ juce::AudioProcessorEditor* NianSaturatorProcessor::createEditor() { return new 
 void NianSaturatorProcessor::getStateInformation(juce::MemoryBlock& data) { if(auto xml=parameters.copyState().createXml()) copyXmlToBinary(*xml,data); }
 void NianSaturatorProcessor::setStateInformation(const void* data,int size) { if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName(parameters.state.getType())) parameters.replaceState(juce::ValueTree::fromXml(*xml)); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new NianSaturatorProcessor(); }
-void NianSaturatorProcessor::prepareToPlay(double rate,int) { sampleRate=4.f*float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; tubeDcState={}; peakTarget={}; peakEnvelope={}; ringPosition=analysisCounter=0; fSuspended=false;
+void NianSaturatorProcessor::prepareToPlay(double rate,int) { sampleRate=4.f*float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; tubeDcState={}; peakTarget={}; peakEnvelope={}; ringPosition=analysisCounter=0; fSuspended=false; recentInputPeak=0; recoveryMix=1;
     displaySampleRate.store(sampleRate/4.f,std::memory_order_relaxed);
     for (auto& converter : converters) converter.prepare();
     dryHistory = {}; dryPosition = 0;
@@ -128,6 +128,8 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
     const auto peakAttackStep=1-std::exp(-1.f/(.004f*sampleRate));
     const auto peakReleaseStep=1-std::exp(-1.f/(.025f*sampleRate));
     const auto dcStep=1-std::exp(-juce::MathConstants<float>::twoPi*8.f/sampleRate);
+    const auto inputPeakDecay=std::exp(-1.f/(.1f*sampleRate*.25f));
+    const auto recoveryStep=1.f/(.01f*sampleRate*.25f);
     struct Coefficients { float b0, a1, a2; };
     std::array<Coefficients,fBandCount> coefficients {};
     const auto updateCoefficients = [&]
@@ -159,6 +161,7 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
         {
             const auto index=size_t(ch);
             auto input=b.getSample(ch,i); if(!std::isfinite(input)) input=0;
+            recentInputPeak=std::max(std::abs(input),recentInputPeak*inputPeakDecay);
             dry[index]=dryHistory[index][size_t(dryPosition)];
             dryHistory[index][size_t(dryPosition)]=input;
             frames[index]=converters[index].upsample(input);
@@ -211,12 +214,44 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
         }
         const auto bypassAmount=bypassBlend.getNextValue();
         const auto mix=mixBlend.getNextValue();
+        std::array<float,2> wet {};
+        bool fault=false;
+        const auto wetLimit=std::max(8.f,8.f*recentInputPeak);
         for(int ch=0;ch<b.getNumChannels() && ch<2;++ch)
         {
             const auto index=size_t(ch);
-            const auto wet=converters[index].downsample(frames[index]);
-            const auto mixed=(dry[index]+mix*(wet-dry[index]))*gain;
-            const auto delta=(1-bypassAmount)*(mixed-dry[index]);
+            for(const auto value : frames[index])
+                if(!std::isfinite(value) || std::abs(value)>wetLimit) fault=true;
+            if(!fault)
+            {
+                wet[index]=converters[index].downsample(frames[index]);
+                if(!std::isfinite(wet[index]) || std::abs(wet[index])>wetLimit) fault=true;
+            }
+        }
+        if(fault)
+        {
+            // A poisoned IIR or oversampling history would otherwise produce
+            // non-finite output indefinitely. Fall back to latency-aligned dry
+            // audio and fade the rebuilt processing path back in.
+            for(auto& converter : converters) converter.reset();
+            lowState={}; z1={}; z2={}; tubeDcState={}; peakTarget={}; peakEnvelope={}; coefficientState={};
+            const auto maximum=std::min(20000.f,sampleRate*.1125f);
+            for(int slot=0;slot<fBandCount;++slot)
+                if(!std::isfinite(peakFrequency[size_t(slot)]) || peakFrequency[size_t(slot)]<40.f || peakFrequency[size_t(slot)]>maximum)
+                {
+                    const auto lo=slot<6 ? 40.f : crossover;
+                    const auto hi=slot<6 ? crossover : maximum;
+                    peakFrequency[size_t(slot)]=lo*std::pow(hi/lo,(float(slot%6)+.5f)/6.f);
+                }
+            updateCoefficients();
+            recoveryMix=0;
+        }
+        else recoveryMix=std::min(1.f,recoveryMix+recoveryStep);
+        for(int ch=0;ch<b.getNumChannels() && ch<2;++ch)
+        {
+            const auto index=size_t(ch);
+            const auto mixed=(dry[index]+mix*(wet[index]-dry[index]))*gain;
+            const auto delta=fault ? 0.f : recoveryMix*(1-bypassAmount)*(mixed-dry[index]);
             b.setSample(ch,i,dry[index]+delta);
             if(ch==0 && i<writeSize1+writeSize2)
             {
