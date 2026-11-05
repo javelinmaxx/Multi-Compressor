@@ -4,7 +4,7 @@ Nine J-SONIC audio plugins for dynamics, de-essing, stereo width, overdrive,
 transformer coloration, phase alignment, and adaptive reverb/delay. Built with JUCE and C++17, with VST3 and Standalone
 targets on Windows, macOS, and Linux, plus Audio Units on macOS.
 
-Collection version: **0.5.0**. Hover over any plugin's title to see its developer
+Collection version: **0.7.5**. Hover over any plugin's title to see its developer
 (**J-Sonic Team**), release year (**2026**), and version. The shared release
 version is defined in [`projects/PluginVersion.cmake`](projects/PluginVersion.cmake).
 

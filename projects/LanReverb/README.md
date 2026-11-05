@@ -1,7 +1,7 @@
 # Lan Reverb
 
 A stereo reverb/delay for long, wide tails and high wet mixes, with automatic
-feedback resonance control. Version **0.5.0**, by **J-Sonic Team**, **2026**.
+feedback resonance control. Version **0.7.5**, by **J-Sonic Team**, **2026**.
 
 ![Native editor](Previews/lan-reverb.png)
 

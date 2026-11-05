@@ -2,7 +2,7 @@
 
 | Control | Tooltip |
 | --- | --- |
-| Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.5.0 |
+| Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
 | Low Phase | Rotates frequencies below the crossover, with positive values moving early and negative values moving late relative to the compensated reference. |
 | Crossover | Sets the smooth transition between the low and high manual phase controls. |
 | High Phase | Rotates frequencies above the crossover, with positive values moving early and negative values moving late relative to the compensated reference. |

@@ -6,6 +6,7 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 
 import matplotlib
@@ -173,9 +174,11 @@ def main():
     rows = "\n".join(f"| {label} | {energy:.8g} | {change:+.2f} dB |" for label,energy,change in zip(labels,energies,changes))
     grain = load(source,"shimmer-grains.csv")
     grain_rows = "\n".join(f"| {r['rate']/1000:g} | {r['input_hz']:.1f} | {r['target_hz']:.1f} | {r['peak_hz']:.2f} | {r['error_cents']:+.2f} |" for r in grain)
+    version_file = Path(__file__).resolve().parents[2]/"PluginVersion.cmake"
+    version = re.search(r'set\(J_SONIC_PLUGIN_VERSION\s+"([^"]+)"\)', version_file.read_text()).group(1)
     text = f'''# Lan Reverb engineering measurements
 
-Version 0.5.0. These are reproducible synthetic engineering tests, not listening results or a claim that every resonance can be removed.
+Version {version}. These are reproducible synthetic engineering tests, not listening results or a claim that every resonance can be removed.
 
 ## Source protection and feedback-only correction
 

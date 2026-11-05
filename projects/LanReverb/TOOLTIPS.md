@@ -19,4 +19,4 @@
 | Output | Adjusts the final output level after the dry and wet signals are mixed. |
 | Auto | Compares spectral peaks and frequency decay rates to guide input-protected feedback correction; Saves CPU when Off. |
 | Bypass | Bypasses the output while keeping the reverb and resonance analysis running for a smooth return. |
-| Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.5.0 |
+| Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
