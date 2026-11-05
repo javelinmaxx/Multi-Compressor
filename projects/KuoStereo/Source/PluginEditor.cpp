@@ -6,12 +6,14 @@
 namespace
 {
 const auto background = juce::Colour (0xff100e12);
-const auto panel = juce::Colour (0xff23483f);
-const auto inset = juce::Colour (0xff0c1e1b);
+const auto panel = juce::Colour (0xff8cb9d3);
+const auto inset = juce::Colour (0xff0f2e42);
 const auto foreground = juce::Colour (0xffeee9e2);
-const auto secondary = juce::Colour (0xffc4d6cb);
-const auto accent = juce::Colour (0xff8de2c0);
-const auto grid = juce::Colour (0xff30574e);
+const auto secondary = juce::Colour (0xff183447);
+const auto headerSecondary = juce::Colour (0xffc8dfeb);
+const auto accent = juce::Colour (0xff22536e);
+const auto scopeAccent = juce::Colour (0xff9ddbf2);
+const auto grid = juce::Colour (0xff668da3);
 
 const juce::Image& analogGrain()
 {
@@ -86,8 +88,8 @@ void KuoLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int widt
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff31564d), dial.getTopLeft(),
-                                            juce::Colour (0xff182e2b), dial.getBottomRight(), false));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffd6eef7), dial.getTopLeft(),
+                                            juce::Colour (0xffa9d0e5), dial.getBottomRight(), false));
     g.fillEllipse (dial);
     g.setColour (secondary.withAlpha (0.25f));
     g.drawEllipse (dial.reduced (2), 0.7f);
@@ -110,7 +112,7 @@ void KuoLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int widt
     const auto centre = static_cast<float> (x + width / 2);
     const auto top = static_cast<float> (y + 5);
     const auto bottom = static_cast<float> (y + height - 5);
-    g.setColour (grid.brighter (0.3f));
+    g.setColour (accent.withAlpha (0.4f));
     g.fillRoundedRectangle (centre - 2.0f, top, 4.0f, bottom - top, 2.0f);
     g.setColour (accent.withAlpha (0.72f));
     g.fillRoundedRectangle (centre - 1.0f, sliderPos, 2.0f,
@@ -123,12 +125,13 @@ void KuoBypassButton::paintButton (juce::Graphics& g, bool highlighted, bool dow
 {
     const auto bounds = getLocalBounds().toFloat().reduced (1);
     const auto active = getToggleState();
-    const auto face = active ? panel.interpolatedWith (accent.darker (0.5f), 0.6f) : panel;
+    const auto face = active ? juce::Colour (0xff244b63).interpolatedWith (scopeAccent.darker (0.5f), 0.25f)
+                             : juce::Colour (0xff244b63);
     g.setColour (down ? face.darker (0.1f) : highlighted ? face.brighter (0.06f) : face);
     g.fillRoundedRectangle (bounds, 6);
-    g.setColour (active ? accent : secondary.withAlpha (0.7f));
+    g.setColour (active ? scopeAccent : headerSecondary.withAlpha (0.7f));
     g.drawRoundedRectangle (bounds, 6, 1.0f);
-    g.setColour (active ? foreground : secondary);
+    g.setColour (active ? foreground : headerSecondary);
     g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
     g.drawText ("BYPASS", bounds.toNearestInt(), juce::Justification::centred);
 }
@@ -139,7 +142,7 @@ KuoStereoEditor::KuoStereoEditor (KuoStereoProcessor& p)
     addAndMakeVisible (titleHint);
     setOpaque (true);
     setLookAndFeel (&look);
-    look.setColour (juce::TooltipWindow::backgroundColourId, panel);
+    look.setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (0xff244b63));
     look.setColour (juce::TooltipWindow::textColourId, foreground);
     look.setColour (juce::TooltipWindow::outlineColourId, grid);
     addAndMakeVisible (bypass);
@@ -169,7 +172,7 @@ KuoStereoEditor::KuoStereoEditor (KuoStereoProcessor& p)
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 104, 17);
         slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        slider.setColour (juce::Slider::textBoxTextColourId, foreground);
+        slider.setColour (juce::Slider::textBoxTextColourId, secondary);
         slider.setTextValueSuffix (units[i]);
         slider.setName (names[i]);
         slider.setTitle (names[i]);
@@ -269,7 +272,7 @@ void KuoStereoEditor::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (background.brighter (0.035f), 0, 0,
                                             background.darker (0.13f), 0, designHeight, false));
     g.fillRect (0, 0, designWidth, designHeight);
-    g.setColour (secondary);
+    g.setColour (headerSecondary);
     g.setFont (juce::FontOptions (10.0f));
     g.drawText ("J-SONIC / STEREO FIELD", 24, 20, 260, 18, juce::Justification::centredLeft);
     g.setColour (foreground);
@@ -278,7 +281,7 @@ void KuoStereoEditor::paint (juce::Graphics& g)
     drawPanel (g, { 24, 90, 500, 150 });
     drawPanel (g, { 24, 250, 500, 150 });
     drawPanel (g, { 24, 410, 500, 287 });
-    g.setColour (foreground);
+    g.setColour (secondary);
     g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
     g.drawText ("SMART HAAS", 38, 102, 250, 20, juce::Justification::centredLeft);
     g.drawText ("VELVET WIDTH", 38, 262, 250, 20, juce::Justification::centredLeft);
@@ -318,7 +321,7 @@ void KuoStereoEditor::paintScope (juce::Graphics& g, int band, juce::Rectangle<f
     g.setColour (grid);
     g.drawRoundedRectangle (bounds, 5, 1);
     const auto centre = bounds.getCentre();
-    g.setColour (secondary.withAlpha (0.15f));
+    g.setColour (scopeAccent.withAlpha (0.22f));
     g.drawVerticalLine (juce::roundToInt (centre.x), bounds.getY() + 8, bounds.getBottom() - 8);
     g.drawHorizontalLine (juce::roundToInt (centre.y), bounds.getX() + 8, bounds.getRight() - 8);
     g.drawLine (bounds.getX() + 12, bounds.getBottom() - 12, bounds.getRight() - 12,
@@ -345,7 +348,7 @@ void KuoStereoEditor::paintScope (juce::Graphics& g, int band, juce::Rectangle<f
                                     bounds.getX() + 5, bounds.getRight() - 5);
         const auto py = std::clamp (centre.y - (point.x + point.y) * scale * visualGain * 0.5f,
                                     bounds.getY() + 5, bounds.getBottom() - 5);
-        g.setColour (accent.withAlpha (0.12f + 0.62f * static_cast<float> (i) / points.size()));
+        g.setColour (scopeAccent.withAlpha (0.12f + 0.62f * static_cast<float> (i) / points.size()));
         g.fillEllipse (px - 1.2f, py - 1.2f, 2.4f, 2.4f);
     }
 }
