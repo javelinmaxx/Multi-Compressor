@@ -19,11 +19,14 @@ juce::AudioProcessorEditor* NianSaturatorProcessor::createEditor() { return new 
 void NianSaturatorProcessor::getStateInformation(juce::MemoryBlock& data) { if(auto xml=parameters.copyState().createXml()) copyXmlToBinary(*xml,data); }
 void NianSaturatorProcessor::setStateInformation(const void* data,int size) { if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName(parameters.state.getType())) parameters.replaceState(juce::ValueTree::fromXml(*xml)); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new NianSaturatorProcessor(); }
-void NianSaturatorProcessor::prepareToPlay(double rate,int) { sampleRate=4.f*float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; tubeDcState={}; peakTarget={}; peakEnvelope={}; ringPosition=analysisCounter=0; fSuspended=false; recentInputPeak=0; recoveryMix=1;
+void NianSaturatorProcessor::prepareToPlay(double rate,int) { sampleRate=4.f*float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; tubeDcState={}; tubeRmsState={}; tubeGainState={{{1,1},{1,1}}}; peakTarget={}; peakEnvelope={}; ringPosition=analysisCounter=0; fSuspended=tubeSuspended=false; recentInputPeak=0; recoveryMix=1;
     displaySampleRate.store(sampleRate/4.f,std::memory_order_relaxed);
     for (auto& converter : converters) converter.prepare();
     dryHistory = {}; dryPosition = 0;
-    displayFifo.reset(); setLatencySamples (latency);
+    lookaheadSamples=std::max(1,juce::roundToInt(sampleRate*.25f*.005f));
+    for(auto& channel : lookaheadHistory) channel.assign(size_t(lookaheadSamples),0.f);
+    lookaheadPosition=0;
+    displayFifo.reset(); setLatencySamples(latency+lookaheadSamples);
     for(size_t i=0;i<window.size();++i)
         window[i]=.5f-.5f*std::cos(juce::MathConstants<float>::twoPi*float(i)/float(window.size()-1));
     crossoverAlpha.reset(sampleRate,.02); modeBlend.reset(sampleRate,.02); bypassBlend.reset(sampleRate/4.f,.02); mixBlend.reset(sampleRate/4.f,.02);
@@ -128,6 +131,9 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
     const auto peakAttackStep=1-std::exp(-1.f/(.004f*sampleRate));
     const auto peakReleaseStep=1-std::exp(-1.f/(.025f*sampleRate));
     const auto dcStep=1-std::exp(-juce::MathConstants<float>::twoPi*8.f/sampleRate);
+    const auto tubeDetectorStep=1-std::exp(-1.f/(.005f*sampleRate));
+    const auto tubeAttackStep=1-std::exp(-1.f/(.002f*sampleRate));
+    const auto tubeReleaseStep=1-std::exp(-1.f/(.075f*sampleRate));
     const auto inputPeakDecay=std::exp(-1.f/(.1f*sampleRate*.25f));
     const auto recoveryStep=1.f/(.01f*sampleRate*.25f);
     struct Coefficients { float b0, a1, a2; };
@@ -162,10 +168,13 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
             const auto index=size_t(ch);
             auto input=b.getSample(ch,i); if(!std::isfinite(input)) input=0;
             recentInputPeak=std::max(std::abs(input),recentInputPeak*inputPeakDecay);
+            const auto delayed=lookaheadHistory[index][size_t(lookaheadPosition)];
+            lookaheadHistory[index][size_t(lookaheadPosition)]=input;
             dry[index]=dryHistory[index][size_t(dryPosition)];
-            dryHistory[index][size_t(dryPosition)]=input;
-            frames[index]=converters[index].upsample(input);
+            dryHistory[index][size_t(dryPosition)]=delayed;
+            frames[index]=converters[index].upsample(delayed);
         }
+        lookaheadPosition=(lookaheadPosition+1)%lookaheadSamples;
         for(int phase=0;phase<4;++phase)
         {
             const auto alpha=crossoverAlpha.getNextValue(), mode=modeBlend.getNextValue();
@@ -173,6 +182,11 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
             {
                 peakTarget={}; peakEnvelope={}; z1={}; z2={}; fSuspended=true;
             }
+            if(peakMode && mode<=.0001f && !tubeSuspended)
+            {
+                tubeDcState={}; tubeRmsState={}; tubeGainState={{{1,1},{1,1}}}; tubeSuspended=true;
+            }
+            if(!peakMode) tubeSuspended=false;
             for(size_t band=0;band<coefficients.size() && !fSuspended;++band)
             {
                 const auto target=coefficients[band];
@@ -200,14 +214,23 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
                         peakDelta+=filtered*amount[side]*2.f*peakEnvelope[band];
                     }
                 float tube=x;
-                if(mode>0)
+                if(mode>0 && !tubeSuspended)
                     for(size_t band=0;band<2;++band)
                     {
+                        // As in a feed-forward compressor, the band level
+                        // controls only its added harmonic residual. This
+                        // softens loud attacks without compressing dry audio.
+                        auto& rms=tubeRmsState[index][band];
+                        rms+=tubeDetectorStep*(bands[band]*bands[band]-rms);
+                        const auto level=std::sqrt(std::max(0.f,rms));
+                        const auto targetGain=level>.18f ? std::sqrt(.18f/level) : 1.f;
+                        auto& dynamicGain=tubeGainState[index][band];
+                        dynamicGain+=(targetGain<dynamicGain ? tubeAttackStep : tubeReleaseStep)*(targetGain-dynamicGain);
                         const auto shaped=(std::atan(drives[band]*(bands[band]+biases[band]))-centers[band])*normalizers[band];
                         const auto residual=shaped-bands[band];
                         auto& dc=tubeDcState[index][band];
                         dc+=dcStep*(residual-dc);
-                        tube+=.45f*amount[band]*(residual-dc);
+                        tube+=.45f*amount[band]*dynamicGain*(residual-dc);
                     }
                 frames[index][size_t(phase)]=x+peakDelta+mode*(tube-x-peakDelta);
             }
@@ -234,7 +257,7 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
             // non-finite output indefinitely. Fall back to latency-aligned dry
             // audio and fade the rebuilt processing path back in.
             for(auto& converter : converters) converter.reset();
-            lowState={}; z1={}; z2={}; tubeDcState={}; peakTarget={}; peakEnvelope={}; coefficientState={};
+            lowState={}; z1={}; z2={}; tubeDcState={}; tubeRmsState={}; tubeGainState={{{1,1},{1,1}}}; peakTarget={}; peakEnvelope={}; coefficientState={}; tubeSuspended=false;
             const auto maximum=std::min(20000.f,sampleRate*.1125f);
             for(int slot=0;slot<fBandCount;++slot)
                 if(!std::isfinite(peakFrequency[size_t(slot)]) || peakFrequency[size_t(slot)]<40.f || peakFrequency[size_t(slot)]>maximum)

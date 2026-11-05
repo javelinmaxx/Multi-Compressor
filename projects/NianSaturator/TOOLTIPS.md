@@ -2,7 +2,7 @@
 
 | Control | Hint |
 |---|---|
-| Mode | Selects twelve-band peak enhancement or gentle tube-style drive. |
+| Mode | Selects twelve-band peak enhancement or dynamically softened tube-style drive. |
 | Crossover | Sets the frequency where the low and high bands meet. |
 | Low | Sets the low-band peak enhancement or drive. |
 | High | Sets the high-band peak enhancement or drive. |

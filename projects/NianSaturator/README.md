@@ -20,12 +20,18 @@ Hann-windowed host-rate spectrum, allowing useful resolution in the bass. Six
 logarithmic cells below the crossover and six above it each select one prominent
 peak and add a Q=24 bandpass. The detector refines peaks between FFT bins;
 band gain rises in 4 ms and falls in 25 ms, while retuning takes 5 ms.
-Crossover, mode, Mix and bypass transitions are smoothed over 20 ms. T mode
-uses a lightly biased arctangent curve with a DC-blocked residual, at a lower
-drive than the former tanh curve. The split and both saturation modes run at
-4× the host sample rate through a linear-phase FIR
-converter. The converter reports 64 host samples of latency; bypass uses an
-equally delayed dry path. If an internal filter or oversampling state becomes
+Crossover, mode, Mix and bypass transitions are smoothed over 20 ms. The F
+detector reads the live input while the audio path is delayed by 5 ms, so its
+peak decisions lead the sound reaching the filters. T mode uses a lightly
+biased arctangent curve with a DC-blocked residual; a feed-forward band-level
+detector gently reduces only the added harmonic signal on loud notes, with a
+5 ms detector, 2 ms attack, and 75 ms release. The split and both saturation
+modes run at 4× the host sample rate through a linear-phase FIR converter.
+This original residual-control design takes conceptual inspiration from
+[Roth-AIR's high-band saturation and compression](https://github.com/danielrothmann/Roth-AIR);
+it does not reuse Roth-AIR source code.
+The converter adds 64 host samples of latency beyond the 5 ms lookahead;
+bypass uses an equally delayed dry path. If an internal filter or oversampling state becomes
 invalid, the processor resets that state, passes latency-aligned dry audio,
 and fades the wet path back over 10 ms. The audio thread sends host-rate samples through a
 fixed-size queue; the editor computes a 2048-point Hann-windowed spectrum at

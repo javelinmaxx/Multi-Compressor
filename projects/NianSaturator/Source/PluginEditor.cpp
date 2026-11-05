@@ -46,7 +46,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
     mode.setColour (juce::ComboBox::outlineColourId, grid);
     mode.setColour (juce::ComboBox::arrowColourId, amber);
     mode.addItem ("F / PEAK",1); mode.addItem ("T / DRIVE",2);
-    mode.setTooltip ("Selects twelve-band peak enhancement or gentle tube-style drive.");
+    mode.setTooltip ("Selects twelve-band peak enhancement or dynamically softened tube-style drive.");
     addAndMakeVisible (mode); modeAttachment = std::make_unique<State::ComboBoxAttachment> (p.parameters,"mode",mode);
     editorScaling::enable (*this, designWidth, designHeight);
     gpu.attach (*this);

@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_dsp/juce_dsp.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <vector>
 #include "../../YinyangCompressor/Source/Oversampling4x.h"
 
 class NianSaturatorProcessor final : public juce::AudioProcessor
@@ -45,17 +46,20 @@ private:
     std::array<float,fBandCount> peakFrequency {}, peakTarget {}, peakEnvelope {};
     std::array<std::array<float,3>,fBandCount> coefficientState {};
     std::array<std::array<float,2>,2> tubeDcState {};
+    std::array<std::array<float,2>,2> tubeRmsState {}, tubeGainState {};
     juce::SmoothedValue<float> crossoverAlpha, modeBlend, bypassBlend, mixBlend;
     std::array<character::Oversampling4x, 2> converters;
     static constexpr int latency = character::Oversampling4x::latencySamples;
     std::array<std::array<float, latency>, 2> dryHistory {};
     int dryPosition = 0;
+    std::array<std::vector<float>, 2> lookaheadHistory;
+    int lookaheadSamples = 0, lookaheadPosition = 0;
     juce::AbstractFifo displayFifo { 16384 };
     std::array<DisplaySample, 16384> displayQueue {};
     std::atomic<float> displaySampleRate { 48000.f };
     int ringPosition = 0, analysisCounter = 0;
     float sampleRate = 48000;
-    bool fSuspended = false;
+    bool fSuspended = false, tubeSuspended = false;
     float recentInputPeak = 0, recoveryMix = 1;
     void analyse (float crossover);
     void process (juce::AudioBuffer<float>&, bool hostBypass);
