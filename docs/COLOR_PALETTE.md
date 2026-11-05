@@ -9,4 +9,4 @@ This follows [Material's color-role guidance](https://github.com/material-compon
 | Zao Drive | Vivid orange `#A94808` | `#FFF1DF` | Pale gold `#FFEFAD` | 5.22:1 | 5.03:1 |
 | Kuo Stereo / Velvet | Faint blue `#8CB9D3` | Navy `#183447` | Deep blue `#22536E` | 6.17:1 | 3.95:1 |
 
-Both Kuo editors use a light knob face and dark marks so the controls remain legible on the faint blue panel. Kuo Stereo keeps a dark sound-field inset with lighter blue traces. Zao keeps a darker knob face with a pale gold active arc. Xuan's green/red early/late meter colors and separate left/right trace colors retain their signal meaning.
+Both Kuo editors use a light knob face and dark marks so the controls remain legible on the faint blue panel. Kuo Stereo keeps a dark sound-field inset with lighter blue traces. Zao uses white knob faces, dark pointers, and a pale gold active arc. Xuan's green/red early/late meter colors and separate left/right trace colors retain their signal meaning.

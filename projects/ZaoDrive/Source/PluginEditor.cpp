@@ -86,12 +86,12 @@ void ZaoLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int widt
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffa45b25), dial.getTopLeft(),
-                                            juce::Colour (0xff492618), dial.getBottomRight(), false));
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xfffffff8), dial.getTopLeft(),
+                                            juce::Colour (0xffe9e3d9), dial.getBottomRight(), false));
     g.fillEllipse (dial);
-    g.setColour (secondary.withAlpha (0.25f));
+    g.setColour (juce::Colour (0xff6c3615).withAlpha (0.45f));
     g.drawEllipse (dial.reduced (2), 0.7f);
-    g.setColour (accent);
+    g.setColour (juce::Colour (0xff6c3615));
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,
                 centre.x + std::sin (angle) * outer, centre.y - std::cos (angle) * outer, 1.8f);
