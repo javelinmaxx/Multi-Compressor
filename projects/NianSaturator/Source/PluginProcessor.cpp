@@ -122,11 +122,24 @@ NianSaturatorProcessor::AnalysisResult NianSaturatorProcessor::analyse(const Ana
         const auto cell=slot%6;
         const auto lo=sideLo*std::pow(ratio,float(cell)/6.f);
         const auto hi=sideLo*std::pow(ratio,float(cell+1)/6.f);
-        const auto start=std::max(1,int(std::ceil(lo*size/analysisRate)));
+        // Include the bin just below the lower edge so a sub-40 Hz local peak
+        // cannot masquerade as a valid first-band peak through FFT leakage.
+        const auto start=std::max(1,int(std::floor(lo*size/analysisRate)));
         const auto end=std::min(size/2-1,int(std::ceil(hi*size/analysisRate))-1);
         float best=0, selected=0;
         for(int bin=start;bin<=end;++bin)
         {
+            if(spectrum[size_t(bin)]<=spectrum[size_t(bin-1)]
+               || spectrum[size_t(bin)]<spectrum[size_t(bin+1)]) continue;
+            const auto left=spectrum[size_t(bin-1)], center=spectrum[size_t(bin)], right=spectrum[size_t(bin+1)];
+            const auto curvature=left-2*center+right;
+            const auto peakOffset=std::abs(curvature)>1.e-6f ? std::clamp(.5f*(left-right)/curvature,-.5f,.5f) : 0.f;
+            const auto candidate=(float(bin)+peakOffset)*analysisRate/size;
+            // Interpolation near DC is biased upward when the FFT contains
+            // fewer than two periods. Leave a small bin-dependent guard so
+            // sub-40 Hz tones stay excluded at high host sample rates too.
+            const auto minimum=slot==0 ? lo+.08f*analysisRate/size : lo;
+            if(candidate<minimum || candidate>=hi) continue;
             float floor=0; int neighbors=0;
             for(int offset=-5;offset<=5;++offset)
                 if(std::abs(offset)>1 && bin+offset>0 && bin+offset<size/2)
@@ -138,14 +151,11 @@ NianSaturatorProcessor::AnalysisResult NianSaturatorProcessor::analyse(const Ana
             if(score>best)
             {
                 best=score;
-                const auto left=spectrum[size_t(bin-1)], center=spectrum[size_t(bin)], right=spectrum[size_t(bin+1)];
-                const auto curvature=left-2*center+right;
-                const auto offset=std::abs(curvature)>1.e-6f ? std::clamp(.5f*(left-right)/curvature,-.5f,.5f) : 0.f;
-                selected=(float(bin)+offset)*analysisRate/size;
+                selected=candidate;
             }
         }
         if(best>1.e-3f)
-        { result.frequency[size_t(slot)]=std::clamp(selected,lo,hi); result.target[size_t(slot)]=1; }
+        { result.frequency[size_t(slot)]=selected; result.target[size_t(slot)]=1; }
     }
     return result;
 }
@@ -182,7 +192,7 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
     mixBlend.setTargetValue(std::clamp(get("mix")*.01f,0.f,1.f));
     int writeStart1,writeSize1,writeStart2,writeSize2;
     displayFifo.prepareToWrite(b.getNumSamples(),writeStart1,writeSize1,writeStart2,writeSize2);
-    const auto coefficientStep=1-std::exp(-1.f/(.005f*sampleRate));
+    const auto coefficientStep=1-std::exp(-1.0/(.005*double(sampleRate)));
     const auto peakAttackStep=1-std::exp(-1.f/(.001f*sampleRate));
     const auto peakReleaseStep=1-std::exp(-1.f/(.006f*sampleRate));
     const auto peakHold=std::max(1,juce::roundToInt(.002f*sampleRate));
@@ -196,16 +206,16 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
     const auto tubeReleaseStep=1-std::exp(-1.f/(.075f*sampleRate));
     const auto inputPeakDecay=std::exp(-1.f/(.1f*sampleRate*.25f));
     const auto recoveryStep=1.f/(.01f*sampleRate*.25f);
-    struct Coefficients { float b0, a1, a2; };
+    struct Coefficients { double b0, a1, a2; };
     std::array<Coefficients,fBandCount> coefficients {};
     const auto updateCoefficients = [&]
     {
         for(size_t band=0;band<coefficients.size();++band)
         {
             const auto frequency=std::clamp(peakFrequency[band],40.f,std::min(20000.f,sampleRate*.1125f));
-            const auto omega=juce::MathConstants<float>::twoPi*frequency/sampleRate;
-            const auto a=std::sin(omega)/48.f, inv=1.f/(1.f+a);
-            coefficients[band]={a*inv,-2*std::cos(omega)*inv,(1-a)*inv};
+            const auto omega=juce::MathConstants<double>::twoPi*double(frequency)/double(sampleRate);
+            const auto a=std::sin(omega)/48.0, inv=1.0/(1.0+a);
+            coefficients[band]={a*inv,-2.0*std::cos(omega)*inv,(1.0-a)*inv};
             if(peakEnvelope[band]<1.e-4f)
                 coefficientState[band]={coefficients[band].b0,coefficients[band].a1,coefficients[band].a2};
         }
@@ -343,7 +353,10 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
                         const auto filtered=c[0]*bands[side]+z1[index][band];
                         z1[index][band]=-c[1]*filtered+z2[index][band];
                         z2[index][band]=-c[0]*bands[side]-c[2]*filtered;
-                        peakDelta+=filtered*amount[side]*2.f*peakEnvelope[band];
+                        // A unity-gain bandpass plus this residual is at most
+                        // +6 dB for one fully engaged, in-phase F band.
+                        constexpr auto maxBandDeltaGain=0.9952623f; // 10^(6/20) - 1
+                        peakDelta+=filtered*amount[side]*maxBandDeltaGain*peakEnvelope[band];
                     }
                 float tube=x;
                 if(mode>0 && !tubeSuspended)

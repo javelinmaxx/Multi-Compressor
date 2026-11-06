@@ -52,7 +52,7 @@ private:
     std::array<int,fBandCount> recentPeakSamples {};
     std::array<float,fBandCount> pendingPeakFrequency {};
     std::array<bool,fBandCount> retuning {};
-    std::array<std::array<float,3>,fBandCount> coefficientState {};
+    std::array<std::array<double,3>,fBandCount> coefficientState {};
     std::array<std::array<float,2>,2> tubeDcState {};
     std::array<std::array<float,2>,2> tubeRmsState {}, tubeGainState {};
     juce::SmoothedValue<float> crossoverAlpha, modeBlend, bypassBlend, mixBlend;

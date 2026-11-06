@@ -5,6 +5,7 @@
 #include <complex>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 struct NianSaturatorTestAccess
 {
     static int active(const NianSaturatorProcessor& p)
@@ -24,6 +25,24 @@ struct NianSaturatorTestAccess
     static float recovery(const NianSaturatorProcessor& p) { return p.recoveryMix; }
     static float tubeGain(const NianSaturatorProcessor& p,int channel,int band) { return p.tubeGainState[size_t(channel)][size_t(band)]; }
     static int lookahead(const NianSaturatorProcessor& p) { return p.lookaheadSamples; }
+    static std::pair<float,float> firstBandForTone(NianSaturatorProcessor& p,float hz,float rate)
+    {
+        NianSaturatorProcessor::AnalysisJob job;
+        job.rate=rate; job.crossover=1000;
+        for(size_t i=0;i<job.samples.size();++i)
+            job.samples[i]=.2f*std::sin(juce::MathConstants<float>::twoPi*hz*float(i)/job.rate);
+        const auto result=p.analyse(job);
+        return {result.target[0],result.frequency[0]};
+    }
+    static void holdBandForGainTest(NianSaturatorProcessor& p,int slot,float hz)
+    {
+        p.stopAnalysisWorker();
+        const auto index=size_t(slot);
+        p.peakFrequency[index]=hz;
+        p.peakTarget[index]=p.peakEnvelope[index]=1.f;
+        p.peakHoldSamples[index]=1000000;
+        p.onsetRefractory=1000000;
+    }
 };
 static void set (NianSaturatorProcessor& p, const char* id, float value)
 { auto* parameter=p.parameters.getParameter(id); parameter->setValueNotifyingHost(parameter->convertTo0to1(value)); }
@@ -35,6 +54,42 @@ int main(int argc,char** argv)
         NianSaturatorProcessor p; set(p,"lowDrive",0); set(p,"highDrive",0); p.prepareToPlay(48000,128);
         if(NianSaturatorTestAccess::lookahead(p)!=240 || p.getLatencySamples()!=304)
             throw std::runtime_error("48 kHz latency must include 5 ms lookahead and 64 samples of converter delay");
+        for(const auto rate : {44100.f,48000.f,96000.f,192000.f})
+        {
+            for(const auto hz : {25.f,35.f,39.f,39.9f})
+                if(NianSaturatorTestAccess::firstBandForTone(p,hz,rate).first>.5f)
+                    throw std::runtime_error("F analysis must reject tones below 40 Hz");
+            for(const auto hz : {45.f,55.f})
+            {
+                const auto [target,frequency]=NianSaturatorTestAccess::firstBandForTone(p,hz,rate);
+                if(target<.5f || frequency<40.f)
+                    throw std::runtime_error("F analysis must retain peaks above 40 Hz");
+            }
+        }
+        {
+            NianSaturatorProcessor capped;
+            set(capped,"crossover",1000); set(capped,"lowDrive",100); set(capped,"highDrive",0);
+            capped.prepareToPlay(48000,128);
+            NianSaturatorTestAccess::holdBandForGainTest(capped,0,55.f);
+            juce::AudioBuffer<float> tone(2,128); juce::MidiBuffer empty;
+            double inputPower=0,outputPower=0;
+            for(int block=0;block<220;++block)
+            {
+                for(int i=0;i<128;++i)
+                {
+                    const auto x=.1f*std::sin(juce::MathConstants<float>::twoPi*55.f*float(block*128+i)/48000.f);
+                    tone.setSample(0,i,x); tone.setSample(1,i,x);
+                    if(block>=120) inputPower+=double(x)*x;
+                }
+                capped.processBlock(tone,empty);
+                if(block>=120) for(int i=0;i<128;++i)
+                    outputPower+=double(tone.getSample(0,i))*tone.getSample(0,i);
+            }
+            const auto gainDb=10*std::log10(outputPower/inputPower);
+            if(gainDb>6.1 || gainDb<5.0)
+                throw std::runtime_error("one fully engaged F band must be capped at 6 dB (measured "
+                                         +std::to_string(gainDb)+" dB)");
+        }
         {
             NianSaturatorProcessor impulse;
             set(impulse,"lowDrive",0); set(impulse,"highDrive",0); impulse.prepareToPlay(48000,128);
