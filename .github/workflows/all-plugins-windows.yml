@@ -41,6 +41,12 @@ jobs:
           - project: XuanPhase
             product: Xuan Phase
             test_option: XUAN_PHASE_BUILD_TESTS
+          - project: LanReverb
+            product: Lan Reverb
+            test_option: LAN_REVERB_BUILD_TESTS
+          - project: NianSaturator
+            product: Nian Saturator
+            test_option: NIAN_SATURATOR_BUILD_TESTS
     defaults:
       run:
         shell: pwsh
