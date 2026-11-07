@@ -235,7 +235,7 @@ installing by default. See `./build-macos-all.sh --help` for all options.
 
 **Windows — build VST3:** the manual
 [All Plugins - Windows VST3 workflow](https://github.com/javelinmaxx/Multi-Compressor/actions/workflows/all-plugins-windows.yml)
-packages the previous seven plugins, including Xuan Phase; build Lan Reverb with its per-project CMake commands. For a local Yinyang build, use
+builds all nine plugins and packages their VST3 bundles in one versioned suite ZIP. For a local Yinyang build, use
 [`build-windows-vst3.ps1`](build-windows-vst3.ps1) with Visual Studio 2022's C++
 tools. The [build guide](docs/BUILDING.md#windows-vst3) covers local commands,
 workflow artifacts, and installation.

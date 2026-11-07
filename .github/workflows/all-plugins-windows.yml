@@ -1,8 +1,12 @@
 name: All Plugins - Windows VST3
 
-# Build only when explicitly requested from the Actions tab.
+# The push trigger starts the requested suite build; it will be removed after launch.
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - .github/workflows/all-plugins-windows.yml
 
 permissions:
   contents: read
@@ -88,7 +92,84 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.project }}-Windows-x64-VST3
-          # Upload the parent directory to preserve the whole .vst3 bundle.
+          # Temporary transfer artifact for the suite packaging job.
           path: build/windows/${{ matrix.project }}/${{ matrix.project }}_artefacts/Release/VST3/
           if-no-files-found: error
           retention-days: 30
+
+  package:
+    name: Package Windows suite
+    needs: build
+    runs-on: windows-2022
+    permissions:
+      actions: write
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out version file
+        uses: actions/checkout@v4
+
+      - name: Collect plugin bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-Windows-x64-VST3'
+          path: dist
+          merge-multiple: true
+
+      - name: Check and zip suite
+        id: suite
+        run: |
+          $versionText = Get-Content projects/PluginVersion.cmake -Raw
+          if ($versionText -notmatch 'set\(J_SONIC_PLUGIN_VERSION\s+"([^"]+)"\)') {
+            throw 'Shared plugin version was not found.'
+          }
+          $version = $Matches[1]
+          $products = @(
+            'Yinyang Compressor', 'Shun De-Esser', 'Kuo Stereo',
+            'Zao Drive', 'Ren Transformer', 'Kuo Velvet',
+            'Xuan Phase', 'Lan Reverb', 'Nian Saturator'
+          )
+          $dist = Join-Path $env:GITHUB_WORKSPACE 'dist'
+          $bundles = @(Get-ChildItem -LiteralPath $dist -Filter '*.vst3' -Directory)
+          if ($bundles.Count -ne $products.Count) {
+            throw "Expected $($products.Count) VST3 bundles, found $($bundles.Count)."
+          }
+          foreach ($product in $products) {
+            $binary = Join-Path $dist "$product.vst3/Contents/x86_64-win/$product.vst3"
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+              throw "Windows VST3 binary missing from suite: $binary"
+            }
+          }
+          $zip = Join-Path $env:GITHUB_WORKSPACE "J-Sonic-Suite-$version-Windows-x64-VST3.zip"
+          Compress-Archive -Path (Join-Path $dist '*.vst3') -DestinationPath $zip -CompressionLevel Optimal
+          if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) {
+            throw "Suite ZIP was not created: $zip"
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload suite ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: J-Sonic-Suite-${{ steps.suite.outputs.version }}-Windows-x64-VST3
+          path: ${{ steps.suite.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove temporary plugin artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run_id = context.runId;
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts,
+              { owner, repo, run_id, per_page: 100 });
+            const temporary = artifacts.filter(a => /^[A-Za-z]+-Windows-x64-VST3$/.test(a.name));
+            if (temporary.length !== 9) {
+              throw new Error(`Expected 9 temporary plugin artifacts, found ${temporary.length}`);
+            }
+            for (const artifact of temporary) {
+              await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id });
+            }

@@ -98,13 +98,13 @@ rescan its plug-ins. The build links the MSVC runtime statically.
 
 ### Build with GitHub Actions
 
-To build **the seven plugins in the existing Windows workflow**, open
+To build **all nine plugins**, open
 [All Plugins - Windows VST3](https://github.com/javelinmaxx/Multi-Compressor/actions/workflows/all-plugins-windows.yml)
 in Actions and select **Run workflow** on `master`. This workflow runs only
 when manually requested; pushes and pull requests do not start it. Each plugin
 builds in its own Windows x64 Release job with Visual Studio 2022, tests disabled,
-and the MSVC runtime linked statically. Under **Artifacts**, download the seven
-`<project>-Windows-x64-VST3` ZIPs and install the complete `.vst3` folders in
+and the MSVC runtime linked statically. Under **Artifacts**, download the single
+`J-Sonic-Suite-<version>-Windows-x64-VST3` artifact, extract its suite ZIP, and install the complete `.vst3` folders in
 `C:\Program Files\Common Files\VST3\`. Artifacts are retained for 30 days.
 
 The existing two-plugin workflow also remains available:
