@@ -5,6 +5,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <cmath>
 #include "../../YinyangCompressor/Source/Oversampling4x.h"
 
 class NianSaturatorProcessor final : public juce::AudioProcessor
@@ -53,6 +54,23 @@ private:
     std::array<float,fBandCount> pendingPeakFrequency {};
     std::array<bool,fBandCount> retuning {};
     std::array<std::array<double,3>,fBandCount> coefficientState {};
+    struct FDeltaHighPass
+    {
+        double a1 = 0, a2 = 0, a3 = 0, ic1eq = 0, ic2eq = 0;
+        void prepare(double rate) noexcept;
+        void reset() noexcept { ic1eq=ic2eq=0; }
+        float process(float input) noexcept
+        {
+            constexpr auto damping=1.4142135623730951; // Butterworth Q
+            const auto v3=double(input)-ic2eq;
+            const auto v1=a1*ic1eq+a2*v3;
+            const auto v2=ic2eq+a2*ic1eq+a3*v3;
+            ic1eq=2.0*v1-ic1eq;
+            ic2eq=2.0*v2-ic2eq;
+            return static_cast<float>(double(input)-damping*v1-v2);
+        }
+    };
+    std::array<FDeltaHighPass,2> fDeltaHighPass {};
     std::array<std::array<float,2>,2> tubeDcState {};
     std::array<std::array<float,2>,2> tubeRmsState {}, tubeGainState {};
     juce::SmoothedValue<float> crossoverAlpha, modeBlend, bypassBlend, mixBlend;
@@ -86,6 +104,7 @@ private:
     void submitAnalysis(float crossover) noexcept;
     bool takeAnalysis(AnalysisResult& result) noexcept;
     AnalysisResult analyse(const AnalysisJob& job);
+    static void suppressAdjacentLowPeaks(AnalysisResult&,const std::array<float,fBandCount>& scores) noexcept;
     void process (juce::AudioBuffer<float>&, bool hostBypass);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NianSaturatorProcessor)
 };

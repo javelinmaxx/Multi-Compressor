@@ -18,6 +18,10 @@ processor test are built from the project CMake file.
 - Twelve simultaneous tones verify that all six low and six high F cells track
   distinct peaks, while an 88 Hz onset acquires its short band-gain pulse
   without a waveform jump above 0.08.
+- Peak-selection checks reject the weaker of two candidates within two semitones
+  below 500 Hz while retaining separated bass peaks and candidates above 500 Hz.
+  A 40 Hz second-order low cut on the F addition attenuates a 20 Hz test tone
+  while passing a 100 Hz tone; the dry signal is outside this filter path.
 - T mode at maximum amounts must change the signal while its 3 kHz output
   remains within 1.05–1.6 times dry RMS and below 0.01 average DC level; its
   second harmonic must be present and its third below 10% of the fundamental.

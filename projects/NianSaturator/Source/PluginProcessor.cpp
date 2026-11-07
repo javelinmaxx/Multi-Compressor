@@ -1,6 +1,19 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <cmath>
+#include <algorithm>
+#include <numeric>
+
+void NianSaturatorProcessor::FDeltaHighPass::prepare(double rate) noexcept
+{
+    constexpr auto cutoff=40.0;
+    constexpr auto damping=1.4142135623730951;
+    const auto g=std::tan(juce::MathConstants<double>::pi*cutoff/rate);
+    a1=1.0/(1.0+g*(g+damping));
+    a2=g*a1;
+    a3=g*a2;
+    reset();
+}
 
 juce::AudioProcessorValueTreeState::ParameterLayout NianSaturatorProcessor::createParameterLayout()
 {
@@ -24,6 +37,7 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new NianSatura
 void NianSaturatorProcessor::prepareToPlay(double rate,int) { stopAnalysisWorker(); sampleRate=4.f*float(std::isfinite(rate)&&rate>=8000?rate:48000); ring.fill(0); spectrum.fill(0); lowState={}; z1={}; z2={}; coefficientState={}; tubeDcState={}; tubeRmsState={}; tubeGainState={{{1,1},{1,1}}}; peakTarget={}; peakEnvelope={}; peakHoldSamples={}; peakCooldownSamples={}; recentPeakSamples={}; pendingPeakFrequency={}; retuning={}; ringPosition=analysisCounter=0; fSuspended=tubeSuspended=false; recentInputPeak=0; recoveryMix=1; onsetFast=onsetSlow=0; onsetRefractory=0; onsetArmed=true; analysisGeneration=0; lastPeakMode=parameters.getRawParameterValue("mode")->load()<.5f;
     displaySampleRate.store(sampleRate/4.f,std::memory_order_relaxed);
     for (auto& converter : converters) converter.prepare();
+    for (auto& filter : fDeltaHighPass) filter.prepare(sampleRate);
     dryHistory = {}; dryPosition = 0;
     lookaheadSamples=std::max(1,juce::roundToInt(sampleRate*.25f*.005f));
     for(auto& channel : lookaheadHistory) channel.assign(size_t(lookaheadSamples),0.f);
@@ -111,6 +125,7 @@ NianSaturatorProcessor::AnalysisResult NianSaturatorProcessor::analyse(const Ana
     const auto analysisRate=job.rate, crossover=job.crossover;
     AnalysisResult result; result.generation=job.generation; result.crossover=crossover;
     const auto maxFrequency=std::min(20000.f,analysisRate*.45f);
+    std::array<float,fBandCount> scores {};
     spectrum.fill(0);
     for(int i=0;i<size;++i) spectrum[size_t(i)]=job.samples[size_t(i)]*window[size_t(i)];
     fft.performFrequencyOnlyForwardTransform(spectrum.data());
@@ -155,9 +170,44 @@ NianSaturatorProcessor::AnalysisResult NianSaturatorProcessor::analyse(const Ana
             }
         }
         if(best>1.e-3f)
-        { result.frequency[size_t(slot)]=selected; result.target[size_t(slot)]=1; }
+        { result.frequency[size_t(slot)]=selected; result.target[size_t(slot)]=1; scores[size_t(slot)]=best; }
     }
+    suppressAdjacentLowPeaks(result,scores);
     return result;
+}
+
+void NianSaturatorProcessor::suppressAdjacentLowPeaks(AnalysisResult& result,
+                                                       const std::array<float,fBandCount>& scores) noexcept
+{
+    // Neighboring logarithmic cells can select the same bass peak. Keep the
+    // strongest candidate when two selected peaks are within two semitones.
+    constexpr auto minimumRatio=1.122462048f;
+    std::array<int,fBandCount> order {};
+    std::iota(order.begin(),order.end(),0);
+    std::sort(order.begin(),order.end(),[&scores](int a,int b)
+    {
+        if(scores[size_t(a)]>scores[size_t(b)]) return true;
+        if(scores[size_t(a)]<scores[size_t(b)]) return false;
+        return a<b;
+    });
+    std::array<float,fBandCount> retained {};
+    int retainedCount=0;
+    for(const auto slot : order)
+    {
+        const auto index=size_t(slot);
+        const auto frequency=result.frequency[index];
+        if(result.target[index]<=0.f || frequency<=0.f) continue;
+        bool adjacent=false;
+        if(frequency<500.f)
+            for(int i=0;i<retainedCount;++i)
+            {
+                const auto earlier=retained[size_t(i)];
+                if(earlier<500.f && std::max(frequency,earlier)<std::min(frequency,earlier)*minimumRatio)
+                { adjacent=true; break; }
+            }
+        if(adjacent) result.target[index]=0.f;
+        else retained[size_t(retainedCount++)]=frequency;
+    }
 }
 void NianSaturatorProcessor::processBlock(juce::AudioBuffer<float>& b,juce::MidiBuffer&) { process(b,false); }
 void NianSaturatorProcessor::processBlockBypassed(juce::AudioBuffer<float>& b,juce::MidiBuffer&) { process(b,true); }
@@ -377,7 +427,10 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
                         dc+=dcStep*(residual-dc);
                         tube+=.45f*amount[band]*dynamicGain*(residual-dc);
                     }
-                frames[index][size_t(phase)]=x+peakDelta+mode*(tube-x-peakDelta);
+                // Remove sub-bass from the F-mode addition without cutting
+                // the original signal or the T-mode harmonic residual.
+                const auto filteredDelta=fDeltaHighPass[index].process(peakDelta);
+                frames[index][size_t(phase)]=x+filteredDelta+mode*(tube-x-filteredDelta);
             }
         }
         const auto bypassAmount=bypassBlend.getNextValue();
@@ -403,6 +456,7 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
             // audio and fade the rebuilt processing path back in.
             for(auto& converter : converters) converter.reset();
             lowState={}; z1={}; z2={}; tubeDcState={}; tubeRmsState={}; tubeGainState={{{1,1},{1,1}}}; peakTarget={}; peakEnvelope={}; peakHoldSamples={}; peakCooldownSamples={}; recentPeakSamples={}; retuning={}; coefficientState={}; tubeSuspended=false;
+            for(auto& filter : fDeltaHighPass) filter.reset();
             const auto maximum=std::min(20000.f,sampleRate*.1125f);
             for(int slot=0;slot<fBandCount;++slot)
                 if(!std::isfinite(peakFrequency[size_t(slot)]) || peakFrequency[size_t(slot)]<40.f || peakFrequency[size_t(slot)]>maximum)

@@ -22,7 +22,11 @@ Hann-windowed host-rate spectrum, allowing useful resolution in the bass. Six
 logarithmic cells below the crossover and six above it each select one prominent
 peak and add a Q=24 bandpass. The first cell starts at 40 Hz; the detector
 rejects lower-frequency peaks instead of assigning their FFT leakage to that
-cell. The detector refines peaks between FFT bins;
+cell. Below 500 Hz, candidates closer than two semitones are reduced to the
+strongest peak so adjacent cells cannot double up on nearly the same bass note.
+The F-mode added signal passes through a 40 Hz, second-order low-cut filter to
+reduce sub-bass thuds while leaving the original signal untouched.
+The detector refines peaks between FFT bins;
 the FFT and candidate search run on a separate worker thread using preallocated
 snapshots and a nonblocking audio-thread handoff. A busy worker may skip a
 snapshot, and results from an earlier mode or crossover setting are discarded.
@@ -56,5 +60,5 @@ and fades the wet path back over 10 ms. The audio thread sends host-rate samples
 fixed-size queue; the editor computes a 2048-point Hann-windowed spectrum at
 up to 30 Hz without an FFT on the audio callback.
 
-[Editor preview](Previews/nian-saturator.png) · [Processor test report](Tests/Reports/processor.md). Processor tests cover all twelve F bands, the 40 Hz floor, the +6 dB single-band cap, bass onset,
+[Editor preview](Previews/nian-saturator.png) · [Processor test report](Tests/Reports/processor.md). Processor tests cover all twelve F bands, the 40 Hz floor, close bass-peak suppression, the F-delta low cut, the +6 dB single-band cap, bass onset,
 the gentler T curve, Mix, bypass, fault recovery, alias suppression, and scaled editor controls.

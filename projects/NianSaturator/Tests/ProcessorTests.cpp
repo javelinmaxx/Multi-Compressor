@@ -34,6 +34,31 @@ struct NianSaturatorTestAccess
         const auto result=p.analyse(job);
         return {result.target[0],result.frequency[0]};
     }
+    static std::array<float,NianSaturatorProcessor::fBandCount> selectLowPeaks(
+        const std::array<float,NianSaturatorProcessor::fBandCount>& frequencies,
+        const std::array<float,NianSaturatorProcessor::fBandCount>& scores)
+    {
+        NianSaturatorProcessor::AnalysisResult result;
+        result.frequency=frequencies;
+        for(size_t i=0;i<frequencies.size();++i)
+            result.target[i]=frequencies[i]>0.f ? 1.f : 0.f;
+        NianSaturatorProcessor::suppressAdjacentLowPeaks(result,scores);
+        return result.target;
+    }
+    static double fDeltaFilterGain(float frequency)
+    {
+        NianSaturatorProcessor::FDeltaHighPass filter;
+        constexpr double rate=48000.0*4.0;
+        filter.prepare(rate);
+        double inputPower=0,outputPower=0;
+        for(int i=0;i<int(rate);++i)
+        {
+            const auto input=std::sin(juce::MathConstants<double>::twoPi*frequency*i/rate);
+            const auto output=filter.process(float(input));
+            if(i>=int(rate/2)) { inputPower+=input*input; outputPower+=output*output; }
+        }
+        return std::sqrt(outputPower/inputPower);
+    }
     static void holdBandForGainTest(NianSaturatorProcessor& p,int slot,float hz)
     {
         p.stopAnalysisWorker();
@@ -67,17 +92,33 @@ int main(int argc,char** argv)
             }
         }
         {
+            std::array<float,NianSaturatorProcessor::fBandCount> frequencies {};
+            std::array<float,NianSaturatorProcessor::fBandCount> scores {};
+            frequencies[0]=100; scores[0]=2;
+            frequencies[1]=108; scores[1]=5;
+            frequencies[2]=145; scores[2]=3;
+            frequencies[3]=480; scores[3]=1;
+            frequencies[4]=510; scores[4]=4;
+            frequencies[5]=550; scores[5]=1;
+            const auto kept=NianSaturatorTestAccess::selectLowPeaks(frequencies,scores);
+            if(kept[0]>.5f || kept[1]<.5f || kept[2]<.5f || kept[3]<.5f || kept[4]<.5f || kept[5]<.5f)
+                throw std::runtime_error("nearby bass peaks must keep only the strongest candidate below 500 Hz");
+            if(NianSaturatorTestAccess::fDeltaFilterGain(20.f)>.28
+               || NianSaturatorTestAccess::fDeltaFilterGain(100.f)<.95)
+                throw std::runtime_error("F addition must high-pass sub-40 Hz energy without attenuating upper bass");
+        }
+        {
             NianSaturatorProcessor capped;
             set(capped,"crossover",1000); set(capped,"lowDrive",100); set(capped,"highDrive",0);
             capped.prepareToPlay(48000,128);
-            NianSaturatorTestAccess::holdBandForGainTest(capped,0,55.f);
+            NianSaturatorTestAccess::holdBandForGainTest(capped,0,200.f);
             juce::AudioBuffer<float> tone(2,128); juce::MidiBuffer empty;
             double inputPower=0,outputPower=0;
             for(int block=0;block<220;++block)
             {
                 for(int i=0;i<128;++i)
                 {
-                    const auto x=.1f*std::sin(juce::MathConstants<float>::twoPi*55.f*float(block*128+i)/48000.f);
+                    const auto x=.1f*std::sin(juce::MathConstants<float>::twoPi*200.f*float(block*128+i)/48000.f);
                     tone.setSample(0,i,x); tone.setSample(1,i,x);
                     if(block>=120) inputPower+=double(x)*x;
                 }
