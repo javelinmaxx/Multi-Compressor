@@ -1,12 +1,8 @@
 name: All Plugins - Windows VST3
 
-# The push trigger starts this requested build; it will be removed after the run starts.
+# Build only when explicitly requested from the Actions tab.
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
-    paths:
-      - .github/workflows/all-plugins-windows.yml
 
 permissions:
   contents: read
