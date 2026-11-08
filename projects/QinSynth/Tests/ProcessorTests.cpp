@@ -16,10 +16,13 @@ struct QinSynthEditorTestAccess
 {
     static void oscillator(QinSynthEditor& editor,int index) { editor.showOscillator(index); }
     static void page(QinSynthEditor& editor,int index) { editor.showPage(index); }
+    static void fxSection(QinSynthEditor& editor,int index) { editor.showFxSection(index); }
     static bool oscillatorVisible(const QinSynthEditor& editor,int index)
     { return editor.waves[size_t(index)].isVisible() && editor.sliders[size_t(index*4)].isVisible(); }
-    static bool fxVisible(const QinSynthEditor& editor)
-    { return editor.sliders[12].isVisible() && editor.sliders[22].isVisible(); }
+    static bool voiceFxVisible(const QinSynthEditor& editor)
+    { return editor.sliders[12].isVisible() && editor.sliders[16].isVisible(); }
+    static bool delayFxVisible(const QinSynthEditor& editor)
+    { return editor.sliders[17].isVisible() && editor.sliders[22].isVisible(); }
 };
 static void set(QinSynthProcessor& processor,const char* id,float value)
 {
@@ -124,7 +127,7 @@ int main(int argc,char** argv)
             QinSynthEditor editor(preview);
             if(!QinSynthEditorTestAccess::oscillatorVisible(editor,0)
                || QinSynthEditorTestAccess::oscillatorVisible(editor,1)
-               || QinSynthEditorTestAccess::fxVisible(editor))
+               || QinSynthEditorTestAccess::voiceFxVisible(editor))
                 throw std::runtime_error("Sound page must show only the selected oscillator");
             QinSynthEditorTestAccess::oscillator(editor,2);
             if(!QinSynthEditorTestAccess::oscillatorVisible(editor,2)
@@ -143,10 +146,16 @@ int main(int argc,char** argv)
             };
             if(argc>1) save(argv[1]);
             QinSynthEditorTestAccess::page(editor,1);
-            if(!QinSynthEditorTestAccess::fxVisible(editor)
+            if(!QinSynthEditorTestAccess::voiceFxVisible(editor)
+               || QinSynthEditorTestAccess::delayFxVisible(editor)
                || QinSynthEditorTestAccess::oscillatorVisible(editor,0))
-                throw std::runtime_error("FX page must show voice and delay-verb without oscillator controls");
+                throw std::runtime_error("FX page must open on voice and drive controls");
             if(argc>2) save(argv[2]);
+            QinSynthEditorTestAccess::fxSection(editor,1);
+            if(!QinSynthEditorTestAccess::delayFxVisible(editor)
+               || QinSynthEditorTestAccess::voiceFxVisible(editor))
+                throw std::runtime_error("Delay-verb tab must show only the reverb controls");
+            if(argc>3) save(argv[3]);
         }
         std::cout<<"Qin Synth processor checks passed\n";
         return 0;

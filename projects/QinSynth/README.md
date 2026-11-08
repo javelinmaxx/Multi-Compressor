@@ -2,11 +2,13 @@
 
 Qin Synth is a stereo MIDI instrument with 16-note polyphony, three virtual-analog oscillators per note, and up to eight unison copies per oscillator. It is version 0.7.5 in the J-Sonic suite.
 
-![Qin Synth Sound page with left-hand oscillator tabs and a larger waveform editor](Previews/qin-synth.png)
+![Qin Synth Sound page with horizontal oscillator tabs, a large waveform display on the left, and a unison module on the right](Previews/qin-synth.png)
 
-![Qin Synth FX page with voice, Zao drive, and MIDI-steered Lan delay-reverb controls](Previews/qin-synth-fx.png)
+![Qin Synth FX page showing voice and Zao Drive controls](Previews/qin-synth-fx.png)
 
-The **Sound** tab puts oscillator selection on the left and expands the selected oscillator's waveform and controls on the right. The **FX** tab shows the Voice, Zao Drive, and Lan Delay-Verb sections. Every parameter remains available to host automation on either page.
+![Qin Synth FX page showing MIDI-steered Lan delay-reverb controls](Previews/qin-synth-delay.png)
+
+The **Sound** page places horizontal oscillator tabs above a large waveform module on the left and selected-oscillator unison controls on the right. The **FX** page has selectable Voice + Drive and Delay-Verb modules. This denser dark-panel layout draws on Spire's section hierarchy while retaining Qin's J-Sonic knobs and color scheme. Every parameter remains available to host automation on either page.
 
 Each oscillator has a band-limited saw, pulse, or triangle waveform, plus level, octave, unison count, and detune controls. Unison copies spread gently across stereo. Key Pan maps lower MIDI notes left and higher notes right, as in a piano-key recording. Attack and Release control the voice amplitude. New notes take a free voice first, then steal a released or oldest voice when all 16 are occupied. Sustain pedal (MIDI CC64), note-off, all-notes-off, and all-sound-off are supported.
 

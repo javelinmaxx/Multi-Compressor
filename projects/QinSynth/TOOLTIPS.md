@@ -5,6 +5,8 @@
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
 | Sound tab | Shows the three oscillator tabs and their sound controls. |
 | FX tab | Shows the voice, drive, and delay-reverb controls. |
+| Voice + Drive tab | Shows voice shaping, key panning, Zao Drive, and output. |
+| Delay-Verb tab | Shows Lan's delay-reverb and MIDI onset motion controls. |
 | Osc 1 tab | Opens oscillator 1 in the Sound editor. |
 | Osc 2 tab | Opens oscillator 2 in the Sound editor. |
 | Osc 3 tab | Opens oscillator 3 in the Sound editor. |

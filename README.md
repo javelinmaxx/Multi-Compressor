@@ -189,9 +189,9 @@ input, generated delta, and resulting spectra.
 
 ### Qin Synth
 
-![Qin Synth with three virtual-analog oscillator rows, key pan, Zao drive, and MIDI-steered Lan delay-reverb](projects/QinSynth/Previews/qin-synth.png)
+![Qin Synth Sound page with horizontal oscillator tabs, a waveform display, and unison controls](projects/QinSynth/Previews/qin-synth.png)
 
-Play up to 16 notes with three virtual-analog oscillators per note. The **Sound** page has left-hand oscillator tabs and a larger editor for each oscillator's saw, pulse, or triangle wave and eightfold unison. The **FX** page holds **Key Pan**, Zao's op-amp feedback drive, and Lan's delay-reverb; MIDI note-ons steer its tap and phase motion without running Lan's resonance tamer.
+Play up to 16 notes with three virtual-analog oscillators per note. The **Sound** page places horizontal oscillator tabs over a large waveform panel, with eightfold-unison controls beside it. The **FX** page switches between Voice + Drive and Delay-Verb modules. **Key Pan** spreads notes by pitch; MIDI note-ons steer Lan's tap and phase motion without running its resonance tamer.
 
 [Controls and signal path](projects/QinSynth/README.md).
 

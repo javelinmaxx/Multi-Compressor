@@ -74,6 +74,22 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
         tab.onClick=[this,i]{showOscillator(int(i));};
         addAndMakeVisible(tab);
     }
+    for(size_t i=0;i<fxTabs.size();++i)
+    {
+        auto& tab=fxTabs[i];
+        tab.setButtonText(i==0 ? "VOICE + DRIVE" : "DELAY-VERB");
+        tab.setName(i==0 ? "Voice and drive tab" : "Delay-verb tab");
+        tab.setTooltip(i==0 ? "Shows voice shaping, key panning, Zao Drive, and output."
+                            : "Shows Lan's delay-reverb and MIDI onset motion controls.");
+        tab.setClickingTogglesState(true);
+        tab.setRadioGroupId(3);
+        tab.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
+        tab.setColour(juce::TextButton::buttonOnColourId,accent);
+        tab.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
+        tab.setColour(juce::TextButton::textColourOnId,stageStyle::background);
+        tab.onClick=[this,i]{showFxSection(int(i));};
+        addAndMakeVisible(tab);
+    }
     for(size_t i=0;i<sliders.size();++i)
     {
         auto& slider=sliders[i]; auto& label=labels[i];
@@ -89,6 +105,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
         addAndMakeVisible(slider); addAndMakeVisible(label);
         sliderAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,ids[i],slider);
         editorTooltips::setHint(slider,label,hints[i]);
+        if(i<12 && i%4==2) slider.onValueChange=[this]{repaint();};
     }
     for(size_t i=0;i<waves.size();++i)
     {
@@ -109,6 +126,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
     }
     pageTabs[0].setToggleState(true,juce::dontSendNotification);
     oscillatorTabs[0].setToggleState(true,juce::dontSendNotification);
+    fxTabs[0].setToggleState(true,juce::dontSendNotification);
     updateVisibility();
     editorScaling::enable(*this,designWidth,designHeight);
     gpu.attach(*this);
@@ -129,6 +147,14 @@ void QinSynthEditor::showOscillator(int oscillator)
     updateVisibility();
     repaint();
 }
+void QinSynthEditor::showFxSection(int section)
+{
+    currentFxSection=juce::jlimit(0,1,section);
+    for(size_t i=0;i<fxTabs.size();++i)
+        fxTabs[i].setToggleState(int(i)==currentFxSection,juce::dontSendNotification);
+    updateVisibility();
+    repaint();
+}
 void QinSynthEditor::updateVisibility()
 {
     for(int osc=0;osc<3;++osc)
@@ -144,43 +170,48 @@ void QinSynthEditor::updateVisibility()
             labels[index].setVisible(visible);
         }
     }
+    for(auto& tab:fxTabs) tab.setVisible(currentPage==1);
     for(size_t index=12;index<sliders.size();++index)
     {
-        sliders[index].setVisible(currentPage==1);
-        labels[index].setVisible(currentPage==1);
+        const auto visible=currentPage==1 && ((index<17)==(currentFxSection==0));
+        sliders[index].setVisible(visible);
+        labels[index].setVisible(visible);
     }
 }
 void QinSynthEditor::resized()
 {
     titleHint.setBounds(18,30,360,38);
-    pageTabs[0].setBounds(18,82,110,32);
-    pageTabs[1].setBounds(134,82,110,32);
-    for(int osc=0;osc<3;++osc) oscillatorTabs[size_t(osc)].setBounds(30,194+osc*54,124,42);
+    pageTabs[0].setBounds(18,82,115,32);
+    pageTabs[1].setBounds(139,82,115,32);
+    for(int osc=0;osc<3;++osc) oscillatorTabs[size_t(osc)].setBounds(39+osc*112,158,106,35);
+    fxTabs[0].setBounds(39,158,154,35);
+    fxTabs[1].setBounds(199,158,154,35);
     for(int osc=0;osc<3;++osc)
     {
-        waveLabels[size_t(osc)].setBounds(189,389,110,16);
-        waves[size_t(osc)].setBounds(194,416,102,27);
+        waveLabels[size_t(osc)].setBounds(43,422,120,16);
+        waves[size_t(osc)].setBounds(45,458,132,29);
         for(int control=0;control<4;++control)
         {
             const auto index=size_t(osc*4+control);
-            const auto x=303+control*103;
-            labels[index].setBounds(x,389,99,16);
-            sliders[index].setBounds(x,405,99,88);
+            constexpr std::array<int,4> positions {615,205,708,801};
+            const auto x=positions[size_t(control)];
+            labels[index].setBounds(x,422,90,16);
+            sliders[index].setBounds(x,438,90,98);
         }
     }
     for(int index=12;index<23;++index)
     {
         const auto effect=index>=17;
         const auto column=effect ? index-17 : index-12;
-        const auto x=33+column*(effect ? 116 : 138);
-        const auto y=effect ? 402 : 218;
-        labels[size_t(index)].setBounds(x,y,108,16);
-        sliders[size_t(index)].setBounds(x,y+17,108,91);
+        const auto x=effect ? 48+column*145 : 78+column*150;
+        labels[size_t(index)].setBounds(x,276,112,17);
+        sliders[size_t(index)].setBounds(x,296,112,108);
     }
     const auto scale=editorScaling::transform(*this,designWidth,designHeight);
     titleHint.setTransform(scale);
     for(auto& tab:pageTabs) tab.setTransform(scale);
     for(auto& tab:oscillatorTabs) tab.setTransform(scale);
+    for(auto& tab:fxTabs) tab.setTransform(scale);
     for(auto& slider:sliders) slider.setTransform(scale);
     for(auto& label:labels) label.setTransform(scale);
     for(auto& wave:waves) wave.setTransform(scale);
@@ -188,36 +219,40 @@ void QinSynthEditor::resized()
 }
 void QinSynthEditor::paint(juce::Graphics& graphics)
 {
+    const auto cyan=juce::Colour(0xff55aec7);
     graphics.fillAll(stageStyle::background);
     graphics.saveState();
     graphics.addTransform(editorScaling::transform(*this,designWidth,designHeight));
-    graphics.setGradientFill(juce::ColourGradient(juce::Colour(0xff17171c),0,0,
+    graphics.setGradientFill(juce::ColourGradient(juce::Colour(0xff222228),0,0,
         stageStyle::background,0,designHeight,false));
     graphics.fillRect(0,0,designWidth,designHeight);
     graphics.setColour(stageStyle::secondary); graphics.setFont(juce::FontOptions(10.f));
     graphics.drawText("J-SONIC / VIRTUAL ANALOG INSTRUMENT",18,12,500,16,juce::Justification::centredLeft);
     graphics.setColour(stageStyle::foreground); graphics.setFont(juce::FontOptions(25.f));
     graphics.drawText("QIN SYNTH",18,30,360,38,juce::Justification::centredLeft);
-    graphics.setColour(accent); graphics.setFont(juce::FontOptions(11.f));
-    graphics.drawText("16 voices  /  3 oscillators  /  8x unison",440,38,298,20,juce::Justification::centredRight);
+    graphics.setColour(stageStyle::inset);
+    graphics.fillRoundedRectangle(juce::Rectangle<float>(650.f,30.f,252.f,35.f),5.f);
+    graphics.setColour(cyan); graphics.setFont(juce::FontOptions(12.f).withStyle("bold"));
+    graphics.drawText("16 VOICES   /   3 OSC   /   8x UNI",661,36,231,23,juce::Justification::centred);
     if(currentPage==0)
     {
-        stageStyle::drawPanel(graphics,{16.f,122.f,728.f,456.f},juce::Colour(0xff27262b));
-        stageStyle::drawPanel(graphics,{28.f,150.f,140.f,402.f},juce::Colour(0xff201f24));
-        stageStyle::drawPanel(graphics,{180.f,150.f,550.f,402.f},juce::Colour(0xff222126));
+        stageStyle::drawPanel(graphics,{16.f,122.f,568.f,456.f},juce::Colour(0xff27272c));
+        stageStyle::drawPanel(graphics,{592.f,122.f,312.f,456.f},juce::Colour(0xff27272c));
         graphics.setColour(accent); graphics.setFont(juce::FontOptions(12.f).withStyle("bold"));
-        graphics.drawText("OSCILLATORS",41,160,110,20,juce::Justification::centredLeft);
-        graphics.drawText("OSCILLATOR "+juce::String(currentOscillator+1),194,163,260,20,juce::Justification::centredLeft);
+        graphics.drawText("OSCILLATOR "+juce::String(currentOscillator+1),37,132,260,20,juce::Justification::centredLeft);
+        graphics.drawText("UNISON / MIX",608,134,260,20,juce::Justification::centredLeft);
         graphics.setColour(stageStyle::secondary); graphics.setFont(juce::FontOptions(10.f));
-        graphics.drawText("VIRTUAL ANALOG / BAND-LIMITED",194,183,300,17,juce::Justification::centredLeft);
-        graphics.drawText("Select an oscillator at left to edit its waveform and unison voices.",194,514,510,20,juce::Justification::centredLeft);
+        graphics.drawText("WAVEFORM",39,199,132,16,juce::Justification::centredLeft);
+        graphics.drawText("STACK SPREAD",610,199,176,16,juce::Justification::centredLeft);
+        graphics.drawText("OSCILLATOR SHAPE",39,401,245,17,juce::Justification::centredLeft);
+        graphics.drawText("Each tab retains its own waveform and unison settings.",39,539,500,19,juce::Justification::centredLeft);
         graphics.setColour(stageStyle::grid);
-        graphics.fillRoundedRectangle(juce::Rectangle<float>(193.f,211.f,524.f,157.f),9.f);
+        graphics.fillRoundedRectangle(juce::Rectangle<float>(34.f,218.f,532.f,180.f),8.f);
         graphics.setColour(stageStyle::inset);
-        graphics.fillRoundedRectangle(juce::Rectangle<float>(197.f,215.f,516.f,149.f),7.f);
-        graphics.setColour(accent.withAlpha(.18f));
-        for(int line=1;line<4;++line)
-            graphics.drawHorizontalLine(215+line*37,197.f,713.f);
+        graphics.fillRoundedRectangle(juce::Rectangle<float>(38.f,222.f,524.f,172.f),6.f);
+        graphics.setColour(cyan.withAlpha(.18f));
+        for(int line=1;line<4;++line) graphics.drawHorizontalLine(222+line*43,38.f,562.f);
+        for(int line=1;line<8;++line) graphics.drawVerticalLine(38+line*65,222.f,394.f);
         const auto wave=waves[size_t(currentOscillator)].getSelectedId();
         juce::Path waveform;
         for(int point=0;point<=520;++point)
@@ -225,22 +260,71 @@ void QinSynthEditor::paint(juce::Graphics& graphics)
             const auto cycle=std::fmod(point/145.f,1.f);
             const auto shape=wave==2 ? (cycle<.5f ? 1.f : -1.f)
                             : wave==3 ? (1.f-4.f*std::abs(cycle-.5f)) : (2.f*cycle-1.f);
-            const auto x=197.f+point, y=290.f-55.f*shape;
+            const auto x=38.f+point, y=308.f-63.f*shape;
             if(point==0) waveform.startNewSubPath(x,y); else waveform.lineTo(x,y);
         }
-        graphics.setColour(accent.withAlpha(.2f)); graphics.strokePath(waveform,juce::PathStrokeType(5.f));
-        graphics.setColour(accent); graphics.strokePath(waveform,juce::PathStrokeType(1.5f));
+        graphics.setColour(cyan.withAlpha(.23f)); graphics.strokePath(waveform,juce::PathStrokeType(5.f));
+        graphics.setColour(cyan); graphics.strokePath(waveform,juce::PathStrokeType(1.7f));
+        graphics.setColour(stageStyle::inset);
+        graphics.fillRoundedRectangle(juce::Rectangle<float>(608.f,220.f,280.f,168.f),7.f);
+        const auto copies=juce::jlimit(1,8,juce::roundToInt(sliders[size_t(currentOscillator*4+2)].getValue()));
+        for(int copy=0;copy<8;++copy)
+        {
+            const auto active=copy<copies;
+            const auto x=627.f+copy*34.f;
+            const auto height=active ? 48.f+15.f*float(copy%3) : 22.f;
+            graphics.setColour(active ? cyan.withAlpha(.18f) : stageStyle::grid);
+            graphics.fillRoundedRectangle(juce::Rectangle<float>(x,352.f-height,21.f,height),3.f);
+            graphics.setColour(active ? cyan : stageStyle::secondary.withAlpha(.3f));
+            graphics.drawHorizontalLine(int(351.f-height),x,x+21.f);
+        }
+        graphics.setColour(cyan); graphics.setFont(juce::FontOptions(12.f).withStyle("bold"));
+        graphics.drawText(juce::String(copies)+" VOICE"+(copies==1 ? "" : "S"),623,233,245,22,juce::Justification::centred);
+        graphics.setColour(stageStyle::secondary); graphics.setFont(juce::FontOptions(10.f));
+        graphics.drawText("Per-oscillator level, count, and detune",608,539,277,18,juce::Justification::centredLeft);
     }
     else
     {
-        stageStyle::drawPanel(graphics,{16.f,122.f,728.f,204.f},juce::Colour(0xff27262b));
-        stageStyle::drawPanel(graphics,{16.f,338.f,728.f,240.f},juce::Colour(0xff27262b));
+        stageStyle::drawPanel(graphics,{16.f,122.f,888.f,456.f},juce::Colour(0xff27272c));
+        stageStyle::drawPanel(graphics,{31.f,209.f,858.f,350.f},juce::Colour(0xff211f25));
         graphics.setColour(accent); graphics.setFont(juce::FontOptions(12.f).withStyle("bold"));
-        graphics.drawText("VOICE / ZAO DRIVE",31,143,320,20,juce::Justification::centredLeft);
-        graphics.drawText("LAN DELAY-VERB / MIDI ONSET MOTION",31,359,470,20,juce::Justification::centredLeft);
+        graphics.drawText(currentFxSection==0 ? "VOICE / ZAO DRIVE" : "LAN DELAY-VERB / MIDI ONSET MOTION",
+            43,220,560,22,juce::Justification::centredLeft);
         graphics.setColour(stageStyle::secondary); graphics.setFont(juce::FontOptions(10.f));
-        graphics.drawText("Pitch-based pan and analog output coloration",31,165,400,16,juce::Justification::centredLeft);
-        graphics.drawText("Tap and phase targets change at MIDI note-on; resonance tame stays off.",31,381,540,16,juce::Justification::centredLeft);
+        graphics.drawText(currentFxSection==0 ? "Pitch-based pan and analog output coloration"
+                                           : "MIDI note-ons steer the tap and phase; resonance tame stays off.",
+            43,244,680,18,juce::Justification::centredLeft);
+        graphics.setColour(stageStyle::inset);
+        graphics.fillRoundedRectangle(juce::Rectangle<float>(48.f,447.f,825.f,88.f),6.f);
+        if(currentFxSection==0)
+        {
+            graphics.setColour(cyan.withAlpha(.65f));
+            graphics.drawLine(96.f,490.f,825.f,490.f,2.f);
+            constexpr std::array<const char*,4> stages {"MIDI NOTE","VOICE AMP","ZAO CIRCUIT","OUTPUT"};
+            for(size_t stage=0;stage<stages.size();++stage)
+            {
+                const auto x=105.f+stage*236.f;
+                graphics.setColour(accent); graphics.fillEllipse(x-4.f,486.f,8.f,8.f);
+                graphics.setColour(cyan); graphics.setFont(juce::FontOptions(11.f));
+                graphics.drawText(stages[stage],x-64.f,500,128,18,juce::Justification::centred);
+            }
+        }
+        else
+        {
+            graphics.setColour(cyan.withAlpha(.65f));
+            graphics.drawLine(90.f,490.f,829.f,490.f,1.5f);
+            for(int tap=0;tap<8;++tap)
+            {
+                const auto x=116.f+tap*100.f;
+                const auto height=17.f+float((tap*5)%4)*10.f;
+                graphics.setColour(cyan.withAlpha(.3f));
+                graphics.fillRect(x,490.f-height,4.f,height);
+                graphics.setColour(accent);
+                graphics.fillEllipse(x-4.f,486.f,12.f,12.f);
+            }
+            graphics.setColour(cyan); graphics.setFont(juce::FontOptions(10.f));
+            graphics.drawText("EIGHT MOVING FEEDBACK TAPS",600,505,245,17,juce::Justification::centredRight);
+        }
     }
     graphics.restoreState();
 }
