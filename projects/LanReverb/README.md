@@ -33,6 +33,10 @@ and version. The plot compares input and feedback power spectra; gold markers
 indicate tracked resonance bands. The drawn spectra use light smoothing across
 neighboring log-frequency bins and between display frames to avoid jagged,
 flickering traces; the analyser and feedback processing use their original data.
+The input and feedback spectra keep updating while the editor is open, even
+with Auto, Tame, and Phase off. In that state the worker computes only the
+spectra; resonance detection and correction stay off. Closing the editor also
+stops spectrum capture when Auto is off.
 A pale target EQ curve combines the narrow tamer filters with the two uncompensated shelves. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
 

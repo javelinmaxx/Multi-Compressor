@@ -21,7 +21,7 @@ void ResonanceAnalyser::reset (bool preserveSource)
     ages = {}; held = {}; decayCount = decayPosition = 0; decayTime = 0;
     if (!preserveSource) { sourceHolds = {}; sourceMemory = {}; previousSample = 0; }
 }
-Analysis ResonanceAnalyser::analyse (const Frame& frame)
+Analysis ResonanceAnalyser::spectrum (const Frame& frame)
 {
     input.fill(0); feedback.fill(0);
     for (int channel = 0; channel < 4; ++channel)
@@ -48,6 +48,12 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
         result.input[size_t(row)] = float(10*std::log10(std::max(1e-12,inputPeak)));
         result.feedback[size_t(row)] = float(10*std::log10(std::max(1e-12,feedbackPeak)));
     }
+    return result;
+}
+Analysis ResonanceAnalyser::analyse (const Frame& frame)
+{
+    auto result = spectrum(frame);
+    const auto binHz = frame.rate/analysisSize;
     struct Candidate { Band band; double priority = 0; };
     std::array<Candidate,maxBands> selected {};
     const auto previousAges = ages; ages.fill(0);
@@ -208,7 +214,7 @@ void AnalysisService::prepare (double rate, bool worker)
 {
     release(); ring = {}; job = {}; ring.rate = job.rate = rate;
     position = filled = sinceJob = 0; sampleCounter = 0; interval = std::max(1,juce::roundToInt(rate*.1));
-    enabled = false; offline = !worker; analysedGeneration = 0; analyser.reset();
+    enabled = correctionEnabled = false; offline = !worker; analysedGeneration = 0; analyser.reset();
     // Keep publication versions monotonic across host re-prepares so an open
     // editor cannot mistake a new frame for the previous stream's revision.
     generation.fetch_add(1); submitted.store(0); version.fetch_add(1);
@@ -217,11 +223,13 @@ void AnalysisService::prepare (double rate, bool worker)
     version.fetch_add(1);
     if (worker) startThread(juce::Thread::Priority::low);
 }
-void AnalysisService::setActive (bool active, float sourceHoldSeconds)
+void AnalysisService::setActive (bool correction, bool monitor, float sourceHoldSeconds)
 {
     ring.sourceHoldSeconds = sourceHoldSeconds;
-    if (enabled == active) return;
-    enabled = active; generation.fetch_add(1); filled = sinceJob = position = 0;
+    const auto capture = correction || monitor;
+    if (enabled == capture && correctionEnabled == correction) return;
+    enabled = capture; correctionEnabled = correction;
+    generation.fetch_add(1); filled = sinceJob = position = 0;
 }
 void AnalysisService::push (float left, float right, float wetLeft, float wetRight) noexcept
 {
@@ -235,7 +243,8 @@ void AnalysisService::push (float left, float right, float wetLeft, float wetRig
     if (!jobState.compare_exchange_strong(expected,1,std::memory_order_acquire)) return;
     for (size_t ch = 0; ch < 4; ++ch)
         for (int i = 0; i < analysisSize; ++i) job.audio[ch][size_t(i)] = ring.audio[ch][size_t((position+i)%analysisSize)];
-    job.generation = generation.load(); job.rate = ring.rate; job.sourceHoldSeconds = ring.sourceHoldSeconds; job.sampleEnd = sampleCounter;
+    job.generation = generation.load(); job.rate = ring.rate; job.sourceHoldSeconds = ring.sourceHoldSeconds;
+    job.sampleEnd = sampleCounter; job.spectrumOnly = !correctionEnabled;
     sinceJob = 0; submitted.fetch_add(1); jobState.store(2,std::memory_order_release);
 }
 void AnalysisService::compute()
@@ -243,7 +252,8 @@ void AnalysisService::compute()
     int expected = 2;
     if (!jobState.compare_exchange_strong(expected,3,std::memory_order_acquire)) return;
     if (analysedGeneration != job.generation) { analyser.reset(true); analysedGeneration = job.generation; }
-    publish(analyser.analyse(job)); jobState.store(0,std::memory_order_release);
+    publish(job.spectrumOnly ? analyser.spectrum(job) : analyser.analyse(job));
+    jobState.store(0,std::memory_order_release);
 }
 void AnalysisService::finishBlock() { if (offline) compute(); }
 void AnalysisService::run()
@@ -499,7 +509,8 @@ TapDisplay ReverbEngine::readTapDisplay() const noexcept
 void ReverbEngine::update (const Settings& s)
 {
     const auto active = s.automatic && (s.tame > .001f || s.phase*s.scatter > .001f);
-    analysis.setActive(active,std::clamp(s.decaySeconds,.3f,40.f)+1.25f);
+    analysis.setActive(active,spectrumMonitor.load(std::memory_order_relaxed),
+                       std::clamp(s.decaySeconds,.3f,40.f)+1.25f);
     Analysis next;
     if (active && analysis.read(next)) latest = next;
     if (!active) latest = {};

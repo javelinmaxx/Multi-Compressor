@@ -54,6 +54,7 @@ struct Frame
     float sourceHoldSeconds = 12;
     uint32_t generation = 0;
     uint64_t sampleEnd = 0;
+    bool spectrumOnly = false;
 };
 // Input-aware prominence plus relative spectral decay detect sustained loop
 // coloration. Only attenuation is requested; this is not a feedback canceller.
@@ -61,6 +62,7 @@ class ResonanceAnalyser
 {
 public:
     Analysis analyse (const Frame&);
+    Analysis spectrum (const Frame&);
     void reset (bool preserveSource = false);
 private:
     juce::dsp::FFT fft { 12 };
@@ -84,7 +86,7 @@ public:
     ~AnalysisService() override;
     void prepare (double rate, bool worker);
     void release();
-    void setActive (bool, float sourceHoldSeconds = 12);
+    void setActive (bool correction, bool monitor, float sourceHoldSeconds = 12);
     void push (float left, float right, float wetLeft, float wetRight) noexcept;
     void finishBlock(); // synchronous only in explicit offline test rendering
     bool read (Analysis&) const noexcept;
@@ -101,7 +103,7 @@ private:
     static constexpr int valuesSize = 2*spectrumBins+3*maxBands+3;
     std::array<std::atomic<float>, valuesSize> values {};
     int position = 0, filled = 0, sinceJob = 0, interval = 4800;
-    bool enabled = false, offline = false;
+    bool enabled = false, correctionEnabled = false, offline = false;
     uint32_t analysedGeneration = 0;
     uint64_t sampleCounter = 0;
 };
@@ -129,12 +131,14 @@ public:
     void release() { analysis.release(); }
     void process (juce::AudioBuffer<float>&, const Settings&, bool hostBypass = false);
     bool readAnalysis (Analysis& a) const noexcept { return analysis.read (a); }
+    void setSpectrumMonitor (bool enabled) noexcept { spectrumMonitor.store(enabled,std::memory_order_relaxed); }
     float reductionDb() const noexcept { return displayedReduction.load(); }
     uint32_t analysisJobs() const noexcept { return analysis.jobs(); }
     float peakLevel() const noexcept { return displayedPeak.load(); }
     TapDisplay readTapDisplay() const noexcept;
 private:
     friend struct ReverbEngineTestAccess;
+    std::atomic<bool> spectrumMonitor { false };
     struct Filter
     {
         double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;

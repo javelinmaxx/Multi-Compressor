@@ -477,18 +477,28 @@ void inputProtectionTests (const juce::File& directory)
         }
         service.finishBlock();
     };
-    service.setActive(true,3); advance(4800,true,false);
-    service.setActive(false,3); advance(12000,false,false);
-    service.setActive(true,3);
+    service.setActive(true,false,3); advance(4800,true,false);
+    service.setActive(false,false,3); advance(12000,false,false);
+    service.setActive(true,false,3);
     for (int i = 0; i < 5; ++i) advance(4800,false,true);
     lan::Analysis remembered; check(service.read(remembered),"resumed worker publishes a valid protected frame");
     for (int i = 0; i < remembered.count; ++i)
         check(std::abs(remembered.bands[size_t(i)].frequency-996.09375) > 120,"observed source-note protection survives an Auto Off/On cycle");
-    service.setActive(false,3); advance(4*48000,false,false); service.setActive(true,3);
+    service.setActive(false,false,3); advance(4*48000,false,false); service.setActive(true,false,3);
     for (int i = 0; i < 5; ++i) advance(4800,false,true);
     bool expired = false; lan::Analysis after; check(service.read(after),"worker resumes after a long inactive interval");
     for (int i = 0; i < after.count; ++i) expired |= std::abs(after.bands[size_t(i)].frequency-996.09375) < 120;
     check(expired,"source protection expires by stream time even while Auto is off");
+    const auto jobsBeforeMonitor=service.jobs();
+    service.setActive(false,true,3); advance(4800,true,true);
+    lan::Analysis monitored;
+    check(service.read(monitored) && monitored.count==0
+          && *std::max_element(monitored.input.begin(),monitored.input.end())>-70.f
+          && *std::max_element(monitored.feedback.begin(),monitored.feedback.end())>-70.f,
+          "spectrum-only monitoring publishes input and feedback with resonance detection off");
+    check(service.jobs()>jobsBeforeMonitor,"spectrum monitoring runs only while requested");
+    service.setActive(false,false,3); advance(4800,true,true);
+    check(service.jobs()==jobsBeforeMonitor+1,"closing the monitor stops spectrum FFT jobs when Auto is off");
 }
 void relativeDecayTests (const juce::File& directory)
 {
@@ -1210,6 +1220,22 @@ void editorTests (const juce::File& destination)
     }
     for (int tick = 0; tick < 3; ++tick) { juce::Thread::sleep(10); juce::Timer::callPendingTimersSynchronously(); }
     lan::Analysis live; check(p.readAnalysis(live) && live.revision > 0,"real background worker publishes feedback data for the native editor");
+    set(p,"automatic",0);
+    for (int at=0;at<9600;at+=128)
+    {
+        juce::AudioBuffer<float> audio(2,128);
+        for (int i=0;i<128;++i)
+        {
+            const auto tone=float(.2*std::sin(2*pi*330*(at+i)/48000));
+            audio.setSample(0,i,tone); audio.setSample(1,i,tone);
+        }
+        p.processBlock(audio,midi);
+    }
+    pump();
+    lan::Analysis monitorFrame;
+    check(p.readAnalysis(monitorFrame) && monitorFrame.count==0
+          && *std::max_element(monitorFrame.input.begin(),monitorFrame.input.end())>-70.f,
+          "native spectrum continues updating with Auto off");
     set(p,"tap",70);
     juce::AudioBuffer<float> movingTaps(2,128); movingTaps.clear(); p.processBlock(movingTaps,midi);
     juce::Timer::callPendingTimersSynchronously();

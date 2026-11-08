@@ -73,6 +73,7 @@ LanReverbEditor::LanReverbEditor (LanReverbProcessor& p) : AudioProcessorEditor(
     sliders[9].textFromValueFunction = [] (double value) { return value < .05 ? juce::String("OFF") : juce::String(value,1)+" %"; };
     sliders[9].setTextValueSuffix("");
     updateTimeMode();
+    processor.setSpectrumMonitor(true);
     editorScaling::enable(*this,designWidth,designHeight); gpu.attach(*this); startTimerHz(20);
 }
 void LanReverbEditor::updateTimeMode()
@@ -138,7 +139,6 @@ void LanReverbEditor::timerCallback()
     if (processor.readAnalysis(next)) analysis = next;
     // A worker publication can briefly make a nonblocking read fail. Keep
     // the last valid frame instead of flashing an empty plot on that tick.
-    if (processor.parameters.getRawParameterValue("automatic")->load()<.5f) analysis = {};
     spectrumDisplay.update(analysis,elapsed);
     tapDisplay=processor.readTapDisplay();
     reduction = processor.reductionDb(); outputPeak = processor.peakLevel();
@@ -172,9 +172,9 @@ void LanReverbEditor::paint (juce::Graphics& g)
         g.setColour(secondary); g.drawText(hz < 1000 ? "100 Hz" : hz < 10000 ? "1 kHz" : "10 kHz",int(x)-24,246,48,16,juce::Justification::centred);
     }
     for (int line = 1; line < 4; ++line) { g.setColour(grid); g.drawHorizontalLine(int(plot.getY()+line*plot.getHeight()/4),plot.getX(),plot.getRight()); }
-    if (active && analysis.revision > 0 && spectrumDisplay.hasFrame())
+    if (analysis.revision > 0 && spectrumDisplay.hasFrame())
     {
-        for (int band = 0; band < analysis.count; ++band)
+        for (int band = 0; active && band < analysis.count; ++band)
         {
             const auto& b = analysis.bands[size_t(band)];
             const auto x = plot.getX()+plot.getWidth()*std::log(std::max(lan::shelfMinHz,b.frequency)/lan::shelfMinHz)/std::log(ceiling/lan::shelfMinHz);
@@ -203,7 +203,7 @@ void LanReverbEditor::paint (juce::Graphics& g)
             g.setColour(which == 0 ? secondary.withAlpha(.65f) : amber); g.strokePath(path,juce::PathStrokeType(which == 0 ? 1.f : 1.5f));
         }
     }
-    else { g.setColour(secondary); g.drawText(active ? "Listening to the feedback tail" : "Resonance analysis is off",plot,juce::Justification::centred); }
+    else { g.setColour(secondary); g.drawText("Listening to the feedback tail",plot,juce::Justification::centred); }
     // The target curve uses the same coefficients and gain budget as the
     // feedback banks; the live bank follows it through its 250 ms crossfade.
     juce::Path eq;

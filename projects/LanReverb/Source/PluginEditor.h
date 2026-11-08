@@ -9,7 +9,7 @@ class LanReverbEditor final : public juce::AudioProcessorEditor, private juce::T
 {
 public:
     explicit LanReverbEditor (LanReverbProcessor&);
-    ~LanReverbEditor() override { stopTimer(); gpu.detach(); setLookAndFeel(nullptr); }
+    ~LanReverbEditor() override { stopTimer(); processor.setSpectrumMonitor(false); gpu.detach(); setLookAndFeel(nullptr); }
     void paint (juce::Graphics&) override;
     void resized() override;
 private:
