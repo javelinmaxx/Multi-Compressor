@@ -47,6 +47,9 @@ jobs:
           - project: NianSaturator
             product: Nian Saturator
             test_option: NIAN_SATURATOR_BUILD_TESTS
+          - project: QinSynth
+            product: Qin Synth
+            test_option: QIN_SYNTH_BUILD_TESTS
     defaults:
       run:
         shell: pwsh
@@ -125,7 +128,7 @@ jobs:
           $products = @(
             'Yinyang Compressor', 'Shun De-Esser', 'Kuo Stereo',
             'Zao Drive', 'Ren Transformer', 'Kuo Velvet',
-            'Xuan Phase', 'Lan Reverb', 'Nian Saturator'
+            'Xuan Phase', 'Lan Reverb', 'Nian Saturator', 'Qin Synth'
           )
           $dist = Join-Path $env:GITHUB_WORKSPACE 'dist'
           $bundles = @(Get-ChildItem -LiteralPath $dist -Filter '*.vst3' -Directory)
@@ -163,8 +166,8 @@ jobs:
             const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts,
               { owner, repo, run_id, per_page: 100 });
             const temporary = artifacts.filter(a => /^[A-Za-z]+-Windows-x64-VST3$/.test(a.name));
-            if (temporary.length !== 9) {
-              throw new Error(`Expected 9 temporary plugin artifacts, found ${temporary.length}`);
+            if (temporary.length !== 10) {
+              throw new Error(`Expected 10 temporary plugin artifacts, found ${temporary.length}`);
             }
             for (const artifact of temporary) {
               await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: artifact.id });

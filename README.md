@@ -1,6 +1,6 @@
 # Multi-Compressor
 
-Nine J-SONIC audio plugins for dynamics, de-essing, stereo width, overdrive,
+Ten J-SONIC audio plugins and instruments for synthesis, dynamics, de-essing, stereo width, overdrive,
 transformer coloration, phase alignment, and adaptive reverb/delay. Built with JUCE and C++17, with VST3 and Standalone
 targets on Windows, macOS, and Linux, plus Audio Units on macOS.
 
@@ -12,7 +12,7 @@ The editors support 50%–120% resizing, one-sentence hover hints, host automati
 and session recall. Each plugin is an independent project under `projects/`;
 the JUCE framework is included in this repository.
 
-All nine editors can paint through experimental JUCE
+All ten editors can paint through experimental JUCE
 OpenGL with a software fallback. See [GPU rendering and validation](projects/GPU_RENDERING.md).
 
 [Plugin collection](#plugin-collection) · [Measured examples](#measured-examples) ·
@@ -31,6 +31,7 @@ OpenGL with a software fallback. See [GPU rendering and validation](projects/GPU
 | [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
 | [Lan Reverb](projects/LanReverb/README.md) | `LanReverb` | Reverb / delay | Long stereo tails, live feedback-tap scattering, automatic resonance EQ and phase dispersion |
 | [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | 4× twelve-band transient enhancement with 5 ms lookahead or dynamically softened tube-style drive, Mix, and crossover spectrum display |
+| [Qin Synth](projects/QinSynth/README.md) | `QinSynth` | MIDI instrument | Sixteen-voice virtual-analog synthesis, three eightfold-unison oscillators, key panning, Zao drive, MIDI-steered Lan delay-reverb |
 
 ### Yinyang Compressor
 
@@ -186,6 +187,14 @@ Both modes run at 4×. The lower display marks the crossover and overlays the
 input, generated delta, and resulting spectra.
 [Controls and processing](projects/NianSaturator/README.md).
 
+### Qin Synth
+
+![Qin Synth with three virtual-analog oscillator rows, key pan, Zao drive, and MIDI-steered Lan delay-reverb](projects/QinSynth/Previews/qin-synth.png)
+
+Play up to 16 notes with three virtual-analog oscillators per note. Each oscillator offers saw, pulse, and triangle waves with up to eight detuned unison copies. **Key Pan** spreads notes left to right by MIDI pitch. Zao's op-amp feedback drive and Lan's delay-reverb shape the output; MIDI note-ons steer the reverb's tap and phase motion without running Lan's resonance tamer.
+
+[Controls and signal path](projects/QinSynth/README.md).
+
 ## Measured examples
 
 ### Four approaches to compression
@@ -222,7 +231,7 @@ git clone --branch master https://github.com/javelinmaxx/Multi-Compressor.git
 cd Multi-Compressor
 ```
 
-**macOS — build all nine plugins as VST3 and AU:** install full Xcode and CMake,
+**macOS — build all ten plugins as VST3 and AU:** install full Xcode and CMake,
 then run:
 
 ```bash
@@ -235,7 +244,7 @@ installing by default. See `./build-macos-all.sh --help` for all options.
 
 **Windows — build VST3:** the manual
 [All Plugins - Windows VST3 workflow](https://github.com/javelinmaxx/Multi-Compressor/actions/workflows/all-plugins-windows.yml)
-builds all nine plugins and packages their VST3 bundles in one versioned suite ZIP. For a local Yinyang build, use
+builds all ten plugins and packages their VST3 bundles in one versioned suite ZIP. For a local Yinyang build, use
 [`build-windows-vst3.ps1`](build-windows-vst3.ps1) with Visual Studio 2022's C++
 tools. The [build guide](docs/BUILDING.md#windows-vst3) covers local commands,
 workflow artifacts, and installation.
