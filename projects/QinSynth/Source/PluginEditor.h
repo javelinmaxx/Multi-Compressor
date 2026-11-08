@@ -13,11 +13,18 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 private:
-    static constexpr int designWidth=760, designHeight=716;
+    friend struct QinSynthEditorTestAccess;
+    static constexpr int designWidth=760, designHeight=600;
+    void showPage(int page);
+    void showOscillator(int oscillator);
+    void updateVisibility();
+    int currentPage=0, currentOscillator=0;
     StageLookAndFeel look;
     pluginGpu::Renderer gpu;
     juce::TooltipWindow tooltipWindow {this};
     editorTooltips::TitleHint titleHint {JucePlugin_VersionString};
+    std::array<juce::TextButton,2> pageTabs;
+    std::array<juce::TextButton,3> oscillatorTabs;
     std::array<juce::Slider,23> sliders;
     std::array<juce::Label,23> labels;
     std::array<juce::ComboBox,3> waves;

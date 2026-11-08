@@ -3,6 +3,11 @@
 | Control | Hint |
 | --- | --- |
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
+| Sound tab | Shows the three oscillator tabs and their sound controls. |
+| FX tab | Shows the voice, drive, and delay-reverb controls. |
+| Osc 1 tab | Opens oscillator 1 in the Sound editor. |
+| Osc 2 tab | Opens oscillator 2 in the Sound editor. |
+| Osc 3 tab | Opens oscillator 3 in the Sound editor. |
 | Osc 1 Wave | Chooses the first oscillator's band-limited virtual-analog waveform. |
 | Osc 1 Level | Sets the first oscillator's level. |
 | Osc 1 Octave | Moves the first oscillator by whole octaves. |

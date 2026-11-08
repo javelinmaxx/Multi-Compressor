@@ -2,7 +2,11 @@
 
 Qin Synth is a stereo MIDI instrument with 16-note polyphony, three virtual-analog oscillators per note, and up to eight unison copies per oscillator. It is version 0.7.5 in the J-Sonic suite.
 
-![Qin Synth editor with three oscillator rows, voice and Zao drive controls, and MIDI-steered Lan delay-reverb controls](Previews/qin-synth.png)
+![Qin Synth Sound page with left-hand oscillator tabs and a larger waveform editor](Previews/qin-synth.png)
+
+![Qin Synth FX page with voice, Zao drive, and MIDI-steered Lan delay-reverb controls](Previews/qin-synth-fx.png)
+
+The **Sound** tab puts oscillator selection on the left and expands the selected oscillator's waveform and controls on the right. The **FX** tab shows the Voice, Zao Drive, and Lan Delay-Verb sections. Every parameter remains available to host automation on either page.
 
 Each oscillator has a band-limited saw, pulse, or triangle waveform, plus level, octave, unison count, and detune controls. Unison copies spread gently across stereo. Key Pan maps lower MIDI notes left and higher notes right, as in a piano-key recording. Attack and Release control the voice amplitude. New notes take a free voice first, then steal a released or oldest voice when all 16 are occupied. Sustain pedal (MIDI CC64), note-off, all-notes-off, and all-sound-off are supported.
 
@@ -17,4 +21,4 @@ cmake -S projects/QinSynth -B build/qin -DCMAKE_BUILD_TYPE=Release
 cmake --build build/qin --target QinSynthTests QinSynth_VST3
 ```
 
-The tests cover MIDI sample offsets, the 16-voice limit, three oscillators at eightfold unison, key-based stereo panning, release, Zao drive, Lan's delay tail, and the MIDI-only reverb steering path.
+The tests cover MIDI sample offsets, the 16-voice limit, three oscillators at eightfold unison, key-based stereo panning, release, Zao drive, Lan's delay tail, the MIDI-only reverb steering path, and both editor tabs.

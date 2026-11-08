@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../Source/PluginEditor.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -10,6 +11,15 @@ struct QinSynthTestAccess
     static float tap(const QinSynthProcessor& p) { return p.onsetTap; }
     static float phase(const QinSynthProcessor& p) { return p.onsetPhase; }
     static uint32_t analysisJobs(const QinSynthProcessor& p) { return p.reverb.analysisJobs(); }
+};
+struct QinSynthEditorTestAccess
+{
+    static void oscillator(QinSynthEditor& editor,int index) { editor.showOscillator(index); }
+    static void page(QinSynthEditor& editor,int index) { editor.showPage(index); }
+    static bool oscillatorVisible(const QinSynthEditor& editor,int index)
+    { return editor.waves[size_t(index)].isVisible() && editor.sliders[size_t(index*4)].isVisible(); }
+    static bool fxVisible(const QinSynthEditor& editor)
+    { return editor.sliders[12].isVisible() && editor.sliders[22].isVisible(); }
 };
 static void set(QinSynthProcessor& processor,const char* id,float value)
 {
@@ -109,17 +119,34 @@ int main(int argc,char** argv)
             }
             if(tailPower<1.e-6) throw std::runtime_error("Lan delay-reverb must retain an audible tail after note silence");
         }
-        if(argc>1)
         {
             QinSynthProcessor preview;
-            std::unique_ptr<juce::AudioProcessorEditor> editor(preview.createEditor());
-            const auto image=editor->createComponentSnapshot(editor->getLocalBounds());
-            const juce::File file(argv[1]);
-            file.deleteFile();
-            juce::FileOutputStream stream{file};
-            juce::PNGImageFormat png;
-            if(!stream.openedOk() || !png.writeImageToStream(image,stream))
-                throw std::runtime_error("Qin UI preview could not be saved");
+            QinSynthEditor editor(preview);
+            if(!QinSynthEditorTestAccess::oscillatorVisible(editor,0)
+               || QinSynthEditorTestAccess::oscillatorVisible(editor,1)
+               || QinSynthEditorTestAccess::fxVisible(editor))
+                throw std::runtime_error("Sound page must show only the selected oscillator");
+            QinSynthEditorTestAccess::oscillator(editor,2);
+            if(!QinSynthEditorTestAccess::oscillatorVisible(editor,2)
+               || QinSynthEditorTestAccess::oscillatorVisible(editor,0))
+                throw std::runtime_error("Oscillator tabs must change the visible Sound controls");
+            QinSynthEditorTestAccess::oscillator(editor,0);
+            const auto save=[&editor](const char* name)
+            {
+                const auto image=editor.createComponentSnapshot(editor.getLocalBounds());
+                const juce::File file(name);
+                file.deleteFile();
+                juce::FileOutputStream stream{file};
+                juce::PNGImageFormat png;
+                if(!stream.openedOk() || !png.writeImageToStream(image,stream))
+                    throw std::runtime_error("Qin UI preview could not be saved");
+            };
+            if(argc>1) save(argv[1]);
+            QinSynthEditorTestAccess::page(editor,1);
+            if(!QinSynthEditorTestAccess::fxVisible(editor)
+               || QinSynthEditorTestAccess::oscillatorVisible(editor,0))
+                throw std::runtime_error("FX page must show voice and delay-verb without oscillator controls");
+            if(argc>2) save(argv[2]);
         }
         std::cout<<"Qin Synth processor checks passed\n";
         return 0;
