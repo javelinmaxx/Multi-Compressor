@@ -130,8 +130,16 @@ void LanReverbEditor::resized()
 void LanReverbEditor::timerCallback()
 {
     updateTimeMode(); updateShelves();
-    if (!isShowing()) return;
-    if (!processor.readAnalysis(analysis)) analysis = {};
+    if (!isShowing()) { spectrumDisplay.reset(); lastSpectrumTick=0; return; }
+    const auto now=juce::Time::getMillisecondCounterHiRes()*.001;
+    const auto elapsed=lastSpectrumTick>0 ? float(now-lastSpectrumTick) : .05f;
+    lastSpectrumTick=now;
+    lan::Analysis next;
+    if (processor.readAnalysis(next)) analysis = next;
+    // A worker publication can briefly make a nonblocking read fail. Keep
+    // the last valid frame instead of flashing an empty plot on that tick.
+    if (processor.parameters.getRawParameterValue("automatic")->load()<.5f) analysis = {};
+    spectrumDisplay.update(analysis,elapsed);
     reduction = processor.reductionDb(); outputPeak = processor.peakLevel();
     repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{24,92,692,180}));
 }
@@ -161,7 +169,7 @@ void LanReverbEditor::paint (juce::Graphics& g)
         g.setColour(secondary); g.drawText(hz < 1000 ? "100 Hz" : hz < 10000 ? "1 kHz" : "10 kHz",int(x)-24,246,48,16,juce::Justification::centred);
     }
     for (int line = 1; line < 4; ++line) { g.setColour(grid); g.drawHorizontalLine(int(plot.getY()+line*plot.getHeight()/4),plot.getX(),plot.getRight()); }
-    if (active && analysis.revision > 0)
+    if (active && analysis.revision > 0 && spectrumDisplay.hasFrame())
     {
         for (int band = 0; band < analysis.count; ++band)
         {
@@ -172,12 +180,22 @@ void LanReverbEditor::paint (juce::Graphics& g)
         for (int which = 0; which < 2; ++which)
         {
             juce::Path path;
-            const auto& values = which == 0 ? analysis.input : analysis.feedback;
-            for (size_t i = 0; i < values.size(); ++i)
+            const auto& values=spectrumDisplay.trace(which);
+            std::array<float,lan::spectrumBins> heights {};
+            for(size_t i=0;i<values.size();++i)
+                heights[i]=plot.getBottom()-plot.getHeight()*std::clamp((values[i]+100)/100,0.f,1.f);
+            path.startNewSubPath(plot.getX(),heights[0]);
+            const auto step=plot.getWidth()/float(lan::spectrumBins-1);
+            for(size_t i=0;i+1<values.size();++i)
             {
-                const auto x = plot.getX()+plot.getWidth()*float(i)/(lan::spectrumBins-1);
-                const auto y = plot.getBottom()-plot.getHeight()*std::clamp((values[i]+100)/100,0.f,1.f);
-                if (i == 0) path.startNewSubPath(x,y); else path.lineTo(x,y);
+                const auto first=heights[i], second=heights[i+1];
+                const auto slopeFirst=i==0 ? second-first : (second-heights[i-1])*.5f;
+                const auto slopeSecond=i+2<values.size() ? (heights[i+2]-first)*.5f : second-first;
+                const auto low=std::min(first,second), high=std::max(first,second);
+                const auto x=plot.getX()+step*float(i);
+                path.cubicTo(x+step/3.f,std::clamp(first+slopeFirst/3.f,low,high),
+                             x+2.f*step/3.f,std::clamp(second-slopeSecond/3.f,low,high),
+                             x+step,second);
             }
             g.setColour(which == 0 ? secondary.withAlpha(.65f) : amber); g.strokePath(path,juce::PathStrokeType(which == 0 ? 1.f : 1.5f));
         }

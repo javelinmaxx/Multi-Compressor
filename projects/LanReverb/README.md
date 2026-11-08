@@ -30,7 +30,10 @@ feedback resonance control. Version **0.7.5**, by **J-Sonic Team**, **2026**.
 The ebony-and-gold editor matches the collection, scales from 50% to 120%, and
 provides one-sentence control hints. Hover over its title for developer, year,
 and version. The plot compares input and feedback power spectra; gold markers
-indicate tracked resonance bands. A pale target EQ curve combines the narrow tamer filters with the two uncompensated shelves. The reduction readout shows the deepest
+indicate tracked resonance bands. The drawn spectra use light smoothing across
+neighboring log-frequency bins and between display frames to avoid jagged,
+flickering traces; the analyser and feedback processing use their original data.
+A pale target EQ curve combines the narrow tamer filters with the two uncompensated shelves. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
 
 ## Tempo-synchronized Time

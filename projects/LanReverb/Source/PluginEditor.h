@@ -2,6 +2,7 @@
 #include "../../PluginGpuRenderer.h"
 #include "PluginProcessor.h"
 #include "SpectrumShelfHandle.h"
+#include "SpectrumDisplaySmoothing.h"
 #include "../../StagePluginStyle.h"
 #include "../../EditorTooltips.h"
 class LanReverbEditor final : public juce::AudioProcessorEditor, private juce::Timer
@@ -32,6 +33,8 @@ private:
     std::unique_ptr<State::ButtonAttachment> autoAttachment, bypassAttachment, syncAttachment;
     std::array<SpectrumShelfHandle,2> shelfHandles {SpectrumShelfHandle(false),SpectrumShelfHandle(true)};
     lan::Analysis analysis;
+    lan::SpectrumDisplaySmoother spectrumDisplay;
+    double lastSpectrumTick=0;
     float reduction = 0, outputPeak = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LanReverbEditor)
 };

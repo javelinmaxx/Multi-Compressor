@@ -76,7 +76,7 @@ into the next latest snapshot, rather than building a queue. Smart-only updates
 follow the 20 Hz analysis cadence with Auto On and remain limited to five
 times per second for the display alone with Auto Off. It also runs with the editor
 closed while Auto is enabled, keeping audio and preview calibration identical. Waveforms and the display scale ease between results over
-160 ms at 30 animation frames per second; new targets continue from the current
+320 ms at 30 animation frames per second; new targets continue from the current
 displayed shape rather than jumping.
 
 The optional **Transformer Stage** directly includes Yinyang's

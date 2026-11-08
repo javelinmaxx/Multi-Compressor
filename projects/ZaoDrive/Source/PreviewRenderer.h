@@ -64,7 +64,7 @@ private:
 class PreviewAnimation
 {
 public:
-    static constexpr double durationMs = 160;
+    static constexpr double durationMs = 320;
     void setTarget (const PreviewFrame& frame, double now)
     {
         if (! initialized) { shown = target = frame; initialized = true; return; }

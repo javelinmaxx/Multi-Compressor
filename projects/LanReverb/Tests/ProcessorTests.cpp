@@ -1081,6 +1081,34 @@ void shimmerTests (const juce::File& directory)
     for (int i = 0; i < 128; ++i) check(std::abs(block.getSample(0,i)-.1f) < 1e-7 && std::abs(block.getSample(1,i)+.1f) < 1e-7,"shelves and shimmer leave zero-wet dry output unchanged");
     check(dry.getLatencySamples() == 0,"oversampled shimmer adds no dry-path latency");
 }
+void spectrumDisplayTests()
+{
+    lan::SpectrumDisplaySmoother smoother;
+    lan::Analysis frame;
+    frame.revision=1;
+    frame.input.fill(-90.f); frame.feedback.fill(-90.f);
+    smoother.update(frame,.05f);
+    check(smoother.hasFrame() && std::abs(smoother.trace(1)[20]+90.f)<.01f,
+          "first valid spectrum frame appears without a fade from an empty display");
+    frame.feedback[20]=-20.f;
+    smoother.update(frame,.05f);
+    const auto first=smoother.trace(1)[20];
+    check(first>-90.f && first<-30.f && smoother.trace(1)[19]>-90.f
+          && std::abs(smoother.trace(1)[24]+90.f)<.01f,
+          "spectral peak changes are spread only to neighboring bins and eased across frames");
+    for(int i=0;i<30;++i) smoother.update(frame,.05f);
+    const auto settled=smoother.trace(1)[20];
+    check(settled>-26.f && settled<-23.f && smoother.trace(1)[19]<settled-6.f,
+          "frequency smoothing retains a distinct narrow peak after temporal settling");
+    frame.feedback[20]=-90.f; smoother.update(frame,.05f);
+    check(smoother.trace(1)[20]<settled && smoother.trace(1)[20]>-89.f,
+          "a disappearing spectral peak decays across display frames instead of dropping immediately");
+    frame.revision=0; smoother.update(frame,.05f);
+    check(!smoother.hasFrame(),"spectrum display resets when analysis is unavailable");
+    frame.revision=2; frame.feedback.fill(-65.f); smoother.update(frame,.05f);
+    check(std::abs(smoother.trace(1)[20]+65.f)<.01f,
+          "resumed spectrum starts from the current analysis frame");
+}
 void editorTests (const juce::File& destination)
 {
     LanReverbProcessor p; p.prepareToPlay(48000,128);
@@ -1174,6 +1202,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        spectrumDisplayTests();
         monoStereoTests::run<LanReverbProcessor> ("automatic",true);
         const auto directory = argc > 2 && (juce::String(argv[1]) == "--report" || juce::String(argv[1]) == "--shimmer")
             ? juce::File::getCurrentWorkingDirectory().getChildFile(argv[2])

@@ -180,15 +180,18 @@ void optimizationTests()
     second.output.fill (.9f); second.peak = .9f; second.scale = 1;
     third.output.fill (-.3f); third.peak = .3f; third.scale = .375f;
     animation.setTarget (first, 0); animation.setTarget (second, 10);
-    animation.advance (90);
+    animation.advance (170);
     check (std::abs (animation.current().output[0]-.5f) < 1e-6f
            && std::abs (animation.current().scale-.625f) < 1e-6f,
            "preview waveform and scale ease together between renders");
     const auto halfway = animation.current().output;
-    animation.setTarget (third, 90);
+    animation.setTarget (third, 170);
     check (animation.current().output == halfway, "retargeting the preview mid-animation does not jump");
-    animation.advance (250);
-    check (animation.current().output == third.output && ! animation.advance (300),
+    animation.advance (330);
+    check (std::abs (animation.current().output[0]-.1f) < 1e-6f,
+           "longer waveform transition still eases smoothly through its midpoint");
+    animation.advance (490);
+    check (animation.current().output == third.output && ! animation.advance (540),
            "preview animation reaches its exact rendered target and stops repainting");
 
     // The reusable worker must reproduce a newly prepared reference engine,
