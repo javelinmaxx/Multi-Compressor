@@ -5,8 +5,6 @@ namespace lan
 namespace
 {
 constexpr double pi = juce::MathConstants<double>::pi;
-constexpr std::array<float,8> ratios { .46375f,.54625f,.66625f,.77125f,.89875f,1.04875f,1.21625f,1.42375f };
-constexpr std::array<float,8> tapPattern { -.73f,.37f,-.19f,.89f,-.51f,.13f,.61f,-.97f };
 float smooth (float t) noexcept { return t*t*t*(t*(t*6-15)+10); }
 float finite (float x) noexcept { return std::isfinite(x) ? std::clamp(x,-16.f,16.f) : 0.f; }
 float interpolate (const std::vector<float>& buffer, size_t position, float delay) noexcept
@@ -446,19 +444,29 @@ void ReverbEngine::prepare (double rate, bool worker)
     shimmer.prepare(sampleRate); shimmerMix.reset(sampleRate,transitionSeconds); appliedShelves = {-1,-100,-1,-100};
     trackedPhaseBands = {}; phaseRevision = 0; previousPhase = -1; phaseActive = false;
     warm = 0; bankFade = 1; bankStep = float(1/(sampleRate*transitionSeconds)); appliedRevision = 0; previousTame = -1; appliedAuto = false; first = true;
+    tapDisplay.valid.store(false,std::memory_order_relaxed);
     for (size_t i = 0; i < lines.size(); ++i)
     {
         auto& line = lines[i]; line = {};
         // Reserve the longest supported synchronized note, including tap steering,
         // during prepare; tempo automation never reallocates on the callback.
-        const auto capacitySeconds = maximumTimeMs*.001*std::max(1.f,ratios[i])*1.4;
+        const auto capacitySeconds = maximumTimeMs*.001*std::max(1.f,tapRatios[i])*1.4;
         line.delay.assign(size_t(std::ceil(sampleRate*capacitySeconds))+4,0);
         const auto manualSamples = phaseAccessoryBudget(sampleRate)*sampleRate;
         line.phaseMemory.assign(size_t(std::max(1,std::min(juce::roundToInt(sampleRate*(.00025+i*.000075)),int(std::floor(manualSamples))))),0);
         const auto coefficientLimit = std::max(0.,(manualSamples-line.phaseMemory.size())/(manualSamples+line.phaseMemory.size()));
         line.phaseTarget = float(std::clamp(double(tapPattern[i]*.45f),-coefficientLimit,coefficientLimit));
-        line.tap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
-        line.wetTap.prepare(sampleRate,float(sampleRate*.09*ratios[i]));
+        line.tap.prepare(sampleRate,float(sampleRate*.09*tapRatios[i]));
+        line.wetTap.prepare(sampleRate,float(sampleRate*.09*tapRatios[i]));
+        tapGainMotion[i].prepare(sampleRate,0xa511e9b3u^uint32_t(0x9e3779b9u*(i+1)));
+        const auto initial=float(.09*tapRatios[i]);
+        tapDisplay.wetSeconds[i].store(initial,std::memory_order_relaxed);
+        tapDisplay.feedbackFromSeconds[i].store(initial,std::memory_order_relaxed);
+        tapDisplay.feedbackToSeconds[i].store(initial,std::memory_order_relaxed);
+        tapDisplay.feedbackTargetSeconds[i].store(initial,std::memory_order_relaxed);
+        tapDisplay.fade[i].store(1.f,std::memory_order_relaxed);
+        tapDisplay.feedbackGainDb[i].store(0.f,std::memory_order_relaxed);
+        tapDisplay.injectionGainDb[i].store(-24.f,std::memory_order_relaxed);
         feedbackGain[i].reset(sampleRate,.05); injectionGain[i].reset(sampleRate,.05);
     }
     for (size_t ch = 0; ch < 2; ++ch)
@@ -469,6 +477,24 @@ void ReverbEngine::prepare (double rate, bool worker)
     lowCoefficient = float(1-std::exp(-2*pi*std::min(16000.,sampleRate*.4)/sampleRate));
     dcCoefficient = float(1-std::exp(-2*pi*18/sampleRate));
     displayedReduction.store(0); displayedPeak.store(0); lastDiffusion = lastScatter = -1;
+    tapDisplay.valid.store(true,std::memory_order_release);
+}
+TapDisplay ReverbEngine::readTapDisplay() const noexcept
+{
+    TapDisplay result;
+    result.valid=tapDisplay.valid.load(std::memory_order_acquire);
+    if(!result.valid) return result;
+    for(size_t i=0;i<8;++i)
+    {
+        result.wetSeconds[i]=tapDisplay.wetSeconds[i].load(std::memory_order_relaxed);
+        result.feedbackFromSeconds[i]=tapDisplay.feedbackFromSeconds[i].load(std::memory_order_relaxed);
+        result.feedbackToSeconds[i]=tapDisplay.feedbackToSeconds[i].load(std::memory_order_relaxed);
+        result.feedbackTargetSeconds[i]=tapDisplay.feedbackTargetSeconds[i].load(std::memory_order_relaxed);
+        result.fade[i]=tapDisplay.fade[i].load(std::memory_order_relaxed);
+        result.feedbackGainDb[i]=tapDisplay.feedbackGainDb[i].load(std::memory_order_relaxed);
+        result.injectionGainDb[i]=tapDisplay.injectionGainDb[i].load(std::memory_order_relaxed);
+    }
+    return result;
 }
 void ReverbEngine::update (const Settings& s)
 {
@@ -489,7 +515,7 @@ void ReverbEngine::update (const Settings& s)
     {
         auto& line = lines[i];
 
-        const auto wetSeconds = std::clamp(s.timeMs,1.f,maximumTimeMs)*.001f*(1+s.scatter*(ratios[i]-1));
+        const auto wetSeconds = std::clamp(s.timeMs,1.f,maximumTimeMs)*.001f*(1+s.scatter*(tapRatios[i]-1));
         const auto autoShift = active ? latest.strength*s.phase*float(std::min(phaseAccessoryBudget(sampleRate),double(wetSeconds)*.09))
             *std::sin(latest.frequency*.017f+float(i)*2.399963f) : 0.f;
         const auto seconds = wetSeconds*(1+std::clamp(s.tap,-1.f,1.f)*.3f*(1+s.scatter*(tapPattern[i]-1)))+s.scatter*autoShift;
@@ -633,14 +659,17 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
         // a Hadamard matrix would shorten long tails at intermediate settings.
         // A nonzero density floor makes full Scatter a reverb even when the
         // finer Diffusion control is at minimum; zero Scatter is identity.
-        const auto diffuse = scatterAmount*(.25f+.75f*diffusion.getNextValue());
+        const auto diffusionAmount=diffusion.getNextValue();
+        const auto diffuse = scatterAmount*(.25f+.75f*diffusionAmount);
         if (!juce::exactlyEqual(diffuse,lastDiffusion))
         { matrixCos = std::cos(diffuse*float(pi/4)); matrixSin = std::sin(diffuse*float(pi/4)); lastDiffusion = diffuse; }
         for (size_t stride = 1; stride < 8; stride *= 2)
             for (size_t base = 0; base < 8; base += 2*stride)
                 for (size_t i = 0; i < stride; ++i)
                 { const auto a = scattered[base+i], b = scattered[base+i+stride]; scattered[base+i] = matrixCos*a+matrixSin*b; scattered[base+i+stride] = -matrixSin*a+matrixCos*b; }
-        for (size_t line = 0; line < 8; ++line) scattered[line] *= feedbackGain[line].getNextValue();
+        for (size_t line = 0; line < 8; ++line)
+            scattered[line] *= feedbackGain[line].getNextValue()
+                *tapGainMotion[line].process(diffusionAmount*scatterAmount,safeSettings.timeMs);
         // Bound only the returning feedback, with a shared gain for all lines.
         // Positive shelf gain can sustain the tail at an equilibrium level;
         // there is no unconditional attenuation to force it to die away.
@@ -671,5 +700,19 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
         blockPeak = std::max({blockPeak,std::abs(left[sample]),right != nullptr ? std::abs(right[sample]) : 0.f});
     }
     analysis.finishBlock(); displayedPeak.store(blockPeak);
+    for(size_t i=0;i<lines.size();++i)
+    {
+        const auto& line=lines[i];
+        const auto wetBlend=smooth(line.wetTap.fadeProgress());
+        const auto wetPosition=line.wetTap.current()+wetBlend*(line.wetTap.nextPosition()-line.wetTap.current());
+        tapDisplay.wetSeconds[i].store(float(wetPosition/sampleRate),std::memory_order_relaxed);
+        tapDisplay.feedbackFromSeconds[i].store(float(line.tap.current()/sampleRate),std::memory_order_relaxed);
+        tapDisplay.feedbackToSeconds[i].store(float(line.tap.nextPosition()/sampleRate),std::memory_order_relaxed);
+        tapDisplay.feedbackTargetSeconds[i].store(float(line.tap.targetPosition()/sampleRate),std::memory_order_relaxed);
+        tapDisplay.fade[i].store(line.tap.fadeProgress(),std::memory_order_relaxed);
+        const auto feedback=feedbackGain[i].getCurrentValue()*tapGainMotion[i].gain();
+        tapDisplay.feedbackGainDb[i].store(20.f*std::log10(std::max(feedback,1.e-6f)),std::memory_order_relaxed);
+        tapDisplay.injectionGainDb[i].store(20.f*std::log10(std::max(injectionGain[i].getCurrentValue(),1.e-6f)),std::memory_order_relaxed);
+    }
 }
 }

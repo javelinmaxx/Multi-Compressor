@@ -583,6 +583,34 @@ void feedbackRoutingTests (const juce::File& directory)
 }
 void tapTests()
 {
+    lan::TapGainMotion motion; motion.prepare(48000,0x13579bdu);
+    for (int i=0;i<2400;++i) check(std::abs(motion.process(0.f,100.f)-1.f)<1.e-7f,"zero Diffusion preserves unit feedback tap magnitude");
+    float motionPrevious=1.f, maxStep=0.f, maxDb=0.f;
+    for (int i=0;i<24000;++i)
+    {
+        const auto gain=motion.process(1.f,100.f);
+        const auto db=20.f*std::log10(gain);
+        maxDb=std::max(maxDb,std::abs(db));
+        maxStep=std::max(maxStep,std::abs(gain-motionPrevious)); motionPrevious=gain;
+        check(std::abs(db)<=3.0001f,"Diffusion tap gain stays within plus or minus three decibels");
+        if (i==0) check(motion.glideSamples()==2400,"Diffusion target interval is half of Time at 48 kHz");
+    }
+    check(maxDb>1.f && maxStep<.001f,"Diffusion changes feedback level without sample-boundary jumps");
+    for (int i=0;i<2400;++i) motion.process(0.f,100.f);
+    check(std::abs(motion.gain()-1.f)<1.e-6f,"turning Diffusion off glides tap gain back to unity");
+    motion.process(1.f,200.f);
+    check(motion.glideSamples()==4800,"Diffusion glide follows changes to half of the Time setting");
+
+    lan::ReverbEngine displayEngine; displayEngine.prepare(48000,false);
+    lan::Settings displaySettings; displaySettings.automatic=false; displaySettings.timeMs=100; displaySettings.tap=0; displaySettings.diffusion=1;
+    juce::AudioBuffer<float> displayAudio(2,128); displayAudio.clear(); displayEngine.process(displayAudio,displaySettings);
+    auto display=displayEngine.readTapDisplay();
+    check(display.valid && display.wetSeconds[0]>0 && display.feedbackFromSeconds[0]>0,"tap display publishes the active delay positions");
+    displaySettings.tap=1; displayEngine.process(displayAudio,displaySettings); display=displayEngine.readTapDisplay();
+    check(std::abs(display.feedbackToSeconds[0]-display.feedbackFromSeconds[0])>1.e-4f
+          && display.fade[0]<1.f,"tap display exposes active feedback-read movement");
+    check(std::abs(display.wetSeconds[0]-display.feedbackFromSeconds[0])<.01f,"tap shift leaves the wet pickup in place");
+
     for (double rate : {44100.,48000.,96000.})
     {
         std::vector<float> constant(4096,1); lan::MovingTap transition; transition.prepare(rate,100); transition.target(200);
@@ -1113,7 +1141,7 @@ void editorTests (const juce::File& destination)
 {
     LanReverbProcessor p; p.prepareToPlay(48000,128);
     std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor()); editor->addToDesktop(0); editor->setVisible(true);
-    check(editor->getWidth() == 740 && editor->getHeight() == 540,"editor uses intended dimensions");
+    check(editor->getWidth() == 740 && editor->getHeight() == 808,"editor includes the three-second tap display");
     int sliders = 0;
     constexpr std::array<const char*,12> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","shimmer","mix","output"};
     for (auto* child : editor->getChildren())
@@ -1182,11 +1210,17 @@ void editorTests (const juce::File& destination)
     }
     for (int tick = 0; tick < 3; ++tick) { juce::Thread::sleep(10); juce::Timer::callPendingTimersSynchronously(); }
     lan::Analysis live; check(p.readAnalysis(live) && live.revision > 0,"real background worker publishes feedback data for the native editor");
+    set(p,"tap",70);
+    juce::AudioBuffer<float> movingTaps(2,128); movingTaps.clear(); p.processBlock(movingTaps,midi);
+    juce::Timer::callPendingTimersSynchronously();
+    const auto tapPositions=p.readTapDisplay();
+    check(tapPositions.valid && std::abs(tapPositions.feedbackToSeconds[0]-tapPositions.feedbackFromSeconds[0])>1.e-4f,
+          "native tap display shows movement during Tap Shift automation");
     auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds()); juce::MemoryOutputStream png;
     destination.getParentDirectory().createDirectory(); check(juce::PNGImageFormat().writeImageToStream(snapshot,png) && destination.replaceWithData(png.getData(),png.getDataSize()),"native preview is saved");
     for (float factor : {.5f,1.2f})
     {
-        editor->setSize(juce::roundToInt(740*factor),juce::roundToInt(540*factor));
+        editor->setSize(juce::roundToInt(740*factor),juce::roundToInt(808*factor));
         for (auto* child : editor->getChildren())
             if (dynamic_cast<juce::Slider*>(child) != nullptr || dynamic_cast<juce::Button*>(child) != nullptr || dynamic_cast<SpectrumShelfHandle*>(child) != nullptr)
             {

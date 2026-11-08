@@ -35,6 +35,7 @@ public:
     void setStateInformation (const void*, int) override;
     lan::Settings settings() const;
     bool readAnalysis (lan::Analysis& a) const { return engine.readAnalysis(a); }
+    lan::TapDisplay readTapDisplay() const noexcept { return engine.readTapDisplay(); }
     float reductionDb() const { return engine.reductionDb(); }
     float peakLevel() const { return engine.peakLevel(); }
     double tempoBpm() const noexcept { return hostTempo.load(); }

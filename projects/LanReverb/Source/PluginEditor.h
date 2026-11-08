@@ -18,7 +18,7 @@ private:
     void updateTimeMode();
     void updateShelves();
     void moveShelf (int, juce::Point<float>);
-    static constexpr int designWidth = 740, designHeight = 540;
+    static constexpr int designWidth = 740, designHeight = 808;
     LanReverbProcessor& processor;
     StageLookAndFeel look;
     juce::TooltipWindow tooltipWindow { this };
@@ -33,6 +33,7 @@ private:
     std::unique_ptr<State::ButtonAttachment> autoAttachment, bypassAttachment, syncAttachment;
     std::array<SpectrumShelfHandle,2> shelfHandles {SpectrumShelfHandle(false),SpectrumShelfHandle(true)};
     lan::Analysis analysis;
+    lan::TapDisplay tapDisplay;
     lan::SpectrumDisplaySmoother spectrumDisplay;
     double lastSpectrumTick=0;
     float reduction = 0, outputPeak = 0;

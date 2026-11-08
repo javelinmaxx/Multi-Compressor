@@ -2,6 +2,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "DelayTiming.h"
 #include "Shimmer.h"
+#include "TapGainMotion.h"
 #include <array>
 #include <atomic>
 #include <vector>
@@ -14,6 +15,14 @@ struct Settings
     float tap = 0, phase = .6f, tame = .75f, mix = .8f, outputDb = 0, scatter = 1;
     float lowShelfHz = 200, lowShelfDb = 0, highShelfHz = 8000, highShelfDb = 0, shimmer = 0;
     bool automatic = true, bypass = false;
+};
+inline constexpr std::array<float,8> tapRatios { .46375f,.54625f,.66625f,.77125f,.89875f,1.04875f,1.21625f,1.42375f };
+inline constexpr std::array<float,8> tapPattern { -.73f,.37f,-.19f,.89f,-.51f,.13f,.61f,-.97f };
+struct TapDisplay
+{
+    std::array<float,8> wetSeconds {}, feedbackFromSeconds {}, feedbackToSeconds {};
+    std::array<float,8> feedbackTargetSeconds {}, fade {}, feedbackGainDb {}, injectionGainDb {};
+    bool valid=false;
 };
 inline constexpr int spectrumBins = 64, maxBands = 16, analysisSize = 4096;
 inline constexpr float tameLimitDb = 6;
@@ -106,6 +115,9 @@ public:
     void target (float samples) noexcept { wanted = samples; }
     float read (const std::vector<float>&, size_t writePosition) noexcept;
     float current() const noexcept { return active; }
+    float nextPosition() const noexcept { return next; }
+    float targetPosition() const noexcept { return wanted; }
+    float fadeProgress() const noexcept { return progress; }
 private:
     float active = 1, next = 1, wanted = 1, progress = 1, step = 1;
 };
@@ -120,6 +132,7 @@ public:
     float reductionDb() const noexcept { return displayedReduction.load(); }
     uint32_t analysisJobs() const noexcept { return analysis.jobs(); }
     float peakLevel() const noexcept { return displayedPeak.load(); }
+    TapDisplay readTapDisplay() const noexcept;
 private:
     friend struct ReverbEngineTestAccess;
     struct Filter
@@ -166,6 +179,7 @@ private:
     float previousPhase = -1;
     bool phaseActive = false;
     std::array<Line, 8> lines;
+    std::array<TapGainMotion,8> tapGainMotion;
     std::array<std::vector<float>, 2> predelay;
     std::array<MovingTap, 2> predelayTap;
     size_t predelayPosition = 0;
@@ -184,6 +198,12 @@ private:
     float matrixCos = 1, matrixSin = 0, lastDiffusion = -1;
     float lastScatter = -1, projectionCos = 0, projectionSin = 1;
     std::array<juce::SmoothedValue<float>, 8> feedbackGain, injectionGain;
+    struct AtomicTapDisplay
+    {
+        std::array<std::atomic<float>,8> wetSeconds {}, feedbackFromSeconds {}, feedbackToSeconds {};
+        std::array<std::atomic<float>,8> feedbackTargetSeconds {}, fade {}, feedbackGainDb {}, injectionGainDb {};
+        std::atomic<bool> valid {false};
+    } tapDisplay;
     juce::SmoothedValue<float> mix, outputGain, width, diffusion, phaseMix, bypass, scatterMix;
     std::atomic<float> displayedReduction { 0 }, displayedPeak { 0 };
 };

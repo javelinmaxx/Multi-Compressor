@@ -14,7 +14,7 @@ feedback resonance control. Version **0.7.5**, by **J-Sonic Team**, **2026**.
 | Decay | 0.3–40 s / 10 s | Nominal RT60, with further loss from damping, interpolation and automatic EQ |
 | Pre-delay | 0–200 ms / 20 ms | Delay before the wet network; dry remains immediate |
 | Scatter | 0–100% / 100% | Morphs regular stereo delay into a dense stereo reverb |
-| Diffusion | 0–100% / 85% | Fine mixing density as Scatter increases |
+| Diffusion | 0–100% / 85% | Fine mixing density and independent per-tap feedback gain motion up to ±3 dB |
 | Width | 0–200% / 125% | Normalized wet mid/side balance; zero is mono |
 | Tap Shift | −100–100% / 0% | Offsets feedback read positions by different amounts per line |
 | Phase | 0–100% / 60% | All-pass phase dispersion and automatic phase/tap steering |
@@ -35,6 +35,13 @@ neighboring log-frequency bins and between display frames to avoid jagged,
 flickering traces; the analyser and feedback processing use their original data.
 A pale target EQ curve combines the narrow tamer filters with the two uncompensated shelves. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
+
+The tap display below the controls shows all eight wet pickups (cyan) and
+feedback read taps (gold) over the first three seconds. Gold tracks show the
+active crossfade movement and a faint outline marks a queued destination.
+Repeat stems use the current feedback gain to estimate each tap's level on a
+−60 to 0 dB scale; each row also prints its current loop gain. These are
+nominal amplitudes, since mixing, EQ and limiting alter real tail levels.
 
 ## Tempo-synchronized Time
 
@@ -77,6 +84,14 @@ to 100% of the full rotation at that endpoint, so its minimum does not disable
 the reverb. Scatter defaults to 100% and is smoothed over 50 ms; tap changes keep
 their queued 250 ms crossfades. Intermediate settings may have additional decay
 loss from the phase-path blend, so Decay remains a nominal control.
+
+Diffusion also sets the depth of independent random feedback-gain targets for
+each tap, from no level variation at zero to ±3 dB at full Scatter and
+Diffusion. The gain motion follows Scatter so its zero endpoint keeps the
+independent stereo delay channels intact. Targets are sampled
+every half-Time interval and glide smoothly across the same interval, including
+when Time is synchronized to the DAW. This variation acts on recirculated
+feedback, leaving the first wet pickup and dry path untouched.
 
 ## Signal path
 

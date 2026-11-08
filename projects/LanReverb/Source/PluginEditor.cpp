@@ -11,7 +11,7 @@ constexpr std::array<const char*,12> hints {
     "Sets the nominal feedback decay time before filtering, while shelf boost can sustain an indefinite tail.",
     "Delays the signal entering the reverb while leaving the dry signal immediate.",
     "Morphs aligned delay repeats at zero into a dense stereo reverb at full.",
-    "Adjusts the mixing density of the feedback network as Scatter increases.",
+    "Adjusts feedback mixing density and glides each tap's level by up to plus or minus three decibels every half Time.",
     "Sets the stereo spread of the wet signal with a normalized mid and side balance.",
     "Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies.",
     "Sets feedback phase dispersion and correction across sixteen resonance bands within a five-millisecond delay budget.",
@@ -140,8 +140,10 @@ void LanReverbEditor::timerCallback()
     // the last valid frame instead of flashing an empty plot on that tick.
     if (processor.parameters.getRawParameterValue("automatic")->load()<.5f) analysis = {};
     spectrumDisplay.update(analysis,elapsed);
+    tapDisplay=processor.readTapDisplay();
     reduction = processor.reductionDb(); outputPeak = processor.peakLevel();
     repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{24,92,692,180}));
+    repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{24,538,692,250}));
 }
 void LanReverbEditor::paint (juce::Graphics& g)
 {
@@ -151,6 +153,7 @@ void LanReverbEditor::paint (juce::Graphics& g)
     g.setColour(foreground); g.setFont(juce::FontOptions(25.f)); g.drawText("LAN REVERB",24,30,420,36,juce::Justification::centredLeft);
     const auto magentaPanel=juce::Colour(0xff38263f);
     drawPanel(g,{24,88,692,190},magentaPanel); drawPanel(g,{24,292,692,232},magentaPanel);
+    drawPanel(g,{24,538,692,250},magentaPanel);
     g.setColour(foreground); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("FEEDBACK FIELD",40,100,230,20,juce::Justification::centredLeft);
     const auto settings = processor.settings(); const auto active = settings.automatic;
@@ -222,5 +225,73 @@ void LanReverbEditor::paint (juce::Graphics& g)
     g.setColour(secondary); g.setFont(juce::FontOptions(9.f));
     g.drawText("INPUT / GOLD: FEEDBACK",40,258,230,16,juce::Justification::centredLeft);
     g.drawText("OUT "+juce::String(juce::Decibels::gainToDecibels(outputPeak,-100.f),1)+" dBFS",500,258,198,16,juce::Justification::centredRight);
+    g.setColour(foreground); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
+    g.drawText("TAP DISTRIBUTION",40,550,230,18,juce::Justification::centredLeft);
+    g.setColour(secondary); g.setFont(juce::FontOptions(9.f));
+    g.drawText("FIRST 3 SECONDS  /  NOMINAL REPEAT LEVEL",384,552,314,14,juce::Justification::centredRight);
+    constexpr float axisLeft=100.f, axisWidth=464.f, rowStart=613.f, rowStep=18.f;
+    const auto timeX=[] (float seconds) { return axisLeft+axisWidth*seconds/3.f; };
+    const auto cyan=juce::Colour(0xff86c8de);
+    g.setColour(inset); g.fillRoundedRectangle(juce::Rectangle<float>(87,576,612,184),4.f);
+    for (int second=0;second<=3;++second)
+    {
+        const auto x=timeX(float(second));
+        g.setColour(grid); g.drawVerticalLine(juce::roundToInt(x),600.f,753.f);
+        g.setColour(secondary); g.setFont(juce::FontOptions(9.f));
+        g.drawText(juce::String(second)+" s",juce::roundToInt(x)-18,582,36,14,juce::Justification::centred);
+    }
+    g.setColour(secondary); g.drawText("TAP",43,582,38,14,juce::Justification::centredLeft);
+    g.drawText("LOOP GAIN",589,582,98,14,juce::Justification::centredRight);
+    if (tapDisplay.valid)
+    {
+        for (size_t i=0;i<lan::tapRatios.size();++i)
+        {
+            const auto y=rowStart+rowStep*float(i);
+            const auto from=tapDisplay.feedbackFromSeconds[i], to=tapDisplay.feedbackToSeconds[i];
+            const auto fade=std::clamp(tapDisplay.fade[i],0.f,1.f);
+            const auto eased=fade*fade*(3.f-2.f*fade);
+            const auto current=from+eased*(to-from);
+            const auto wet=tapDisplay.wetSeconds[i];
+            const auto gainDb=tapDisplay.feedbackGainDb[i];
+            g.setColour(secondary); g.setFont(juce::FontOptions(9.f));
+            g.drawText("T"+juce::String(int(i+1)),43,juce::roundToInt(y)-7,38,14,juce::Justification::centredLeft);
+            g.setColour(grid.withAlpha(.7f)); g.drawHorizontalLine(juce::roundToInt(y),axisLeft,axisLeft+axisWidth);
+            // Repeat stems use the current loop-gain estimate. Mixing, EQ and
+            // the limiter can change actual levels after each recirculation.
+            if (wet>=0 && wet<=3.f && current>.001f)
+                for (int repeat=0;repeat<96;++repeat)
+                {
+                    const auto seconds=wet+float(repeat)*current;
+                    if (seconds>3.f) break;
+                    const auto db=tapDisplay.injectionGainDb[i]+float(repeat)*gainDb;
+                    const auto level=std::clamp((db+60.f)/60.f,0.f,1.f);
+                    if (level<=0) continue;
+                    const auto x=timeX(seconds);
+                    g.setColour(amber.withAlpha(repeat==0 ? .7f : .2f+.5f*level));
+                    g.drawLine(x,y+3.f,x,y+3.f-10.f*level,repeat==0 ? 1.5f : 1.f);
+                }
+            if (from>=0 && from<=3.f && to>=0 && to<=3.f && std::abs(to-from)>.0002f)
+            {
+                g.setColour(amber.withAlpha(.45f)); g.drawLine(timeX(from),y-6.f,timeX(to),y-6.f,2.f);
+                g.fillEllipse(timeX(to)-2.f,y-8.f,4.f,4.f);
+            }
+            const auto target=tapDisplay.feedbackTargetSeconds[i];
+            if (target>=0 && target<=3.f && std::abs(target-to)>.0002f)
+            { g.setColour(amber.withAlpha(.3f)); g.drawEllipse(timeX(target)-2.5f,y-8.5f,5.f,5.f,1.f); }
+            if (current>=0 && current<=3.f)
+            { g.setColour(amber); g.fillEllipse(timeX(current)-3.f,y-9.f,6.f,6.f); }
+            if (wet>=0 && wet<=3.f)
+            { g.setColour(cyan); g.fillEllipse(timeX(wet)-2.5f,y-2.5f,5.f,5.f); }
+            g.setColour(foreground); g.setFont(juce::FontOptions(9.f));
+            g.drawText(juce::String(gainDb>=0 ? "+" : "")+juce::String(gainDb,1)+" dB",588,juce::roundToInt(y)-7,98,14,juce::Justification::centredRight);
+        }
+    }
+    else { g.setColour(secondary); g.drawText("Waiting for audio",100,650,464,18,juce::Justification::centred); }
+    g.setColour(cyan); g.fillEllipse(44.f,770.f,5.f,5.f);
+    g.setColour(secondary); g.setFont(juce::FontOptions(9.f));
+    g.drawText("WET PICKUP",54,765,89,15,juce::Justification::centredLeft);
+    g.setColour(amber); g.fillEllipse(152.f,768.f,6.f,6.f);
+    g.setColour(secondary); g.drawText("MOVING FEEDBACK TAP",163,765,168,15,juce::Justification::centredLeft);
+    g.drawText("STEM HEIGHT: -60 TO 0 dB",470,765,216,15,juce::Justification::centredRight);
     g.restoreState();
 }

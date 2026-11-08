@@ -7,7 +7,7 @@
 | Decay | Sets the nominal feedback decay time before filtering, while shelf boost can sustain an indefinite tail. |
 | Pre-delay | Delays the signal entering the reverb while leaving the dry signal immediate. |
 | Scatter | Morphs aligned delay repeats at zero into a dense stereo reverb at full. |
-| Diffusion | Adjusts the mixing density of the feedback network as Scatter increases. |
+| Diffusion | Adjusts feedback mixing density and glides each tap's level by up to plus or minus three decibels every half Time. |
 | Width | Sets the stereo spread of the wet signal with a normalized mid and side balance. |
 | Tap Shift | Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies. |
 | Phase | Sets feedback phase dispersion and correction across sixteen resonance bands within a five-millisecond delay budget. |
