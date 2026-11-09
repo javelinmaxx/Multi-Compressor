@@ -1,13 +1,13 @@
 # Yinyang Visage integration: Logic Pro test plan
 
-Status: **experimental GPU renderer implemented**.
-The existing JUCE editor now paints through JUCE's OpenGL component renderer,
-with an automatic software fallback if the context fails to start. This does
-not integrate the Visage UI library: doing that would require porting the JUCE
-controls and their host event handling. `YINYANG_SOFTWARE_UI=1` forces the
-software editor for comparison. A Linux virtual-display smoke test confirms
-that OpenGL render callbacks occur while resizing; it does not prove that a
-physical GPU or a Logic Pro Audio Unit host accepts the surface.
+Status: **Visage editor proof of concept implemented on Linux**.
+The default editor now hosts a Visage window inside JUCE's plugin editor and
+provides draggable host parameters and live level readings. The original JUCE
+editor can be selected with `YINYANG_SOFTWARE_UI=1` for comparison. A Linux
+virtual-display smoke test confirms that the Visage surface renders while
+resizing; it does not prove that a physical GPU or a Logic Pro Audio Unit host
+accepts the surface. The current artwork, history, waveform, typed values,
+tooltips, and accessibility controls still need Visage equivalents.
 
 ## Linux results
 

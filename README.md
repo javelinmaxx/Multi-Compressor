@@ -12,8 +12,10 @@ The editors support 50%–120% resizing, one-sentence hover hints, host automati
 and session recall. Each plugin is an independent project under `projects/`;
 the JUCE framework is included in this repository.
 
-All ten editors can paint through experimental JUCE
-OpenGL with a software fallback. See [GPU rendering and validation](projects/GPU_RENDERING.md).
+Yinyang Compressor now has a Visage editor proof of concept; its original JUCE
+editor remains available through a software UI switch. The other editors use
+experimental JUCE OpenGL with a software fallback. See [GPU rendering and
+validation](projects/GPU_RENDERING.md).
 
 [Plugin collection](#plugin-collection) · [Measured examples](#measured-examples) ·
 [Build and install](#build-and-install) · [Detailed build guide](docs/BUILDING.md)

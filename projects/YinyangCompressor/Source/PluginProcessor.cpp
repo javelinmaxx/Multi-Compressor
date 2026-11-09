@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "VisageEditor.h"
 #include "RatioMapping.h"
 
 namespace
@@ -227,7 +228,10 @@ void YinyangCompressorProcessor::setStateInformation (const void* data, int size
 
 juce::AudioProcessorEditor* YinyangCompressorProcessor::createEditor()
 {
-    return new YinyangCompressorEditor (*this);
+    if (juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") == "1"
+        || juce::SystemStats::getEnvironmentVariable ("J_SONIC_SOFTWARE_UI", "") == "1")
+        return new YinyangCompressorEditor (*this);
+    return new YinyangVisageEditor (*this);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

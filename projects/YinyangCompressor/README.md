@@ -318,3 +318,29 @@ See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for requirements, decisions, actual
 validation results, and remaining work. JUCE modules are licensed under AGPLv3
 or commercial terms. A commercial JUCE licence may be required for distribution;
 see the repository's [LICENSE.md](../../LICENSE.md).
+
+## Visage editor proof of concept
+
+The default Yinyang editor now uses a Visage child window hosted by the existing
+JUCE `AudioProcessorEditor`. JUCE remains responsible for the audio processor,
+VST3/AU/Standalone wrappers, host parameters, automation, and saved state. The
+Visage panel exposes the 19 active controls as draggable bars and shows live
+input, output, and gain-reduction values. The legacy `highTilt` parameter stays
+hidden, as it was in the previous editor. Dragging a control brackets updates
+with host automation gestures. The Yin ratio readout uses the existing display
+mapping while preserving the host parameter value.
+
+This is an integration and interaction proof of concept. The current JUCE artwork,
+history and waveform plots, typed values, tooltips, and accessibility controls
+still need Visage equivalents. Set `J_SONIC_SOFTWARE_UI=1` or
+`YINYANG_SOFTWARE_UI=1` before launching the host to select the original JUCE
+editor. That path also provides a comparison while the Visage interface develops.
+
+CMake pins Visage to commit `b92685dc4e4f4908302b916b60add3802d049848`.
+The Yinyang target now uses C++20; its processor, parameter IDs, and state format
+are unchanged. Set `YINYANG_VISAGE_GUI_TESTS=ON` when configuring to register
+the visible Visage and legacy editor smoke tests. They require a graphical
+session; on Linux, use Xvfb with a running window manager. Linux VST3, processor,
+DSP, upward-compression, oversampling, and both editor smoke tests passed in the
+development environment. AU/Logic and Windows host behavior remain to be tested
+on those platforms.

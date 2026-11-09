@@ -1,5 +1,6 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/VisageEditor.h"
 #include "../Source/HistoryDisplayScale.h"
 #include <cstdlib>
 #include <iostream>
@@ -823,11 +824,13 @@ int renderThemePreviews (const char* directory)
 int runGpuSmoke()
 {
     juce::ScopedJuceInitialiser_GUI juce;
-    const auto expectGpu = juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") != "1";
+    const auto legacy = juce::SystemStats::getEnvironmentVariable ("J_SONIC_SOFTWARE_UI", "") == "1"
+                     || juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") == "1";
     YinyangCompressorProcessor processor;
     processor.prepareToPlay (48000, 256);
-    std::unique_ptr<YinyangCompressorEditor> editor (
-        static_cast<YinyangCompressorEditor*> (processor.createEditor()));
+    std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
+    check ((dynamic_cast<YinyangVisageEditor*> (editor.get()) != nullptr) == ! legacy,
+           "editor route selects Visage or legacy JUCE");
     editor->addToDesktop (0);
     editor->setVisible (true);
     struct CaptureTimer final : juce::Timer
@@ -836,22 +839,28 @@ int runGpuSmoke()
         void timerCallback() override { tick(); }
     } timer;
     int frame = 0;
-    bool gpuActive = false;
+    bool rendered = false;
     timer.tick = [&]
     {
         ++frame;
         processor.reduction.store (12.f + 4.f * std::sin (float(frame) * .1f));
         if (frame == 10) editor->setSize (274, 363);
         if (frame == 20) editor->setSize (658, 871);
-        gpuActive |= editor->isGpuRendering();
+        if (auto* visage = dynamic_cast<YinyangVisageEditor*> (editor.get()))
+        {
+            if (frame > 25 && frame % 10 == 0)
+                rendered |= visage->hasRenderedFrame();
+        }
+        else if (auto* old = dynamic_cast<YinyangCompressorEditor*> (editor.get()))
+            rendered |= legacy ? ! old->isGpuRendering() : old->isGpuRendering();
         if (frame >= 80) juce::MessageManager::getInstance()->stopDispatchLoop();
     };
     timer.startTimer (20);
     juce::MessageManager::getInstance()->runDispatchLoop();
     timer.stopTimer();
-    check (gpuActive == expectGpu, "visible editor must use the selected GPU or software renderer");
+    check (rendered, "selected editor renders after resize");
     editor.reset();
-    std::cout << "Yinyang " << (expectGpu ? "OpenGL" : "software") << " editor smoke check passed\n";
+    std::cout << "Yinyang " << (legacy ? "JUCE" : "Visage") << " editor smoke check passed\n";
     return 0;
 }
 
