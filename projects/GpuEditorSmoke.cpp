@@ -3,6 +3,9 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#if defined(J_SONIC_YINYANG_VISAGE)
+#include "YinyangCompressor/Source/VisageEditor.h"
+#endif
 
 int main()
 {
@@ -15,7 +18,11 @@ int main()
     const auto original = editor->getBounds();
     editor->addToDesktop (0);
     editor->setVisible (true);
-    const bool software = juce::SystemStats::getEnvironmentVariable ("J_SONIC_SOFTWARE_UI", "") == "1";
+    const bool software = juce::SystemStats::getEnvironmentVariable ("J_SONIC_SOFTWARE_UI", "") == "1"
+#if defined(J_SONIC_YINYANG_VISAGE)
+                       || juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") == "1"
+#endif
+                       ;
     bool gpuActive = false;
     struct Tick final : juce::Timer
     {
@@ -29,17 +36,27 @@ int main()
         if (frames == 10) editor->setSize (original.getWidth() / 2, original.getHeight() / 2);
         if (frames == 20) editor->setSize (juce::roundToInt (original.getWidth() * 1.2),
                                            juce::roundToInt (original.getHeight() * 1.2));
-        auto* context = juce::OpenGLContext::getContextAttachedTo (*editor);
-        gpuActive = context != nullptr && context->isAttached();
+#if defined(J_SONIC_YINYANG_VISAGE)
+        if (auto* visage = dynamic_cast<YinyangVisageEditor*> (editor.get()))
+        {
+            if (frames > 25 && frames % 10 == 0) gpuActive |= visage->hasRenderedFrame();
+        }
+        else
+#endif
+        {
+            auto* context = juce::OpenGLContext::getContextAttachedTo (*editor);
+            gpuActive = context != nullptr && context->isAttached();
+        }
         if (frames == 75) juce::MessageManager::getInstance()->stopDispatchLoop();
     };
     timer.startTimer (20);
     juce::MessageManager::getInstance()->runDispatchLoop();
     timer.stopTimer();
     const auto ok = gpuActive != software;
+    processor->editorBeingDeleted (editor.get());
     editor.reset();
     processor->releaseResources();
-    std::cout << processor->getName() << (software ? " software" : " OpenGL")
+    std::cout << processor->getName() << (software ? " software" : " GPU")
               << (ok ? " editor smoke passed\n" : " editor smoke failed\n");
     return ok ? 0 : 3;
 }

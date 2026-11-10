@@ -8,7 +8,8 @@ detached and JUCE software painting resumes. Set `J_SONIC_SOFTWARE_UI=1`
 before launching a host to force software painting for every plugin. Yinyang
 also accepts its earlier `YINYANG_SOFTWARE_UI=1` switch.
 
-Yinyang Compressor now defaults to a Visage editor proof of concept. Set
+Yinyang Compressor now defaults to a Visage editor with its original panel layout,
+model palettes and live gain/waveform display. Set
 `J_SONIC_SOFTWARE_UI=1` or `YINYANG_SOFTWARE_UI=1` to select its original JUCE
 editor. The other editors use JUCE's OpenGL renderer. Accelerated
 drawing may reduce UI CPU use on some
@@ -28,7 +29,7 @@ Release VST3 builds and the existing processor tests passed for Yinyang
 Compressor, Shun De-Esser, Kuo Stereo, Zao Drive, Ren Transformer, Kuo Velvet,
 Xuan Phase, Lan Reverb, and Nian Saturator. Each plugin's visible-editor smoke
 test passed under Xvfb with OpenGL attached and with the global software switch
-enabled. The tests resize between 50% and 120% and destroy the editor after
-rendering. The OpenGL callback is checked by the Yinyang-specific test, and
-the shared renderer returns to software painting if no frame arrives after a
-visible window is created. Mac AU and Logic Pro behavior remain untested.
+enabled before Yinyang's Visage migration. Yinyang's current visible tests
+exercise its Visage surface, its JUCE software path, 50%–120% resizing and two
+simultaneous instances. The shared JUCE renderer returns to software painting if
+no frame arrives after a visible window is created. Mac AU and Logic Pro behavior remain untested.

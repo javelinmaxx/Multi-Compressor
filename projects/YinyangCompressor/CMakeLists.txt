@@ -37,12 +37,13 @@ FetchContent_Declare(visage GIT_REPOSITORY https://github.com/javelinmaxx/visage
 set(VISAGE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(VISAGE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(visage)
+add_embedded_resources(YinyangKnobArt "yinyang_knob.h" "yinyang::art" "${CMAKE_CURRENT_SOURCE_DIR}/Resources/knob.png;${CMAKE_CURRENT_SOURCE_DIR}/Resources/switch_on.png;${CMAKE_CURRENT_SOURCE_DIR}/Resources/switch_off.png;${CMAKE_CURRENT_SOURCE_DIR}/Resources/button.png")
 target_sources(YinyangCompressor PRIVATE
     Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/VisageEditor.cpp)
 target_compile_features(YinyangCompressor PUBLIC cxx_std_20)
 target_compile_definitions(YinyangCompressor PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
-target_link_libraries(YinyangCompressor PRIVATE juce::juce_audio_utils juce::juce_opengl visage VisageEmbeddedFonts
+target_link_libraries(YinyangCompressor PRIVATE juce::juce_audio_utils juce::juce_opengl visage VisageEmbeddedFonts YinyangKnobArt
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 option(YINYANG_COMPRESSOR_BUILD_TESTS "Build DSP and plug-in integration tests" ON)
@@ -74,4 +75,6 @@ if(YINYANG_COMPRESSOR_BUILD_TESTS)
     target_compile_features(YinyangCompressorPerformanceBench PRIVATE cxx_std_17)
     include("${CMAKE_CURRENT_LIST_DIR}/../PluginGpuSmoke.cmake")
     add_plugin_gpu_smoke(YinyangCompressor)
+    target_compile_definitions(YinyangCompressorGpuSmoke PRIVATE J_SONIC_YINYANG_VISAGE=1)
+    target_link_libraries(YinyangCompressorGpuSmoke PRIVATE visage)
 endif()
