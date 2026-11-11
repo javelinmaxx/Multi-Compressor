@@ -13,6 +13,9 @@ struct QinSynthTestAccess
     static uint32_t analysisJobs(const QinSynthProcessor& p) { return p.reverb.analysisJobs(); }
     static bool stableFilters(const QinSynthProcessor& p)
     {
+        for(const auto& filter:p.masterFilter)
+            for(const auto value:{filter.s1,filter.s2,filter.t1,filter.t2,filter.pole})
+                if(!std::isfinite(value) || std::abs(value)>16.f) return false;
         for(const auto& voice:p.voices)
             for(const auto& filter:voice.filter)
             {
@@ -45,6 +48,14 @@ struct QinSynthEditorTestAccess
     static bool noiseVisible(const QinSynthEditor& editor) { return editor.noiseButton.isVisible(); }
     static bool curveVisible(const QinSynthEditor& editor,int index)
     { return editor.curveSliders[size_t(index)].isVisible(); }
+    static bool mergeVisible(const QinSynthEditor& editor)
+    { return editor.filterMergeSlider.isVisible(); }
+    static bool timesFiveVisible(const QinSynthEditor& editor)
+    { return editor.filterTimesFive.isVisible(); }
+    static void timesFive(QinSynthEditor& editor) { editor.filterTimesFive.onClick(); }
+    static void tick(QinSynthEditor& editor) { editor.timerCallback(); }
+    static bool liveScope(const QinSynthEditor& editor) { return editor.liveScopeValid; }
+    static float liveCutoff(const QinSynthEditor& editor) { return editor.liveCutoff; }
     static bool shapeControlsAreSliders(const QinSynthEditor& editor)
     {
         for(int index=18;index<=34;++index)
@@ -87,6 +98,12 @@ int main(int argc,char** argv)
         const auto resonanceMid=synth.parameters.getParameter("filterResonance")->convertFrom0to1(.5f);
         if(std::abs(cutoffMid-std::sqrt(30.f*18000.f))>2.f || std::abs(resonanceMid-(std::sqrt(101.f)-1.f))>.2f)
             throw std::runtime_error("Cutoff and resonance automation must use logarithmic positions");
+        for(const auto* id:{"fltAttack","fltDecay","fltRelease"})
+            if(std::abs(synth.parameters.getParameter(id)->convertFrom0to1(.5f)-std::sqrt(5000.f))>1.f)
+                throw std::runtime_error("Filter envelope time sliders must use logarithmic 1–5000 ms positions");
+        if(std::abs(synth.parameters.getParameter("fltSustain")->convertFrom0to1(.5f)
+                    -(std::sqrt(101.f)-1.f))>.2f)
+            throw std::runtime_error("Filter sustain slider must have finer resolution near zero");
         juce::AudioBuffer<float> block(2,256); juce::MidiBuffer midi;
         synth.processBlock(block,midi);
         if(power(block,0)>1.e-12 || power(block,1)>1.e-12) throw std::runtime_error("Idle instrument must be silent");
@@ -201,6 +218,33 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Each filter type must attenuate a note above its cutoff");
         }
         {
+            QinSynthProcessor voices,master;
+            for(auto* p:{&voices,&master})
+            {
+                set(*p,"verbMix",0); set(*p,"filterType",3); set(*p,"filterCutoff",900);
+                set(*p,"filterResonance",100); set(*p,"filterKeyFollow",100);
+                set(*p,"filterEnvAmount",100);
+                set(*p,"fltAttack",1); set(*p,"fltSustain",100);
+                p->prepareToPlay(48000,256);
+            }
+            set(master,"filterMerge",100);
+            juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer notes;
+            for(const auto pitch:{48,60,72}) notes.addEvent(juce::MidiMessage::noteOn(1,pitch,1.f),0);
+            double difference=0;
+            for(int blockIndex=0;blockIndex<32;++blockIndex)
+            {
+                voices.processBlock(a,notes); master.processBlock(b,notes); notes.clear();
+                power(a,0); power(b,0);
+                if(!QinSynthTestAccess::stableFilters(voices) || !QinSynthTestAccess::stableFilters(master))
+                    throw std::runtime_error("Merged or per-voice filter state became unstable");
+                if(blockIndex>=16)
+                    for(int sample=0;sample<256;++sample)
+                        difference+=std::abs(a.getSample(0,sample)-b.getSample(0,sample));
+            }
+            if(difference<.1)
+                throw std::runtime_error("Full Merge must use a shared filter rather than per-voice filters");
+        }
+        {
             QinSynthProcessor plain,noisy;
             for(auto* p:{&plain,&noisy})
             {
@@ -239,7 +283,7 @@ int main(int argc,char** argv)
                         set(stressed,"verbMix",0); set(stressed,"filterType",float(type));
                         set(stressed,"filterCutoff",cutoff); set(stressed,"filterResonance",100);
                         set(stressed,"filterEnvAmount",envelopeAmount);
-                        set(stressed,"fltAttack",.001f); set(stressed,"fltSustain",100);
+                        set(stressed,"fltAttack",1.f); set(stressed,"fltSustain",100);
                         set(stressed,"noise",1); stressed.prepareToPlay(rate,128);
                         juce::AudioBuffer<float> audio(2,128); juce::MidiBuffer events;
                         for(int blockIndex=0;blockIndex<40;++blockIndex)
@@ -270,7 +314,7 @@ int main(int argc,char** argv)
             for(auto* p:{&staticFilter,&movingFilter})
             {
                 set(*p,"verbMix",0); set(*p,"filterType",3); set(*p,"filterCutoff",200);
-                set(*p,"fltAttack",.001f); set(*p,"fltSustain",100); p->prepareToPlay(48000,256);
+                set(*p,"fltAttack",1.f); set(*p,"fltSustain",100); p->prepareToPlay(48000,256);
             }
             set(movingFilter,"filterEnvAmount",100);
             juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
@@ -282,6 +326,37 @@ int main(int argc,char** argv)
                 for(int i=0;i<256;++i) difference+=std::abs(a.getSample(0,i)-b.getSample(0,i));
             }
             if(difference<.1) throw std::runtime_error("FLT envelope must move the filter cutoff");
+        }
+        {
+            QinSynthProcessor monitored;
+            set(monitored,"verbMix",0); set(monitored,"drive",65);
+            set(monitored,"filterType",3); set(monitored,"filterCutoff",500);
+            set(monitored,"filterEnvAmount",100); set(monitored,"fltAttack",500);
+            set(monitored,"fltSustain",100); monitored.prepareToPlay(48000,256);
+            QinSynthEditor editor(monitored);
+            juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            monitored.processBlock(audio,note); note.clear();
+            QinSynthEditorTestAccess::tick(editor);
+            const auto firstCutoff=QinSynthEditorTestAccess::liveCutoff(editor);
+            const auto firstPlot=editor.createComponentSnapshot({455,185,218,90});
+            for(int blockIndex=0;blockIndex<24;++blockIndex) monitored.processBlock(audio,note);
+            QinSynthEditorTestAccess::tick(editor);
+            const auto lateCutoff=QinSynthEditorTestAccess::liveCutoff(editor);
+            const auto latePlot=editor.createComponentSnapshot({455,185,218,90});
+            if(lateCutoff<firstCutoff*1.5f || !QinSynthEditorTestAccess::liveScope(editor))
+                throw std::runtime_error("Filter response and drive scope must follow active audio");
+            int changed=0;
+            for(int y=0;y<firstPlot.getHeight();y+=2)
+                for(int x=0;x<firstPlot.getWidth();x+=2)
+                    changed+=firstPlot.getPixelAt(x,y)!=latePlot.getPixelAt(x,y);
+            if(changed<20) throw std::runtime_error("Live filter plot must follow envelope motion");
+            const auto scope=monitored.getDriveScope();
+            double driveDifference=0;
+            for(size_t index=0;index<scope.input.size();++index)
+                driveDifference+=std::abs(scope.input[index]-scope.output[index]);
+            if(scope.epoch==0 || driveDifference<.01)
+                throw std::runtime_error("Drive scope must show the processed waveform");
         }
         {
             QinSynthProcessor plain,modulated;
@@ -311,6 +386,8 @@ int main(int argc,char** argv)
                 throw std::runtime_error("OSC, ENV, FLT, and FX panels must be present together");
             if(!QinSynthEditorTestAccess::shapeControlsAreSliders(editor))
                 throw std::runtime_error("Envelope and filter controls must use sliders");
+            if(!QinSynthEditorTestAccess::mergeVisible(editor))
+                throw std::runtime_error("Filter panel must show the Merge slider");
             const auto changes=[&editor](juce::Rectangle<int> area,auto change)
             {
                 const auto before=editor.createComponentSnapshot(area);
@@ -322,15 +399,15 @@ int main(int argc,char** argv)
                         different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
                 return different;
             };
-            if(changes({455,449,218,66},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
+            if(changes({455,500,218,64},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
                 throw std::runtime_error("Envelope plot must respond to sustain changes");
             QinSynthEditorTestAccess::previewValue(editor,20,100);
-            if(changes({455,449,218,76},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
+            if(changes({455,500,218,64},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
                 throw std::runtime_error("Envelope plot must respond to curve changes");
             QinSynthEditorTestAccess::previewCurve(editor,0,0);
             QinSynthEditorTestAccess::previewFilter(editor,4);
             QinSynthEditorTestAccess::previewValue(editor,31,200);
-            if(changes({455,185,218,67},[&]{QinSynthEditorTestAccess::previewValue(editor,31,5000);})<20)
+            if(changes({455,185,218,90},[&]{QinSynthEditorTestAccess::previewValue(editor,31,5000);})<20)
                 throw std::runtime_error("Filter plot must respond to cutoff changes");
             QinSynthEditorTestAccess::previewValue(editor,31,2500);
             QinSynthEditorTestAccess::previewValue(editor,32,95);
@@ -346,9 +423,11 @@ int main(int argc,char** argv)
             if(!QinSynthEditorTestAccess::envelopeVisible(editor,1)
                || QinSynthEditorTestAccess::envelopeVisible(editor,0)
                || !QinSynthEditorTestAccess::curveVisible(editor,1)
-               || QinSynthEditorTestAccess::curveVisible(editor,0))
+               || QinSynthEditorTestAccess::curveVisible(editor,0)
+               || !QinSynthEditorTestAccess::timesFiveVisible(editor))
                 throw std::runtime_error("Envelope tabs must select their four ADSR controls");
             QinSynthEditorTestAccess::envelope(editor,0);
+            QinSynthEditorTestAccess::previewValue(editor,37,65);
             const auto save=[&editor](const char* name)
             {
                 const auto image=editor.createComponentSnapshot(editor.getLocalBounds());
@@ -375,6 +454,19 @@ int main(int argc,char** argv)
             if(!QinSynthEditorTestAccess::modVisible(editor))
                 throw std::runtime_error("MOD tab must show destination and depth controls");
             if(argc>4) save(argv[4]);
+        }
+        {
+            QinSynthProcessor scaled;
+            QinSynthEditor editor(scaled);
+            QinSynthEditorTestAccess::envelope(editor,1);
+            QinSynthEditorTestAccess::timesFive(editor);
+            for(const auto& pair:{std::pair{"fltAttack",50.f},
+                                  std::pair{"fltDecay",1000.f},
+                                  std::pair{"fltRelease",1500.f}})
+                if(std::abs(scaled.parameters.getRawParameterValue(pair.first)->load()-pair.second)>.1f)
+                    throw std::runtime_error("Filter time multiplier must scale attack, decay, and release");
+            if(std::abs(scaled.parameters.getRawParameterValue("fltSustain")->load())>1.e-6f)
+                throw std::runtime_error("Filter time multiplier must leave sustain unchanged");
         }
         std::cout<<"Qin Synth processor checks passed\n";
         return 0;

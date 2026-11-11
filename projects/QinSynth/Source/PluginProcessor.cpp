@@ -36,10 +36,33 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     for(const char* prefix:{"flt","mod"})
     {
         const juce::String id(prefix);
-        add(id+"Attack",id+" attack",.001f,2,.001f,.01f,"s");
-        add(id+"Decay",id+" decay",.01f,5,.001f,.2f,"s");
-        add(id+"Sustain",id+" sustain",0,100,.1f,0,"%");
-        add(id+"Release",id+" release",.01f,5,.001f,.3f,"s");
+        if(id=="flt")
+        {
+            const auto addTime=[&result,&id](const char* suffix,float initial)
+            {
+                juce::NormalisableRange<float> range {1.f,5000.f,
+                    [](float low,float high,float position) { return low*std::pow(high/low,position); },
+                    [](float low,float high,float value) { return std::log(value/low)/std::log(high/low); },
+                    [](float,float,float value) { return std::round(value); }};
+                result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id+suffix,1},
+                    id+" "+suffix,range,initial,juce::AudioParameterFloatAttributes().withLabel("ms")));
+            };
+            addTime("Attack",10.f); addTime("Decay",200.f);
+            juce::NormalisableRange<float> sustainRange {0.f,100.f,
+                [](float,float,float position) { return std::expm1(position*std::log(101.f)); },
+                [](float,float,float value) { return std::log1p(value)/std::log(101.f); },
+                [](float,float,float value) { return std::round(value*10.f)*.1f; }};
+            result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"fltSustain",1},
+                "flt sustain",sustainRange,0.f,juce::AudioParameterFloatAttributes().withLabel("%")));
+            addTime("Release",300.f);
+        }
+        else
+        {
+            add(id+"Attack",id+" attack",.001f,2,.001f,.01f,"s");
+            add(id+"Decay",id+" decay",.01f,5,.001f,.2f,"s");
+            add(id+"Sustain",id+" sustain",0,100,.1f,0,"%");
+            add(id+"Release",id+" release",.01f,5,.001f,.3f,"s");
+        }
         add(id+"Curve",id+" curve",-100,100,.1f,0,"%");
     }
     add("modDepth","Mod depth",0,100,.1f,0,"%");
@@ -59,11 +82,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         "Filter resonance",resonanceRange,0.f,juce::AudioParameterFloatAttributes().withLabel("%")));
     add("filterKeyFollow","Filter key follow",0,100,.1f,0,"%");
     add("filterEnvAmount","Filter envelope amount",-100,100,.1f,0,"%");
+    add("filterMerge","Filter merge",0,100,.1f,0,"%");
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"filterType",1},"Filter type",
         juce::StringArray{"Bypass","TB-303 ladder","Sallen-Key 18 dB","Digital 12 dB","Digital 24 dB"},0));
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"noise",1},"Noise oscillator",false));
     add("keyPan","Key pan",0,100,.1f,50,"%");
-    add("drive","Zao drive",0,100,.1f,0,"%");
+    add("drive","Drive",0,100,.1f,0,"%");
     add("time","Delay time",25,1000,.1f,180,"ms");
     add("decay","Reverb decay",.3f,20,.1f,3,"s");
     add("scatter","Scatter",0,100,.1f,70,"%");
@@ -75,7 +99,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
 }
 QinSynthProcessor::QinSynthProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output",juce::AudioChannelSet::stereo(),true)),
-      parameters(*this,nullptr,"QinSynthState",layout()) {}
+      parameters(*this,nullptr,"QinSynthState",layout())
+{
+    for(auto& point:driveScopeInput) point.store(0,std::memory_order_relaxed);
+    for(auto& point:driveScopeOutput) point.store(0,std::memory_order_relaxed);
+}
 bool QinSynthProcessor::isBusesLayoutSupported(const BusesLayout& buses) const
 {
     return buses.getMainInputChannelSet().isDisabled()
@@ -84,8 +112,13 @@ bool QinSynthProcessor::isBusesLayoutSupported(const BusesLayout& buses) const
 void QinSynthProcessor::prepareToPlay(double rate,int)
 {
     sampleRate=std::isfinite(rate) && rate>=8000 ? rate : 48000;
-    voices={}; voiceAge=onsetCount=0; onsetTap=onsetPhase=0; sustain=false;
+    voices={}; masterFilter={}; masterCutoff=smoothedFilterMerge=0;
+    voiceAge=onsetCount=0; onsetTap=onsetPhase=0; sustain=false;
     for(auto& circuit:driveCircuit) circuit.prepare(sampleRate);
+    for(auto& point:driveScopeInput) point.store(0,std::memory_order_relaxed);
+    for(auto& point:driveScopeOutput) point.store(0,std::memory_order_relaxed);
+    driveScopeWrite=driveScopeCounter=0; driveScopeEpoch.store(0,std::memory_order_relaxed);
+    liveFilterCutoff.store(0,std::memory_order_relaxed);
     // The MIDI onset is the only source of tap/phase motion. Lan's spectral
     // resonance analyser and tame filters remain dormant in this instrument.
     reverb.prepare(sampleRate,false);
@@ -95,6 +128,19 @@ void QinSynthProcessor::getStateInformation(juce::MemoryBlock& data)
 { if(auto xml=parameters.copyState().createXml()) copyXmlToBinary(*xml,data); }
 void QinSynthProcessor::setStateInformation(const void* data,int size)
 { if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName(parameters.state.getType())) parameters.replaceState(juce::ValueTree::fromXml(*xml)); }
+QinSynthProcessor::DriveScope QinSynthProcessor::getDriveScope() const noexcept
+{
+    DriveScope result;
+    result.epoch=driveScopeEpoch.load(std::memory_order_acquire);
+    const auto cursor=result.epoch%driveScopePoints;
+    for(size_t index=0;index<driveScopePoints;++index)
+    {
+        const auto source=(cursor+index)%driveScopePoints;
+        result.input[index]=driveScopeInput[source].load(std::memory_order_relaxed);
+        result.output[index]=driveScopeOutput[source].load(std::memory_order_relaxed);
+    }
+    return result;
+}
 juce::AudioProcessorEditor* QinSynthProcessor::createEditor() { return new QinSynthEditor(*this); }
 QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
 {
@@ -118,9 +164,10 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     for(int index=1;index<3;++index)
     {
         const juce::String prefix(index==1 ? "flt" : "mod");
-        settings.env[size_t(index)]={std::clamp(get(prefix+"Attack"),.001f,2.f),
-            std::clamp(get(prefix+"Decay"),.01f,5.f),std::clamp(get(prefix+"Sustain")*.01f,0.f,1.f),
-            std::clamp(get(prefix+"Release"),.01f,5.f),std::clamp(get(prefix+"Curve")*.01f,-1.f,1.f)};
+        const auto scale=index==1 ? .001f : 1.f;
+        settings.env[size_t(index)]={std::clamp(get(prefix+"Attack")*scale,.001f,5.f),
+            std::clamp(get(prefix+"Decay")*scale,.001f,5.f),std::clamp(get(prefix+"Sustain")*.01f,0.f,1.f),
+            std::clamp(get(prefix+"Release")*scale,.001f,5.f),std::clamp(get(prefix+"Curve")*.01f,-1.f,1.f)};
     }
     settings.modDepth=std::clamp(get("modDepth")*.01f,0.f,1.f);
     settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,1);
@@ -128,6 +175,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.resonance=std::clamp(get("filterResonance")*.01f,0.f,1.f);
     settings.keyFollow=std::clamp(get("filterKeyFollow")*.01f,0.f,1.f);
     settings.filterEnv=std::clamp(get("filterEnvAmount")*.01f,-1.f,1.f);
+    settings.filterMerge=std::clamp(get("filterMerge")*.01f,0.f,1.f);
     settings.filterType=std::clamp(juce::roundToInt(get("filterType")),0,4);
     settings.noise=get("noise")>=.5f;
     settings.pan=std::clamp(get("keyPan")*.01f,0.f,1.f);
@@ -273,7 +321,10 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     for(size_t env=0;env<3;++env)
     {
         const auto& e=settings.env[env];
-        const std::array<float,3> times {e.attack*6.9f,e.decay*5.f,e.release*5.f};
+        const auto filterEnvelope=env==1;
+        const std::array<float,3> times {e.attack*(filterEnvelope ? 1.f : 6.9f),
+                                         e.decay*(filterEnvelope ? 1.f : 5.f),
+                                         e.release*(filterEnvelope ? 1.f : 5.f)};
         for(size_t stage=0;stage<3;++stage)
             coefficients[env][stage]=float(1.0/(sampleRate*std::max(.001f,times[stage])));
     }
@@ -298,7 +349,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     for(int i=start;i<start+count;++i)
     {
-        double left=0,right=0;
+        double left=0,right=0,masterInputLeft=0,masterInputRight=0;
+        double cutoffSum=0,cutoffWeight=0;
         for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
         {
             auto& voice=voices[voiceIndex];
@@ -352,24 +404,71 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                     : std::tan(float(juce::MathConstants<double>::pi*hz/sampleRate));
                 const auto onePole=settings.filterType==2
                     ? std::clamp(float(1-std::exp(-2*juce::MathConstants<double>::pi*hz/sampleRate)),0.f,1.f) : 0.f;
+                const auto gain=.16*voice.velocity*amp;
+                masterInputLeft+=gain*voiceLeft; masterInputRight+=gain*voiceRight;
+                cutoffSum+=gain*hz; cutoffWeight+=gain;
                 voiceLeft=filterSample(voice.filter[0],float(voiceLeft),coefficient,onePole,settings.resonance,settings.filterType);
                 voiceRight=filterSample(voice.filter[1],float(voiceRight),coefficient,onePole,settings.resonance,settings.filterType);
             }
             const auto gain=.16*voice.velocity*amp;
             left+=gain*voiceLeft; right+=gain*voiceRight;
         }
+        if(settings.filterType!=0)
+        {
+            const auto target=cutoffWeight>1.e-8 ? float(cutoffSum/cutoffWeight) : masterCutoff;
+            masterCutoff+=cutoffSmoothing*(target-masterCutoff);
+            const auto hz=std::clamp(masterCutoff,25.f,float(sampleRate*.44));
+            const auto coefficient=settings.filterType==1
+                ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)
+                : std::tan(float(juce::MathConstants<double>::pi*hz/sampleRate));
+            const auto onePole=settings.filterType==2
+                ? std::clamp(float(1-std::exp(-2*juce::MathConstants<double>::pi*hz/sampleRate)),0.f,1.f) : 0.f;
+            const auto masterLeft=filterSample(masterFilter[0],float(masterInputLeft),coefficient,onePole,
+                                               settings.resonance,settings.filterType);
+            const auto masterRight=filterSample(masterFilter[1],float(masterInputRight),coefficient,onePole,
+                                                settings.resonance,settings.filterType);
+            smoothedFilterMerge+=cutoffSmoothing*(settings.filterMerge-smoothedFilterMerge);
+            left=left+(masterLeft-left)*smoothedFilterMerge;
+            right=right+(masterRight-right)*smoothedFilterMerge;
+        }
         buffer.setSample(0,i,float(std::clamp(left,-4.0,4.0)));
         buffer.setSample(1,i,float(std::clamp(right,-4.0,4.0)));
     }
-    if(!bypass && settings.drive>1.e-4f)
-        for(int i=start;i<start+count;++i)
+    double cutoffLogSum=0, cutoffWeight=0;
+    if(settings.filterType!=0)
+        for(const auto& voice:voices)
+            if(voice.active && voice.cutoff>0)
+            {
+                const auto weight=double(voice.velocity)*voice.env[0].value;
+                cutoffLogSum+=weight*std::log(voice.cutoff); cutoffWeight+=weight;
+            }
+    const auto voiceCutoff=cutoffWeight>1.e-5 ? float(std::exp(cutoffLogSum/cutoffWeight)) : 0.f;
+    liveFilterCutoff.store(voiceCutoff>0 ? voiceCutoff+(masterCutoff-voiceCutoff)*smoothedFilterMerge : 0.f,
+                           std::memory_order_relaxed);
+    const auto stride=std::max(1u,uint32_t(sampleRate/(driveScopePoints*50.0)));
+    for(int i=start;i<start+count;++i)
+    {
+        const auto capture=driveScopeCounter+1>=stride;
+        const auto original=capture ? .5f*(buffer.getSample(0,i)+buffer.getSample(1,i)) : 0.f;
+        if(settings.drive>1.e-4f)
             for(int ch=0;ch<2;++ch)
             {
-                const auto original=buffer.getSample(ch,i);
-                const auto driven=driveCircuit[size_t(ch)].process(original*(1+5*settings.drive));
-                const auto result=original+settings.drive*(driven-original);
-                buffer.setSample(ch,i,std::isfinite(result) ? float(std::clamp(result,-4.0,4.0)) : original);
+                const auto dry=buffer.getSample(ch,i);
+                const auto driven=driveCircuit[size_t(ch)].process(dry*(1+5*settings.drive));
+                const auto result=dry+settings.drive*(driven-dry);
+                buffer.setSample(ch,i,!bypass && std::isfinite(result) ? float(std::clamp(result,-4.0,4.0)) : dry);
             }
+        if(capture)
+        {
+            driveScopeCounter=0;
+            const auto driven=.5f*(buffer.getSample(0,i)+buffer.getSample(1,i));
+            driveScopeInput[driveScopeWrite].store(original,std::memory_order_relaxed);
+            driveScopeOutput[driveScopeWrite].store(driven,std::memory_order_relaxed);
+            driveScopeWrite=(driveScopeWrite+1)%driveScopePoints;
+            driveScopeEpoch.fetch_add(1,std::memory_order_release);
+        }
+        else ++driveScopeCounter;
+    }
     float const outputGain=settings.output;
     for(int ch=0;ch<2;++ch) buffer.applyGain(ch,start,count,outputGain);
     lan::Settings verb;

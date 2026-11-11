@@ -3,12 +3,19 @@
 #include "../../LanReverb/Source/ReverbEngine.h"
 #include "../../ZaoDrive/Source/Circuits.h"
 #include <array>
+#include <atomic>
 #include <cstdint>
 
 class QinSynthProcessor final : public juce::AudioProcessor
 {
 public:
     static constexpr int maxVoices=16, oscillatorCount=3, maxUnison=8;
+    static constexpr size_t driveScopePoints=128;
+    struct DriveScope
+    {
+        std::array<float,driveScopePoints> input {}, output {};
+        uint32_t epoch=0;
+    };
     QinSynthProcessor();
     void prepareToPlay(double, int) override;
     void releaseResources() override { reverb.release(); }
@@ -31,6 +38,8 @@ public:
     void changeProgramName(int,const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*,int) override;
+    DriveScope getDriveScope() const noexcept;
+    float getLiveFilterCutoff() const noexcept { return liveFilterCutoff.load(std::memory_order_relaxed); }
     juce::AudioProcessorValueTreeState parameters;
 private:
     friend struct QinSynthTestAccess;
@@ -55,7 +64,7 @@ private:
     {
         std::array<OscillatorSettings,oscillatorCount> oscillator;
         std::array<EnvelopeSettings,3> env;
-        float pan=0, drive=0, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, modDepth=0;
+        float pan=0, drive=0, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
         int filterType=0, modTarget=0;
         bool noise=false;
         float verbTime=180, verbDecay=3, verbScatter=.7f, verbMix=.2f;
@@ -72,6 +81,12 @@ private:
     float filterSample(FilterState&,float,float,float,float,int) const noexcept;
     std::array<Voice,maxVoices> voices {};
     std::array<zao::OpAmpFeedbackClipper,2> driveCircuit {};
+    std::array<FilterState,2> masterFilter {};
+    float masterCutoff=0, smoothedFilterMerge=0;
+    std::array<std::atomic<float>,driveScopePoints> driveScopeInput {}, driveScopeOutput {};
+    std::atomic<uint32_t> driveScopeEpoch {0};
+    std::atomic<float> liveFilterCutoff {0};
+    uint32_t driveScopeWrite=0, driveScopeCounter=0;
     lan::ReverbEngine reverb;
     uint64_t voiceAge=0, onsetCount=0;
     double sampleRate=48000;

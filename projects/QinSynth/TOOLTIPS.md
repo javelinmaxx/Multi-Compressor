@@ -8,7 +8,7 @@
 | AMP tab | Opens the amplitude envelope. |
 | FLT tab | Opens the filter envelope. |
 | MOD tab | Opens the effect modulation envelope. |
-| DRIVE tab | Opens Zao Drive and output controls. |
+| DRIVE tab | Opens drive and output controls. |
 | DELAY tab | Opens Lan's delay and reverb controls. |
 | Osc Wave | Chooses the selected oscillator's virtual-analog waveform. |
 | Osc Level | Sets the selected oscillator's contribution to the mix. |
@@ -22,10 +22,11 @@
 | AMP Sustain | Sets amplitude while the key remains held. |
 | AMP Release | Sets how quickly amplitude fades after note-off. |
 | AMP Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
-| FLT Attack | Sets how quickly the filter envelope rises. |
-| FLT Decay | Sets how quickly filter motion falls to sustain. |
-| FLT Sustain | Sets the held level of filter modulation. |
-| FLT Release | Sets how quickly filter modulation fades after note-off. |
+| FLT Attack | Sets the filter envelope rise from 1 to 5000 ms with logarithmic control. |
+| FLT Decay | Sets the filter envelope decay from 1 to 5000 ms with logarithmic control. |
+| FLT Sustain | Sets the held filter-envelope level with finer control near zero. |
+| FLT Release | Sets the filter envelope release from 1 to 5000 ms with logarithmic control. |
+| FLT *5 | Multiplies the filter envelope's attack, decay, and release times by five, up to 5000 ms. |
 | FLT Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
 | MOD Attack | Sets how quickly the modulation envelope rises. |
 | MOD Decay | Sets how quickly the modulation envelope falls to sustain. |
@@ -39,9 +40,10 @@
 | FLT Resonance | Emphasizes the filter cutoff with logarithmic control resolution. |
 | FLT Key Follow | Raises the cutoff with MIDI note pitch. |
 | FLT Env Amount | Sets how far the filter envelope moves the cutoff. |
+| FLT Merge | Blends per-voice filters into one shared master filter at 100%. |
 | Key Pan | Places low MIDI notes left and high notes right. |
 | Output | Sets the final synth level. |
-| Zao Drive | Blends in Zao's op-amp clipping circuit. |
+| Drive | Blends in the op-amp clipping circuit. |
 | Time | Sets Lan's delay and reverb time. |
 | Decay | Sets how long Lan's feedback tail lasts. |
 | Scatter | Morphs Lan's delay into a diffuse reverb. |

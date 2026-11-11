@@ -31,10 +31,10 @@ constexpr std::array<Control,44> controls {{
     {"ampDecay","DECAY","Sets how quickly amplitude falls from its peak to sustain."},
     {"ampSustain","SUSTAIN","Sets amplitude while the key remains held."},
     {"release","RELEASE","Sets how quickly amplitude fades after note-off."},
-    {"fltAttack","ATTACK","Sets how quickly the filter envelope rises."},
-    {"fltDecay","DECAY","Sets how quickly filter motion falls to sustain."},
-    {"fltSustain","SUSTAIN","Sets the held level of filter modulation."},
-    {"fltRelease","RELEASE","Sets how quickly filter modulation fades after note-off."},
+    {"fltAttack","ATTACK","Sets the filter envelope rise from 1 to 5000 ms with logarithmic control."},
+    {"fltDecay","DECAY","Sets the filter envelope decay from 1 to 5000 ms with logarithmic control."},
+    {"fltSustain","SUSTAIN","Sets the held filter-envelope level with finer control near zero."},
+    {"fltRelease","RELEASE","Sets the filter envelope release from 1 to 5000 ms with logarithmic control."},
     {"modAttack","ATTACK","Sets how quickly the modulation envelope rises."},
     {"modDecay","DECAY","Sets how quickly the modulation envelope falls to sustain."},
     {"modSustain","SUSTAIN","Sets the held level of effect modulation."},
@@ -46,7 +46,7 @@ constexpr std::array<Control,44> controls {{
     {"filterEnvAmount","ENV AMOUNT","Sets how far the filter envelope moves the cutoff."},
     {"keyPan","KEY PAN","Places low MIDI notes left and high notes right."},
     {"output","OUTPUT","Sets the final synth level."},
-    {"drive","ZAO DRIVE","Blends in Zao's op-amp clipping circuit."},
+    {"drive","DRIVE","Blends in the op-amp clipping circuit."},
     {"time","TIME","Sets Lan's delay and reverb time."},
     {"decay","DECAY","Sets how long Lan's feedback tail lasts."},
     {"scatter","SCATTER","Morphs Lan's delay into a diffuse reverb."},
@@ -98,7 +98,8 @@ void QinLookAndFeel::drawLinearSlider(juce::Graphics& g,int x,int y,int width,in
     g.fillRoundedRectangle(left,center-1.f,std::max(0.f,position-left),2.f,1.f);
     g.setColour(accentColour); g.fillRoundedRectangle(position-3.f,center-6.f,6.f,12.f,2.f);
 }
-QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(&synth)
+QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
+    : AudioProcessorEditor(&synth), processor(synth)
 {
     setOpaque(true); look.accentColour=accent; look.dialTopColour=juce::Colour(0xff645a45);
     look.dialBottomColour=juce::Colour(0xff2a2925); setLookAndFeel(&look);
@@ -115,6 +116,25 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
     noiseButton.setColour(juce::TextButton::buttonOnColourId,accent);
     addAndMakeVisible(noiseButton);
     noiseAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"noise",noiseButton);
+    filterTimesFive.setTooltip("Multiplies the filter envelope's attack, decay, and release times by five, up to 5000 ms.");
+    filterTimesFive.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
+    filterTimesFive.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
+    filterTimesFive.onClick=[this] { multiplyFilterTimes(); };
+    addAndMakeVisible(filterTimesFive);
+    filterMergeLabel.setText("MERGE",juce::dontSendNotification);
+    filterMergeLabel.setJustificationType(juce::Justification::centred);
+    filterMergeLabel.setFont(juce::FontOptions(9.f));
+    filterMergeLabel.setColour(juce::Label::textColourId,stageStyle::secondary);
+    filterMergeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    filterMergeSlider.setTextBoxStyle(juce::Slider::TextBoxRight,false,46,18);
+    filterMergeSlider.setColour(juce::Slider::thumbColourId,accent);
+    filterMergeSlider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+    filterMergeSlider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+    filterMergeSlider.textFromValueFunction=[](double value) { return juce::String(value,1); };
+    editorTooltips::setHint(filterMergeSlider,filterMergeLabel,
+        "Blends per-voice filters into one shared master filter at 100%.");
+    addAndMakeVisible(filterMergeSlider); addAndMakeVisible(filterMergeLabel);
+    filterMergeAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"filterMerge",filterMergeSlider);
     for(size_t i=0;i<envelopeTabs.size();++i)
     {
         auto& tab=envelopeTabs[i]; styleTab(tab,i==0 ? "AMP" : i==1 ? "FLT" : "MOD",3);
@@ -124,7 +144,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
     for(size_t i=0;i<fxTabs.size();++i)
     {
         auto& tab=fxTabs[i]; styleTab(tab,i==0 ? "DRIVE" : "DELAY",4);
-        tab.setTooltip(i==0 ? "Opens Zao Drive and output controls." : "Opens Lan's delay and reverb controls.");
+        tab.setTooltip(i==0 ? "Opens drive and output controls." : "Opens Lan's delay and reverb controls.");
         tab.onClick=[this,i]{showFxSection(int(i));}; addAndMakeVisible(tab);
     }
     for(size_t i=0;i<sliders.size();++i)
@@ -165,7 +185,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
         addAndMakeVisible(slider);
         curveAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,curveIds[i],slider);
         slider.onValueChange=[this]
-        { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,379,240,366})); };
+        { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,433,240,312})); };
     }
     for(size_t i=18;i<=34;++i)
     {
@@ -175,15 +195,29 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
         slider.setColour(juce::Slider::thumbColourId,accent);
         slider.onValueChange=[this,i]
         {
-            const auto area=i<30 ? juce::Rectangle<int>(444,379,240,366) : juce::Rectangle<int>(444,90,240,281);
+            const auto area=i<30 ? juce::Rectangle<int>(444,433,240,312) : juce::Rectangle<int>(444,90,240,335);
             repaint(editorScaling::repaintArea(*this,designWidth,designHeight,area));
-            if(i==24) repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,90,240,281}));
+            if(i==24) repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,90,240,335}));
         };
     }
     sliders[31].textFromValueFunction=[](double value)
     { return juce::String(juce::roundToInt(value)); };
     sliders[32].textFromValueFunction=[](double value)
     { return juce::String(value,1); };
+    for(const auto index:{22,23,25})
+    {
+        sliders[size_t(index)].textFromValueFunction=[](double value)
+        { return juce::String(juce::roundToInt(value))+"ms"; };
+        sliders[size_t(index)].updateText();
+    }
+    sliders[24].textFromValueFunction=[](double value)
+    { return juce::String(value,1); };
+    sliders[24].updateText();
+    sliders[37].onValueChange=[this]
+    {
+        updateDrivePreview();
+        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{707,392,182,153}));
+    };
     for(size_t i=0;i<waves.size();++i)
     {
         auto& wave=waves[i]; auto& label=waveLabels[i];
@@ -211,11 +245,64 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
     filterTypeAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"filterType",filterType);
     modTargetAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"modTarget",modTarget);
     filterType.onChange=[this]
-    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,90,240,281})); };
+    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,90,240,335})); };
     oscillatorTabs[0].setToggleState(true,juce::dontSendNotification);
     envelopeTabs[0].setToggleState(true,juce::dontSendNotification);
     fxTabs[0].setToggleState(true,juce::dontSendNotification);
-    updateVisibility(); editorScaling::enable(*this,designWidth,designHeight); gpu.attach(*this);
+    updateVisibility(); editorScaling::enable(*this,designWidth,designHeight);
+    updateDrivePreview(); gpu.attach(*this); startTimerHz(40);
+}
+void QinSynthEditor::multiplyFilterTimes()
+{
+    for(const auto* id:{"fltAttack","fltDecay","fltRelease"})
+    {
+        auto* parameter=processor.parameters.getParameter(id);
+        const auto current=parameter->convertFrom0to1(parameter->getValue());
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(std::min(5000.f,current*5.f)));
+        parameter->endChangeGesture();
+    }
+}
+void QinSynthEditor::updateDrivePreview()
+{
+    zao::OpAmpFeedbackClipper circuit;
+    circuit.prepare(48000.0);
+    const auto mix=std::clamp(float(sliders[37].getValue())*.01f,0.f,1.f);
+    for(int sample=0;sample<384;++sample)
+    {
+        const auto phase=std::fmod(float(sample)/64.f,1.f);
+        const auto original=.55f*(1.f-4.f*std::abs(phase-.5f));
+        const auto driven=float(circuit.process(original*(1.f+5.f*mix)));
+        if(sample>=256)
+        {
+            const auto index=size_t(sample-256);
+            previewInput[index]=original;
+            previewOutput[index]=original+mix*(driven-original);
+        }
+    }
+}
+void QinSynthEditor::timerCallback()
+{
+    const auto cutoff=processor.getLiveFilterCutoff();
+    if((cutoff<=0)!=(liveCutoff<=0) || (cutoff>0 && std::abs(std::log(cutoff/std::max(1.f,liveCutoff)))>.002f))
+    {
+        liveCutoff=cutoff;
+        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{455,185,218,90}));
+    }
+    if(currentFxSection==0)
+    {
+        auto next=processor.getDriveScope();
+        if(next.epoch!=lastScopeEpoch)
+        {
+            lastScopeEpoch=next.epoch;
+            liveScopeValid=false;
+            for(size_t index=0;index<next.input.size();++index)
+                if(std::abs(next.input[index])>1.e-4f || std::abs(next.output[index])>1.e-4f)
+                { liveScopeValid=true; break; }
+            liveScope=std::move(next);
+            repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{707,392,182,153}));
+        }
+    }
 }
 void QinSynthEditor::showOscillator(int index)
 { currentOscillator=juce::jlimit(0,2,index); for(size_t i=0;i<3;++i) oscillatorTabs[i].setToggleState(int(i)==currentOscillator,juce::dontSendNotification); updateVisibility(); repaint(); }
@@ -233,6 +320,7 @@ void QinSynthEditor::updateVisibility()
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control) { const auto i=size_t(18+env*4+control); sliders[i].setVisible(env==currentEnvelope); labels[i].setVisible(env==currentEnvelope); }
     for(int env=0;env<3;++env) curveSliders[size_t(env)].setVisible(env==currentEnvelope);
+    filterTimesFive.setVisible(currentEnvelope==1);
     sliders[30].setVisible(currentEnvelope==2); labels[30].setVisible(currentEnvelope==2);
     modTarget.setVisible(currentEnvelope==2); modTargetLabel.setVisible(currentEnvelope==2);
     for(size_t i=36;i<sliders.size();++i)
@@ -244,7 +332,7 @@ void QinSynthEditor::resized()
     for(int i=0;i<3;++i)
     {
         oscillatorTabs[size_t(i)].setBounds(31+i*109,125,103,27);
-        envelopeTabs[size_t(i)].setBounds(455+i*73,412,68,27);
+        envelopeTabs[size_t(i)].setBounds(455+i*73,466,68,27);
         waveLabels[size_t(i)].setBounds(34,170,118,15); waves[size_t(i)].setBounds(34,186,154,27);
         for(int control=0;control<6;++control)
         {
@@ -253,23 +341,26 @@ void QinSynthEditor::resized()
         }
     }
     noiseButton.setBounds(363,125,55,27);
+    filterTimesFive.setBounds(618,438,51,24);
     labels[35].setBounds(302,160,112,15); sliders[35].setBounds(302,176,112,82);
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control)
         {
-            const auto index=size_t(18+env*4+control); const auto y=532+control*28;
+            const auto index=size_t(18+env*4+control); const auto y=570+control*26;
             labels[index].setBounds(454,y,52,25); sliders[index].setBounds(507,y,166,25);
         }
-    curveLabel.setBounds(454,647,52,25);
-    for(auto& slider:curveSliders) slider.setBounds(507,647,166,25);
-    labels[30].setBounds(451,681,104,14); sliders[30].setBounds(451,699,104,26);
-    modTargetLabel.setBounds(560,681,108,14); modTarget.setBounds(560,698,108,27);
+    curveLabel.setBounds(454,678,52,25);
+    for(auto& slider:curveSliders) slider.setBounds(507,678,166,25);
+    labels[30].setBounds(451,706,104,14); sliders[30].setBounds(451,720,104,23);
+    modTargetLabel.setBounds(560,706,108,14); modTarget.setBounds(560,719,108,24);
     filterTypeLabel.setBounds(455,131,211,15); filterType.setBounds(454,148,215,28);
     for(int index=31;index<=34;++index)
     {
-        const auto y=259+(index-31)*27;
+        const auto y=285+(index-31)*27;
         labels[size_t(index)].setBounds(454,y,68,25); sliders[size_t(index)].setBounds(523,y,150,25);
     }
+    filterMergeLabel.setBounds(454,393,68,25);
+    filterMergeSlider.setBounds(523,393,150,25);
     for(int i=0;i<2;++i) fxTabs[size_t(i)].setBounds(703+i*97,124,92,27);
     labels[36].setBounds(744,587,110,16); sliders[36].setBounds(744,604,110,83);
     labels[37].setBounds(738,245,116,16); sliders[37].setBounds(738,261,116,95);
@@ -282,6 +373,8 @@ void QinSynthEditor::resized()
     titleHint.setTransform(scale);
     for(auto& tab:oscillatorTabs) tab.setTransform(scale);
     noiseButton.setTransform(scale);
+    filterTimesFive.setTransform(scale);
+    filterMergeSlider.setTransform(scale); filterMergeLabel.setTransform(scale);
     for(auto& tab:envelopeTabs) tab.setTransform(scale);
     for(auto& tab:fxTabs) tab.setTransform(scale);
     for(auto& slider:sliders) slider.setTransform(scale);
@@ -307,15 +400,15 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.drawText("16 VOICES  /  3 OSC  /  8x UNI",661,36,231,23,juce::Justification::centred);
     const auto panel=juce::Colour(0xff27272c);
     stageStyle::drawPanel(g,{16,90,420,655},panel);
-    stageStyle::drawPanel(g,{444,90,240,281},panel);
-    stageStyle::drawPanel(g,{444,379,240,366},panel);
+    stageStyle::drawPanel(g,{444,90,240,335},panel);
+    stageStyle::drawPanel(g,{444,433,240,312},panel);
     stageStyle::drawPanel(g,{692,90,212,655},panel);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("OSC",30,99,120,20,juce::Justification::centredLeft);
     g.drawText("FLT",455,99,120,20,juce::Justification::centredLeft);
-    g.drawText("ENV",455,388,120,20,juce::Justification::centredLeft);
+    g.drawText("ENV",455,442,120,20,juce::Justification::centredLeft);
     g.drawText("FX",703,99,120,20,juce::Justification::centredLeft);
-    const juce::Rectangle<float> filterPlot(455,185,218,67), envelopePlot(455,449,218,76);
+    const juce::Rectangle<float> filterPlot(455,185,218,90), envelopePlot(455,500,218,64);
     for(const auto plot:{filterPlot,envelopePlot})
     {
         g.setColour(stageStyle::inset); g.fillRoundedRectangle(plot,4);
@@ -323,11 +416,14 @@ void QinSynthEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(juce::roundToInt(plot.getCentreY()),plot.getX(),plot.getRight());
     }
     const auto envIndex=size_t(18+currentEnvelope*4);
-    const auto attack=float(sliders[envIndex].getValue());
-    const auto decay=float(sliders[envIndex+1].getValue());
+    const auto timeScale=currentEnvelope==1 ? .001f : 1.f;
+    const auto attack=float(sliders[envIndex].getValue())*timeScale;
+    const auto decay=float(sliders[envIndex+1].getValue())*timeScale;
     const auto sustain=std::clamp(float(sliders[envIndex+2].getValue())*.01f,0.f,1.f);
-    const auto release=float(sliders[envIndex+3].getValue());
-    const std::array<float,4> spans {attack*6.9f,decay*5.f,.3f,release*5.f};
+    const auto release=float(sliders[envIndex+3].getValue())*timeScale;
+    const auto envelopeTimeScale=currentEnvelope==1 ? 1.f : 5.f;
+    const std::array<float,4> spans {attack*(currentEnvelope==1 ? 1.f : 6.9f),
+                                      decay*envelopeTimeScale,.3f,release*envelopeTimeScale};
     float total=0;
     for(const auto span:spans) total+=span;
     const auto plotLeft=envelopePlot.getX()+5.f, plotWidth=envelopePlot.getWidth()-10.f;
@@ -359,10 +455,10 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(cyan.withAlpha(.15f)); g.fillPath(envelopeFill);
     g.setColour(cyan); g.strokePath(envelopePath,juce::PathStrokeType(1.7f));
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
-    g.drawText("ADSR  /  TIME",461,451,165,10,juce::Justification::centredLeft);
-    g.drawText("0",459,511,28,10,juce::Justification::centredLeft);
-    g.drawText(juce::String(total*.5f,1)+"s",536,511,56,10,juce::Justification::centred);
-    g.drawText(juce::String(total,1)+"s",617,511,51,10,juce::Justification::centredRight);
+    g.drawText("ADSR  /  TIME",461,502,165,10,juce::Justification::centredLeft);
+    g.drawText("0",459,550,28,10,juce::Justification::centredLeft);
+    g.drawText(juce::String(total*.5f,1)+"s",536,550,56,10,juce::Justification::centred);
+    g.drawText(juce::String(total,1)+"s",617,550,51,10,juce::Justification::centredRight);
     const auto filterMode=std::max(0,filterType.getSelectedId()-1);
     const auto baseCutoff=float(sliders[31].getValue());
     const auto resonance=std::clamp(float(sliders[32].getValue())*.01f,0.f,1.f);
@@ -388,11 +484,19 @@ void QinSynthEditor::paint(juce::Graphics& g)
         }
         return path;
     };
-    if(std::abs(peakCutoff-heldCutoff)>1.f)
-    { g.setColour(cyan.withAlpha(.42f)); g.strokePath(trace(peakCutoff),juce::PathStrokeType(1.f)); }
-    g.setColour(accent); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.6f));
+    if(liveCutoff>0)
+    {
+        g.setColour(cyan.withAlpha(.32f)); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.f));
+        g.setColour(accent); g.strokePath(trace(liveCutoff),juce::PathStrokeType(1.8f));
+    }
+    else
+    {
+        if(std::abs(peakCutoff-heldCutoff)>1.f)
+        { g.setColour(cyan.withAlpha(.42f)); g.strokePath(trace(peakCutoff),juce::PathStrokeType(1.f)); }
+        g.setColour(accent); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.6f));
+    }
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
-    g.drawText("C5  /  HELD",461,186,90,10,juce::Justification::centredLeft);
+    g.drawText(liveCutoff>0 ? "LIVE / FILTER" : "C5  /  HELD",461,186,90,10,juce::Justification::centredLeft);
     for(const auto frequency:{100.f,1000.f,10000.f})
     {
         const auto x=filterPlot.getX()+3.f+(filterPlot.getWidth()-6.f)
@@ -401,7 +505,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
         g.drawVerticalLine(juce::roundToInt(x),filterPlot.getY()+12.f,filterPlot.getBottom()-13.f);
         g.setColour(stageStyle::secondary);
         g.drawText(frequency<1000 ? "100" : frequency<10000 ? "1k" : "10k",
-                   juce::roundToInt(x)-15,239,30,11,juce::Justification::centred);
+                   juce::roundToInt(x)-15,262,30,11,juce::Justification::centred);
     }
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(9.f));
     g.drawText("OSCILLATOR "+juce::String(currentOscillator+1)+" / WAVEFORM",34,276,322,16,juce::Justification::centredLeft);
@@ -420,13 +524,34 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(cyan.withAlpha(.2f)); g.strokePath(waveform,juce::PathStrokeType(4));
     g.setColour(cyan); g.strokePath(waveform,juce::PathStrokeType(1.5f));
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(10.f));
-    g.drawText(currentFxSection==0 ? "ZAO / SATURATION" : "LAN / DELAY-VERB",704,160,185,15,juce::Justification::centredLeft);
+    g.drawText(currentFxSection==0 ? "DRIVE / SATURATION" : "LAN / DELAY-VERB",704,160,185,15,juce::Justification::centredLeft);
     if(currentFxSection==0)
     {
-        g.setColour(stageStyle::grid); g.fillRoundedRectangle(juce::Rectangle<float>(707,392,182,153),5);
-        g.setColour(cyan); g.setFont(juce::FontOptions(10.f));
-        g.drawText("OSC  >  FLT  >  DRIVE",715,421,170,20,juce::Justification::centred);
-        g.drawText("            >  LAN  >  OUT",715,462,170,20,juce::Justification::centred);
+        const juce::Rectangle<float> scope(707,392,182,153);
+        g.setColour(stageStyle::inset); g.fillRoundedRectangle(scope,5);
+        g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
+        g.drawText("DRIVE WAVEFORM",714,396,105,12,juce::Justification::centredLeft);
+        g.setColour(cyan); g.drawText("IN",818,396,20,12,juce::Justification::centred);
+        g.setColour(accent); g.drawText("OUT",845,396,32,12,juce::Justification::centred);
+        g.setColour(stageStyle::grid); g.drawHorizontalLine(469,712,884);
+        const auto& input=liveScopeValid ? liveScope.input : previewInput;
+        const auto& output=liveScopeValid ? liveScope.output : previewOutput;
+        float peak=.2f;
+        for(size_t index=0;index<input.size();++index)
+            peak=std::max({peak,std::abs(input[index]),std::abs(output[index])});
+        const auto gain=58.f/std::max(.2f,peak*1.2f);
+        const auto drawWave=[&](const auto& samples,juce::Colour colour)
+        {
+            juce::Path path;
+            for(size_t index=0;index<samples.size();++index)
+            {
+                const auto x=713.f+170.f*float(index)/float(samples.size()-1);
+                const auto y=469.f-std::clamp(samples[index]*gain,-58.f,58.f);
+                if(index==0) path.startNewSubPath(x,y); else path.lineTo(x,y);
+            }
+            g.setColour(colour); g.strokePath(path,juce::PathStrokeType(1.3f));
+        };
+        drawWave(input,cyan.withAlpha(.65f)); drawWave(output,accent);
     }
     g.restoreState();
 }
