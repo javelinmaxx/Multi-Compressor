@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "../../EditorScaling.h"
 #include <cmath>
+#include <complex>
 
 namespace
 {
@@ -61,6 +62,34 @@ void styleTab(juce::TextButton& button,const juce::String& title,int group)
     button.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
     button.setColour(juce::TextButton::textColourOnId,stageStyle::background);
 }
+float filterMagnitude(int type,float frequency,float cutoff,float resonance)
+{
+    if(type==0) return 1.f;
+    const auto ratio=frequency/std::max(30.f,cutoff);
+    if(type==1)
+    {
+        const std::complex<float> pole=1.f/(std::complex<float>(1.f,ratio));
+        const auto fourth=pole*pole*pole*pole;
+        return std::abs(fourth*(1.f+3.5f*resonance)/(1.f+3.5f*resonance*fourth));
+    }
+    const auto k=std::clamp(1.4f-1.25f*resonance,.15f,1.4f);
+    const auto second=1.f/std::sqrt(std::pow(1.f-ratio*ratio,2.f)+k*k*ratio*ratio);
+    if(type==2) return second/std::sqrt(1.f+ratio*ratio);
+    return type==4 ? second*second : second;
+}
+}
+void QinLookAndFeel::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
+    float sliderPos,float minSliderPos,float maxSliderPos,const juce::Slider::SliderStyle style,juce::Slider& slider)
+{
+    if(style!=juce::Slider::LinearHorizontal)
+    { StageLookAndFeel::drawLinearSlider(g,x,y,width,height,sliderPos,minSliderPos,maxSliderPos,style,slider); return; }
+    const auto left=float(x+6), right=float(x+width-6), center=float(y)+height*.5f;
+    const auto position=std::clamp(sliderPos,left,right);
+    g.setColour(trackColour.brighter(.3f));
+    g.fillRoundedRectangle(left,center-2.f,right-left,4.f,2.f);
+    g.setColour(accentColour.withAlpha(.72f));
+    g.fillRoundedRectangle(left,center-1.f,std::max(0.f,position-left),2.f,1.f);
+    g.setColour(accentColour); g.fillRoundedRectangle(position-3.f,center-6.f,6.f,12.f,2.f);
 }
 QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(&synth)
 {
@@ -104,6 +133,19 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
     sliders[30].setSliderStyle(juce::Slider::LinearHorizontal);
     sliders[30].setTextBoxStyle(juce::Slider::TextBoxRight,false,42,18);
     sliders[30].setColour(juce::Slider::thumbColourId,accent);
+    for(size_t i=18;i<=34;++i)
+    {
+        if(i==30) continue;
+        auto& slider=sliders[i]; slider.setSliderStyle(juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,46,18);
+        slider.setColour(juce::Slider::thumbColourId,accent);
+        slider.onValueChange=[this,i]
+        {
+            const auto area=i<30 ? juce::Rectangle<int>(444,379,240,311) : juce::Rectangle<int>(444,90,240,281);
+            repaint(editorScaling::repaintArea(*this,designWidth,designHeight,area));
+            if(i==24) repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,90,240,281}));
+        };
+    }
     for(size_t i=0;i<waves.size();++i)
     {
         auto& wave=waves[i]; auto& label=waveLabels[i];
@@ -130,6 +172,8 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(
     modTargetLabel.setText("MOD TARGET",juce::dontSendNotification);
     filterTypeAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"filterType",filterType);
     modTargetAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"modTarget",modTarget);
+    filterType.onChange=[this]
+    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,90,240,281})); };
     oscillatorTabs[0].setToggleState(true,juce::dontSendNotification);
     envelopeTabs[0].setToggleState(true,juce::dontSendNotification);
     fxTabs[0].setToggleState(true,juce::dontSendNotification);
@@ -173,16 +217,16 @@ void QinSynthEditor::resized()
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control)
         {
-            const auto index=size_t(18+env*4+control); const auto x=453+(control%2)*113, y=452+(control/2)*84;
-            labels[index].setBounds(x,y,102,15); sliders[index].setBounds(x,y+16,102,68);
+            const auto index=size_t(18+env*4+control); const auto y=522+control*28;
+            labels[index].setBounds(454,y,52,25); sliders[index].setBounds(507,y,166,25);
         }
-    labels[30].setBounds(451,632,104,15); sliders[30].setBounds(451,651,104,32);
-    modTargetLabel.setBounds(560,632,108,14); modTarget.setBounds(560,653,108,27);
-    filterTypeLabel.setBounds(455,145,211,15); filterType.setBounds(454,163,215,28);
+    labels[30].setBounds(451,639,104,14); sliders[30].setBounds(451,656,104,26);
+    modTargetLabel.setBounds(560,639,108,14); modTarget.setBounds(560,655,108,27);
+    filterTypeLabel.setBounds(455,131,211,15); filterType.setBounds(454,148,215,28);
     for(int index=31;index<=34;++index)
     {
-        const auto x=453+((index-31)%2)*113, y=203+((index-31)/2)*78;
-        labels[size_t(index)].setBounds(x,y,102,14); sliders[size_t(index)].setBounds(x,y+14,102,68);
+        const auto y=259+(index-31)*27;
+        labels[size_t(index)].setBounds(454,y,68,25); sliders[size_t(index)].setBounds(523,y,150,25);
     }
     for(int i=0;i<2;++i) fxTabs[size_t(i)].setBounds(703+i*97,124,92,27);
     labels[36].setBounds(744,587,110,16); sliders[36].setBounds(744,604,110,83);
@@ -226,6 +270,79 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.drawText("FLT",455,99,120,20,juce::Justification::centredLeft);
     g.drawText("ENV",455,388,120,20,juce::Justification::centredLeft);
     g.drawText("FX",703,99,120,20,juce::Justification::centredLeft);
+    const juce::Rectangle<float> filterPlot(455,185,218,67), envelopePlot(455,449,218,66);
+    for(const auto plot:{filterPlot,envelopePlot})
+    {
+        g.setColour(stageStyle::inset); g.fillRoundedRectangle(plot,4);
+        g.setColour(stageStyle::grid.withAlpha(.7f));
+        g.drawHorizontalLine(juce::roundToInt(plot.getCentreY()),plot.getX(),plot.getRight());
+    }
+    const auto envIndex=size_t(18+currentEnvelope*4);
+    const auto attack=float(sliders[envIndex].getValue());
+    const auto decay=float(sliders[envIndex+1].getValue());
+    const auto sustain=std::clamp(float(sliders[envIndex+2].getValue())*.01f,0.f,1.f);
+    const auto release=float(sliders[envIndex+3].getValue());
+    const std::array<float,4> spans {attack*6.9f,decay*5.f,.3f,release*5.f};
+    std::array<float,4> widths {}; float total=0;
+    for(size_t stage=0;stage<4;++stage) { widths[stage]=std::sqrt(std::max(.004f,spans[stage])); total+=widths[stage]; }
+    const auto plotLeft=envelopePlot.getX()+5.f, plotWidth=envelopePlot.getWidth()-10.f;
+    const auto levelY=[&envelopePlot](float level)
+    { return envelopePlot.getBottom()-5.f-(envelopePlot.getHeight()-10.f)*level; };
+    juce::Path envelopePath; envelopePath.startNewSubPath(plotLeft,levelY(0));
+    auto boundary=plotLeft;
+    for(size_t stage=0;stage<4;++stage)
+    {
+        const auto width=plotWidth*widths[stage]/total;
+        for(int point=1;point<=16;++point)
+        {
+            const auto t=float(point)/16.f;
+            const auto level=stage==0 ? 1.f-std::exp(-6.9f*t)
+                : stage==1 ? sustain+(1.f-sustain)*std::exp(-5.f*t)
+                : stage==2 ? sustain : sustain*std::exp(-5.f*t);
+            envelopePath.lineTo(boundary+width*t,levelY(level));
+        }
+        boundary+=width;
+        if(stage<3) { g.setColour(stageStyle::grid); g.drawVerticalLine(juce::roundToInt(boundary),envelopePlot.getY()+3,envelopePlot.getBottom()-3); }
+    }
+    juce::Path envelopeFill=envelopePath;
+    envelopeFill.lineTo(envelopePlot.getRight()-5.f,envelopePlot.getBottom()-5.f);
+    envelopeFill.lineTo(plotLeft,envelopePlot.getBottom()-5.f); envelopeFill.closeSubPath();
+    g.setColour(cyan.withAlpha(.15f)); g.fillPath(envelopeFill);
+    g.setColour(cyan); g.strokePath(envelopePath,juce::PathStrokeType(1.7f));
+    g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
+    g.drawText("ADSR  /  RELATIVE TIME",461,451,165,10,juce::Justification::centredLeft);
+    const auto filterMode=std::max(0,filterType.getSelectedId()-1);
+    const auto baseCutoff=float(sliders[31].getValue());
+    const auto resonance=std::clamp(float(sliders[32].getValue())*.01f,0.f,1.f);
+    const auto keyFollow=std::clamp(float(sliders[33].getValue())*.01f,0.f,1.f);
+    const auto envelopeAmount=std::clamp(float(sliders[34].getValue())*.01f,-1.f,1.f);
+    const auto fltSustain=std::clamp(float(sliders[24].getValue())*.01f,0.f,1.f);
+    // C5 makes key follow visible; the solid trace shows the held envelope,
+    // while the faint trace shows its peak at the start of a note.
+    const auto heldCutoff=std::clamp(baseCutoff*std::exp2(keyFollow+4.f*envelopeAmount*fltSustain),30.f,18000.f);
+    const auto peakCutoff=std::clamp(baseCutoff*std::exp2(keyFollow+4.f*envelopeAmount),30.f,18000.f);
+    const auto trace=[&](float cutoff)
+    {
+        juce::Path path;
+        for(int point=0;point<=128;++point)
+        {
+            const auto proportion=float(point)/128.f;
+            const auto hz=40.f*std::pow(450.f,proportion);
+            const auto magnitude=filterMagnitude(filterMode,hz,cutoff,resonance);
+            const auto db=20.f*std::log10(std::max(magnitude,1.e-5f));
+            const auto x=filterPlot.getX()+3.f+(filterPlot.getWidth()-6.f)*proportion;
+            const auto y=filterPlot.getY()+4.f+(filterPlot.getHeight()-8.f)*std::clamp((12.f-db)/60.f,0.f,1.f);
+            if(point==0) path.startNewSubPath(x,y); else path.lineTo(x,y);
+        }
+        return path;
+    };
+    if(std::abs(peakCutoff-heldCutoff)>1.f)
+    { g.setColour(cyan.withAlpha(.42f)); g.strokePath(trace(peakCutoff),juce::PathStrokeType(1.f)); }
+    g.setColour(accent); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.6f));
+    g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
+    g.drawText("C5  /  HELD",461,186,90,10,juce::Justification::centredLeft);
+    g.drawText("40 Hz",458,239,45,10,juce::Justification::centredLeft);
+    g.drawText("18 kHz",621,239,48,10,juce::Justification::centredRight);
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(9.f));
     g.drawText("OSCILLATOR "+juce::String(currentOscillator+1)+" / WAVEFORM",34,276,322,16,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(34,295,384,147),6);

@@ -5,6 +5,13 @@
 #include "../../EditorTooltips.h"
 #include <array>
 
+class QinLookAndFeel final : public StageLookAndFeel
+{
+public:
+    void drawLinearSlider(juce::Graphics&,int,int,int,int,float,float,float,
+                          const juce::Slider::SliderStyle,juce::Slider&) override;
+};
+
 class QinSynthEditor final : public juce::AudioProcessorEditor
 {
 public:
@@ -20,7 +27,7 @@ private:
     void showFxSection(int section);
     void updateVisibility();
     int currentOscillator=0, currentEnvelope=0, currentFxSection=0;
-    StageLookAndFeel look;
+    QinLookAndFeel look;
     pluginGpu::Renderer gpu;
     juce::TooltipWindow tooltipWindow {this};
     editorTooltips::TitleHint titleHint {JucePlugin_VersionString};

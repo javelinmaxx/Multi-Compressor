@@ -7,7 +7,7 @@ inline const auto background = juce::Colour (0xff100e12), panel = juce::Colour (
     secondary = juce::Colour (0xffaaa0a0), amber = juce::Colour (0xffe3a45b), grid = juce::Colour (0xff30262c);
 void drawPanel (juce::Graphics&, juce::Rectangle<float>, juce::Colour base = panel);
 }
-class StageLookAndFeel final : public juce::LookAndFeel_V4
+class StageLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     juce::Colour accentColour = stageStyle::amber;

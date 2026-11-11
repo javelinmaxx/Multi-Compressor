@@ -30,6 +30,16 @@ struct QinSynthEditorTestAccess
     { return editor.filterType.isVisible() && editor.sliders[31].isVisible(); }
     static bool modVisible(const QinSynthEditor& editor)
     { return editor.sliders[30].isVisible() && editor.modTarget.isVisible(); }
+    static bool shapeControlsAreSliders(const QinSynthEditor& editor)
+    {
+        for(int index=18;index<=34;++index)
+            if(editor.sliders[size_t(index)].getSliderStyle()!=juce::Slider::LinearHorizontal) return false;
+        return true;
+    }
+    static void previewValue(QinSynthEditor& editor,int index,double value)
+    { editor.sliders[size_t(index)].setValue(value,juce::sendNotificationSync); }
+    static void previewFilter(QinSynthEditor& editor,int item)
+    { editor.filterType.setSelectedId(item,juce::sendNotificationSync); }
 };
 static void set(QinSynthProcessor& processor,const char* id,float value)
 {
@@ -221,6 +231,31 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::envelopeVisible(editor,0)
                || !QinSynthEditorTestAccess::filterVisible(editor))
                 throw std::runtime_error("OSC, ENV, FLT, and FX panels must be present together");
+            if(!QinSynthEditorTestAccess::shapeControlsAreSliders(editor))
+                throw std::runtime_error("Envelope and filter controls must use sliders");
+            const auto changes=[&editor](juce::Rectangle<int> area,auto change)
+            {
+                const auto before=editor.createComponentSnapshot(area);
+                change();
+                const auto after=editor.createComponentSnapshot(area);
+                int different=0;
+                for(int y=0;y<before.getHeight();y+=2)
+                    for(int x=0;x<before.getWidth();x+=2)
+                        different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
+                return different;
+            };
+            if(changes({455,449,218,66},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
+                throw std::runtime_error("Envelope plot must respond to sustain changes");
+            QinSynthEditorTestAccess::previewValue(editor,20,100);
+            QinSynthEditorTestAccess::previewFilter(editor,4);
+            QinSynthEditorTestAccess::previewValue(editor,31,200);
+            if(changes({455,185,218,67},[&]{QinSynthEditorTestAccess::previewValue(editor,31,5000);})<20)
+                throw std::runtime_error("Filter plot must respond to cutoff changes");
+            QinSynthEditorTestAccess::previewValue(editor,31,2500);
+            QinSynthEditorTestAccess::previewValue(editor,32,35);
+            QinSynthEditorTestAccess::previewValue(editor,34,35);
+            QinSynthEditorTestAccess::previewValue(editor,24,20);
+            QinSynthEditorTestAccess::previewFilter(editor,5);
             QinSynthEditorTestAccess::oscillator(editor,2);
             if(!QinSynthEditorTestAccess::oscillatorVisible(editor,2)
                || QinSynthEditorTestAccess::oscillatorVisible(editor,0))
