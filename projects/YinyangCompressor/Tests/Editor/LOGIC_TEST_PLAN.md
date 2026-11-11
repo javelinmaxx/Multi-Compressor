@@ -1,24 +1,25 @@
-# Yinyang Visage integration: Logic Pro test plan
+# Yinyang JUCE editor: Logic Pro test plan
 
-Status: **Visage editor implemented; macOS host validation remains open**.
-The editor hosts Visage inside JUCE, with the Yinyang layout and palette, live
-gain and waveform history, knob and switch artwork, typed values, tooltips and
-keyboard controls. The original JUCE editor is selectable with
-`YINYANG_SOFTWARE_UI=1`. JUCE accessibility controls expose the same parameter
-values; native screen-reader behavior needs platform testing.
+Status: **experimental GPU renderer implemented**.
+The existing JUCE editor now paints through JUCE's OpenGL component renderer,
+with an automatic software fallback if the context fails to start. This does
+not integrate the Visage UI library: doing that would require porting the JUCE
+controls and their host event handling. `YINYANG_SOFTWARE_UI=1` forces the
+software editor for comparison. A Linux virtual-display smoke test confirms
+that OpenGL render callbacks occur while resizing; it does not prove that a
+physical GPU or a Logic Pro Audio Unit host accepts the surface.
 
 ## Linux results
 
-The Debug VST3 and Standalone builds and the processor, DSP, upward-compression
-and oversampling suites pass. Visible editor checks run under Xvfb with a window
-manager and Mesa software Vulkan. They exercise 50% and 120% resizing, knob
-drags and host gestures, typed threshold and Yin ratio, keyboard and mouse
-model selection, waveform toggling, accessibility value actions, and two
-concurrent editor instances. The separate JUCE software fallback smoke test
-also passes. This does not establish physical GPU, AU/Logic or native
-screen-reader compatibility.
+Release VST3 and Standalone builds pass. The four CTest suites pass, and the
+visible-editor smoke test receives OpenGL frame callbacks while switching
+between 50% and 120% sizes. A captured Xvfb frame shows the controls and live
+gain-reduction trace rather than a blank editor. Repeating the visible-editor
+test with `YINYANG_SOFTWARE_UI=1` confirms that the software path remains
+available. Xvfb may use a software OpenGL driver, so hardware acceleration
+and AU/Logic behavior remain unverified here.
 
-![Visage editor with synthetic signal and simulated gain reduction](../../Previews/visage-preview.png)
+![Visible OpenGL editor at 120% under Xvfb](../../Previews/juce-opengl-smoke.png)
 
 ## macOS build and validation
 
@@ -53,8 +54,8 @@ screen-reader compatibility.
 - Test event forwarding and focus for mouse, keyboard, text entry and tooltips;
   test that parameter updates and meter data cross threads without locks on the
   audio callback.
-- Compare captured frames for visible meter trace and controls in both editor
-  paths; include a forced GPU-init-failure case.
+- Compare captured frames for visible meter trace and knob-value glow in both
+  software fallback and GPU modes; include a forced GPU-init-failure case.
 - Run GPU-backed window tests on macOS and Linux with real graphics devices;
   a virtual display alone is not evidence of Logic or Metal compatibility.
 

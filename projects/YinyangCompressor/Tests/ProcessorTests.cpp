@@ -1,135 +1,10 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
-#include "../Source/VisageEditor.h"
 #include "../Source/HistoryDisplayScale.h"
-#include "../Source/RatioMapping.h"
 #include <cstdlib>
 #include <iostream>
 #include <cstring>
 #include <stdexcept>
-
-struct YinyangVisageEditorTestAccess
-{
-    static bool matchesSize (const YinyangVisageEditor& editor)
-    {
-        return std::abs (editor.view.width() - static_cast<float> (editor.getWidth())) < 2.0f
-            && std::abs (editor.view.height() - static_cast<float> (editor.getHeight())) < 2.0f;
-    }
-
-    static std::string exercise (YinyangVisageEditor& editor, YinyangCompressorProcessor& processor)
-    {
-        auto* window = editor.view.window();
-        if (window == nullptr) return "Visage window was not attached";
-        const float scale = editor.view.width() / 548.0f * window->dpiScale();
-        const auto point = [scale] (float x) { return static_cast<int> (std::round (x * scale)); };
-        const auto click = [&] (float x, float y)
-        {
-            const int px = point (x), py = point (y);
-            window->handleMouseMove (px, py, 0, 0);
-            window->handleMouseDown (visage::kMouseButtonLeft, px, py, visage::kMouseButtonLeft, 0);
-            window->handleMouseUp (visage::kMouseButtonLeft, px, py, 0, 0);
-        };
-        struct Listener final : juce::AudioProcessorParameter::Listener
-        {
-            int starts = 0, ends = 0;
-            void parameterValueChanged (int, float) override {}
-            void parameterGestureChanged (int, bool starting) override { starting ? ++starts : ++ends; }
-        } listener;
-        auto* threshold = processor.parameters.getParameter ("threshold");
-        threshold->addListener (&listener);
-        const auto before = threshold->getValue();
-        window->handleFocusGained();
-        window->handleMouseMove (point (100), point (210), 0, 0);
-        window->handleMouseDown (visage::kMouseButtonLeft, point (100), point (210), visage::kMouseButtonLeft, 0);
-        window->handleMouseMove (point (100), point (180), visage::kMouseButtonLeft, 0);
-        window->handleMouseUp (visage::kMouseButtonLeft, point (100), point (180), 0, 0);
-        const bool dragged = std::abs (threshold->getValue() - before) > 0.001f && listener.starts == 1 && listener.ends == 1;
-        click (100, 270);
-        const bool textAccepted = window->handleTextInput ("-27.5");
-        const bool enterAccepted = window->handleKeyDown (visage::KeyCode::Return, 0, false);
-        const bool typed = textAccepted && enterAccepted && std::abs (processor.parameters.getRawParameterValue ("threshold")->load() + 27.5f) < 0.11f;
-        const bool textGesture = listener.starts == 2 && listener.ends == 2;
-        threshold->removeListener (&listener);
-        if (! dragged) return "knob drag did not update the parameter and host gesture";
-        if (! typed || ! textGesture) return "typed threshold did not update the host parameter with a gesture";
-        click (100, 270);
-        window->handleTextInput ("-12.0");
-        window->handleKeyDown (visage::KeyCode::Escape, 0, false);
-        if (std::abs (processor.parameters.getRawParameterValue ("threshold")->load() + 27.5f) > 0.11f)
-            return "Escape did not cancel value entry";
-        click (85, 130);
-        if (processor.parameters.getRawParameterValue ("upward")->load() < 0.5f) return "Yin button did not toggle";
-        click (245, 271);
-        const bool yinInput = window->handleTextInput ("1.33");
-        window->handleKeyDown (visage::KeyCode::Return, 0, false);
-        const float ratio = processor.parameters.getRawParameterValue ("ratio")->load();
-        if (! yinInput || std::abs (ratio - character::yinToHostRatio (1.33f)) > 0.011f)
-            return "typed Yin ratio did not retain the host mapping";
-        const auto previousRatio = ratio;
-        if (! window->handleKeyDown (visage::KeyCode::Right, 0, false)
-            || processor.parameters.getRawParameterValue ("ratio")->load() <= previousRatio)
-            return "keyboard adjustment did not change the focused ratio";
-        const bool overlayBefore = processor.waveformDisplay.load();
-        click (450, 300);
-        if (processor.waveformDisplay.load() == overlayBefore) return "waveform overlay click did not toggle";
-        if (! window->handleKeyDown (visage::KeyCode::Space, 0, false) || processor.waveformDisplay.load() != overlayBefore)
-            return "keyboard did not toggle the focused waveform overlay";
-        click (100, 82);
-        if (! editor.modelMenuOpen || ! window->handleKeyDown (visage::KeyCode::Down, 0, false)
-            || ! window->handleKeyDown (visage::KeyCode::Return, 0, false)
-            || std::abs (processor.parameters.getRawParameterValue ("model")->load() - 1.0f) > 0.01f
-            || editor.modelMenuOpen)
-            return "keyboard could not select a compressor model";
-        click (100, 82);
-        click (100, 198);
-        if (editor.modelMenuOpen || std::abs (processor.parameters.getRawParameterValue ("model")->load() - 3.0f) > 0.01f)
-            return "mouse could not select the Optical model";
-        click (270, 665);
-        if (processor.parameters.getRawParameterValue ("transformer")->load() < 0.5f)
-            return "transformer toggle did not update the parameter";
-        auto* root = editor.getAccessibilityHandler();
-        if (root == nullptr || root->getChildren().size() < 20) return "accessible controls are missing from the JUCE tree";
-        auto* accessibleThreshold = editor.accessibleControls[2]->getAccessibilityHandler();
-        if (accessibleThreshold == nullptr || accessibleThreshold->getValueInterface() == nullptr
-            || accessibleThreshold->getTitle() != "THRESHOLD" || accessibleThreshold->getHelp().isEmpty())
-            return "threshold accessibility metadata or value interface is missing";
-        accessibleThreshold->getValueInterface()->setValue (-30.0);
-        if (std::abs (processor.parameters.getRawParameterValue ("threshold")->load() + 30.0f) > 0.11f)
-            return "accessibility value action did not update the host parameter";
-        window->handleMouseMove (point (105), point (205), 0, 0);
-        window->handleMouseMove (point (106), point (205), 0, 0);
-        if (editor.hoveredControl != 2) return "threshold tooltip did not follow the pointer";
-        editor.hoveredControl = -1;
-        const std::array<std::array<juce::uint32, 3>, 8> expectedColors {{
-            {{ 0xff252b31, 0xff303840, 0xff151a1e }}, {{ 0xffe7ecef, 0xfff8fafb, 0xff0d1d2b }},
-            {{ 0xffe4f0df, 0xffd1e5c9, 0xff1d392b }}, {{ 0xfff5f7f6, 0xffe8edeb, 0xff252a30 }},
-            {{ 0xff1a1d21, 0xff242a30, 0xff101316 }}, {{ 0xff0e1e2a, 0xff192f40, 0xff09151f }},
-            {{ 0xff355a46, 0xff406b52, 0xff182e25 }}, {{ 0xff281a1e, 0xff382126, 0xff151518 }}
-        }};
-        for (int mode = 0; mode < 8; ++mode)
-        {
-            editor.controls[0]->setValueNotifyingHost (static_cast<float> (mode % 4) / 3.0f);
-            editor.controls[13]->setValueNotifyingHost (mode >= 4 ? 1.0f : 0.0f);
-            editor.view.redraw();
-            editor.view.drawWindow();
-            const auto& image = editor.view.takeScreenshot();
-            const auto sample = [&] (float x, float y)
-            {
-                return image.sample (std::clamp (point (x), 0, image.width() - 1),
-                                     std::clamp (point (y), 0, image.height() - 1)).toARGB();
-            };
-            if (image.width() <= 0 || image.height() <= 0
-                || sample (0, 0) != expectedColors[static_cast<size_t> (mode)][0]
-                || sample (30, 300) != expectedColors[static_cast<size_t> (mode)][1]
-                || sample (350, 400) != expectedColors[static_cast<size_t> (mode)][2])
-                return "rendered model/Yin colors differ from the JUCE palette";
-        }
-        editor.controls[0]->setValueNotifyingHost (1.0f);
-        editor.controls[13]->setValueNotifyingHost (1.0f);
-        editor.view.redraw();
-        return {};
-    }
-};
 
 namespace
 {
@@ -948,13 +823,11 @@ int renderThemePreviews (const char* directory)
 int runGpuSmoke()
 {
     juce::ScopedJuceInitialiser_GUI juce;
-    const auto legacy = juce::SystemStats::getEnvironmentVariable ("J_SONIC_SOFTWARE_UI", "") == "1"
-                     || juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") == "1";
+    const auto expectGpu = juce::SystemStats::getEnvironmentVariable ("YINYANG_SOFTWARE_UI", "") != "1";
     YinyangCompressorProcessor processor;
     processor.prepareToPlay (48000, 256);
-    std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
-    check ((dynamic_cast<YinyangVisageEditor*> (editor.get()) != nullptr) == ! legacy,
-           "editor route selects Visage or legacy JUCE");
+    std::unique_ptr<YinyangCompressorEditor> editor (
+        static_cast<YinyangCompressorEditor*> (processor.createEditor()));
     editor->addToDesktop (0);
     editor->setVisible (true);
     struct CaptureTimer final : juce::Timer
@@ -963,95 +836,22 @@ int runGpuSmoke()
         void timerCallback() override { tick(); }
     } timer;
     int frame = 0;
-    bool rendered = false;
-    bool interactionRan = false;
-    bool changedThemeRendered = false, smallSizeRendered = false, largeSizeRendered = false;
-    bool secondRendered = false, firstRenderedAfterSecondClosed = false;
-    std::unique_ptr<YinyangCompressorProcessor> secondProcessor;
-    std::unique_ptr<juce::AudioProcessorEditor> secondEditor;
-    std::string interactionError;
-    const auto previewPath = juce::SystemStats::getEnvironmentVariable ("YINYANG_VISAGE_PREVIEW_PATH", "");
-    juce::AudioBuffer<float> previewAudio (2, 256);
-    juce::MidiBuffer previewMidi;
-    double previewPhase = 0.0;
-    if (previewPath.isNotEmpty()) processor.waveformDisplay.store (true);
+    bool gpuActive = false;
     timer.tick = [&]
     {
         ++frame;
-        if (previewPath.isNotEmpty())
-        {
-            const float amplitude = 0.25f + 0.18f * std::sin (static_cast<float> (frame) * 0.12f);
-            for (int sample = 0; sample < previewAudio.getNumSamples(); ++sample)
-            {
-                const float value = amplitude * std::sin (static_cast<float> (previewPhase));
-                previewPhase += 2.0 * juce::MathConstants<double>::pi * 220.0 / 48000.0;
-                previewAudio.setSample (0, sample, value);
-                previewAudio.setSample (1, sample, value);
-            }
-            processor.processBlock (previewAudio, previewMidi);
-        }
         processor.reduction.store (12.f + 4.f * std::sin (float(frame) * .1f));
-        const bool fixedSize = juce::SystemStats::getEnvironmentVariable ("YINYANG_VISAGE_SMOKE_FIXED_SIZE", "") == "1";
-        if (! fixedSize && frame == 10) editor->setSize (274, 363);
-        if (! fixedSize && frame == 20) editor->setSize (658, 871);
-        if (auto* visage = dynamic_cast<YinyangVisageEditor*> (editor.get()))
-        {
-            if (! fixedSize && frame >= 13 && frame < 20)
-                smallSizeRendered |= YinyangVisageEditorTestAccess::matchesSize (*visage) && visage->hasRenderedFrame();
-            if (! fixedSize && frame >= 25 && frame < 35)
-                largeSizeRendered |= YinyangVisageEditorTestAccess::matchesSize (*visage) && visage->hasRenderedFrame();
-            if (frame > 25 && frame % 10 == 0)
-                rendered |= visage->hasRenderedFrame();
-            if (frame == 35 && previewPath.isEmpty())
-            {
-                interactionRan = true;
-                interactionError = YinyangVisageEditorTestAccess::exercise (*visage, processor);
-            }
-            if (frame > 45 && previewPath.isEmpty() && frame % 10 == 0)
-                changedThemeRendered |= visage->hasRenderedFrame();
-            if (frame == 70)
-            {
-                const auto path = juce::SystemStats::getEnvironmentVariable ("YINYANG_VISAGE_PREVIEW_PATH", "");
-                if (path.isNotEmpty()) visage->savePreview (path.toStdString());
-            }
-        }
-        else if (auto* old = dynamic_cast<YinyangCompressorEditor*> (editor.get()))
-            rendered |= legacy ? ! old->isGpuRendering() : old->isGpuRendering();
-        if (! legacy && previewPath.isEmpty() && frame == 45)
-        {
-            secondProcessor = std::make_unique<YinyangCompressorProcessor>();
-            secondProcessor->prepareToPlay (48000, 256);
-            secondEditor.reset (secondProcessor->createEditor());
-            secondEditor->addToDesktop (0);
-            secondEditor->setVisible (true);
-        }
-        if (secondEditor && frame >= 55 && frame < 65 && frame % 5 == 0)
-            if (auto* second = dynamic_cast<YinyangVisageEditor*> (secondEditor.get()))
-                secondRendered |= second->hasRenderedFrame();
-        if (frame == 65 && secondEditor)
-        {
-            secondEditor.reset();
-            secondProcessor.reset();
-        }
-        if (! legacy && previewPath.isEmpty() && frame >= 70 && frame % 5 == 0)
-            if (auto* first = dynamic_cast<YinyangVisageEditor*> (editor.get()))
-                firstRenderedAfterSecondClosed |= first->hasRenderedFrame();
+        if (frame == 10) editor->setSize (274, 363);
+        if (frame == 20) editor->setSize (658, 871);
+        gpuActive |= editor->isGpuRendering();
         if (frame >= 80) juce::MessageManager::getInstance()->stopDispatchLoop();
     };
     timer.startTimer (20);
     juce::MessageManager::getInstance()->runDispatchLoop();
     timer.stopTimer();
-    check (rendered, "selected editor renders after resize");
-    if (! legacy && previewPath.isEmpty())
-    {
-        check (interactionRan && interactionError.empty(), interactionError.empty() ? "Visage interactions did not run" : interactionError.c_str());
-        check (smallSizeRendered && largeSizeRendered, "Visage contents track both 50% and 120% host resizes");
-        check (changedThemeRendered, "changed model and Yin theme renders at the resized dimensions");
-        check (secondRendered && firstRenderedAfterSecondClosed,
-               "two Visage instances render and the first survives closing the second");
-    }
+    check (gpuActive == expectGpu, "visible editor must use the selected GPU or software renderer");
     editor.reset();
-    std::cout << "Yinyang " << (legacy ? "JUCE" : "Visage") << " editor smoke check passed\n";
+    std::cout << "Yinyang " << (expectGpu ? "OpenGL" : "software") << " editor smoke check passed\n";
     return 0;
 }
 

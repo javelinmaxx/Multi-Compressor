@@ -1,9 +1,13 @@
 # Yinyang Compressor
 
-The default editor uses Visage for its panel, controls and live history. The
-original JUCE editor remains available by setting `J_SONIC_SOFTWARE_UI=1` or
-`YINYANG_SOFTWARE_UI=1` before starting the host. The Audio Unit and native
-screen-reader integration still need validation in macOS hosts.
+The existing JUCE editor uses an experimental OpenGL
+component renderer for the controls, knob glows, and gain-reduction trace.
+The rendering thread is separate from audio processing and the meter keeps its
+partial redraw. If the graphics context cannot start, the editor returns to
+JUCE software painting; set `J_SONIC_SOFTWARE_UI=1` before launching a host to
+force that path for every plugin (`YINYANG_SOFTWARE_UI=1` also works here).
+This is a JUCE OpenGL integration, not a port to the Visage
+UI library. The Audio Unit still needs a Logic Pro validation on macOS.
 
 A first working compressor plug-in with selectable **feed-forward FET**,
 **feedback VCA**, **variable-mu**, and **optical** behavior, plus an optional
@@ -113,7 +117,7 @@ gain reduction in Yang, alongside a scrolling three-second history. Output,
 Mix, and Stereo Link sit directly below it. Bypass is a button beside the
 plug-in name. Sidechain combines Detector HPF, SC High Tilt, and Mid/Side.
 Transformer enable, Core Drive, and DC Bias share a Transformer Stage section.
-The Mid/Side and transformer controls use hardware-style toggle switches.
+The compact analog switches show ON/OFF or M/S/L/R at either end of the lever.
 The history line runs oldest at left to current at right. **Click the trace to
 show the waveform overlay**, then click again to hide it. The
 waveform view overlays the uncompressed input in pale grey and the actual
@@ -136,8 +140,9 @@ The display choice is retained when reopening the editor on the same instance.
 [Waveform display validation](Tests/Reports/waveform-history.md).
 The display samples gain reduction at 30 Hz while the editor is open; timestamps
 keep the window at three seconds even if UI updates are delayed. Closing the
-editor clears its gain-history trace. Transformer and Mid/Side use hardware-style switches; Yin/Yang and Bypass use
-buttons. All retain keyboard access and host automation. Each model has
+editor clears its gain-history trace. Transformer, Upward, and Mid/Side use
+vertical animated switches; Bypass is an animated button. All retain keyboard
+access and host automation. Each model has
 its own palette: FET charcoal with purple GR, VCA white Yang panels and white
 Yin knobs with white GR,
 Variable-mu light green with white GR, and Optical white with red GR. Upward
@@ -313,40 +318,3 @@ See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for requirements, decisions, actual
 validation results, and remaining work. JUCE modules are licensed under AGPLv3
 or commercial terms. A commercial JUCE licence may be required for distribution;
 see the repository's [LICENSE.md](../../LICENSE.md).
-
-## Visage editor
-
-![Visage editor with a synthetic input and gain-reduction history](Previews/visage-preview.png)
-
-The Visage editor keeps the original Yinyang panel layout and each model's
-Yin/Yang colors. It uses the supplied brushed-metal knob, toggle and button
-artwork. The meter includes the three-second gain history and the optional
-input/output waveform overlay; click the graph to toggle the overlay. The
-preview above is captured from the running editor with a synthetic input and a
-simulated gain-reduction signal.
-
-Drag a knob vertically; hold Shift for finer adjustments. Double-click the knob
-to reset it, or click its value to type an exact number and press Enter. Escape
-cancels entry. Tab and Shift-Tab move between controls; arrow keys adjust the
-focused control, Enter opens a value or model menu, and Space activates a switch
-or the focused waveform overlay. Hover over a control to see its description.
-The displayed Yin ratio is translated to the existing host parameter range.
-
-The JUCE plugin wrapper supplies accessible controls and values corresponding
-to the Visage view, with parameter changes sent through host automation gestures.
-The accessibility tree and value actions are tested in-process. Native
-screen-reader behavior needs validation on macOS and Windows; the bundled JUCE
-Linux build has no native accessibility provider, so Linux screen-reader access
-is not yet available. Keyboard operation is available on Linux.
-
-JUCE continues to own audio processing, plugin formats, host parameters and
-session state. The legacy `highTilt` parameter remains hidden and existing
-parameter IDs are unchanged. Set `J_SONIC_SOFTWARE_UI=1` or
-`YINYANG_SOFTWARE_UI=1` before starting the host to select the original JUCE
-editor.
-
-CMake pins Visage to commit `b92685dc4e4f4908302b916b60add3802d049848` and
-the Yinyang target uses C++20. Set `YINYANG_VISAGE_GUI_TESTS=ON` when
-configuring to register the visible Visage and legacy editor tests. A Linux
-virtual display needs a running window manager. AU/Logic, Windows hosts and
-physical-GPU behavior remain to be validated on their respective platforms.
