@@ -14,25 +14,27 @@ public:
     void resized() override;
 private:
     friend struct QinSynthEditorTestAccess;
-    static constexpr int designWidth=920, designHeight=600;
-    void showPage(int page);
+    static constexpr int designWidth=920, designHeight=710;
     void showOscillator(int oscillator);
+    void showEnvelope(int envelope);
     void showFxSection(int section);
     void updateVisibility();
-    int currentPage=0, currentOscillator=0, currentFxSection=0;
+    int currentOscillator=0, currentEnvelope=0, currentFxSection=0;
     StageLookAndFeel look;
     pluginGpu::Renderer gpu;
     juce::TooltipWindow tooltipWindow {this};
     editorTooltips::TitleHint titleHint {JucePlugin_VersionString};
-    std::array<juce::TextButton,2> pageTabs;
-    std::array<juce::TextButton,3> oscillatorTabs;
+    std::array<juce::TextButton,3> oscillatorTabs, envelopeTabs;
     std::array<juce::TextButton,2> fxTabs;
-    std::array<juce::Slider,23> sliders;
-    std::array<juce::Label,23> labels;
+    std::array<juce::Slider,44> sliders;
+    std::array<juce::Label,44> labels;
     std::array<juce::ComboBox,3> waves;
     std::array<juce::Label,3> waveLabels;
+    juce::ComboBox filterType, modTarget;
+    juce::Label filterTypeLabel, modTargetLabel;
     using State=juce::AudioProcessorValueTreeState;
-    std::array<std::unique_ptr<State::SliderAttachment>,23> sliderAttachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,44> sliderAttachments;
     std::array<std::unique_ptr<State::ComboBoxAttachment>,3> waveAttachments;
+    std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(QinSynthEditor)
 };

@@ -25,9 +25,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         add(prefix+"Octave",title+" octave",-2,2,1,0,"oct");
         add(prefix+"Unison",title+" unison",1,8,1,1,"voices");
         add(prefix+"Detune",title+" detune",0,30,.1f,10,"cents");
+        add(prefix+"Spread",title+" spread",0,100,.1f,35,"%");
+        add(prefix+"Pan",title+" pan",-100,100,.1f,0,"%");
     }
     add("attack","Attack",.001f,2,.001f,.01f,"s");
     add("release","Release",.01f,5,.001f,.3f,"s");
+    add("ampDecay","Amp decay",.01f,5,.001f,.2f,"s");
+    add("ampSustain","Amp sustain",0,100,.1f,100,"%");
+    for(const char* prefix:{"flt","mod"})
+    {
+        const juce::String id(prefix);
+        add(id+"Attack",id+" attack",.001f,2,.001f,.01f,"s");
+        add(id+"Decay",id+" decay",.01f,5,.001f,.2f,"s");
+        add(id+"Sustain",id+" sustain",0,100,.1f,0,"%");
+        add(id+"Release",id+" release",.01f,5,.001f,.3f,"s");
+    }
+    add("modDepth","Mod depth",0,100,.1f,0,"%");
+    result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"modTarget",1},"Mod destination",
+        juce::StringArray{"Drive","Spread"},0));
+    add("filterCutoff","Filter cutoff",30,18000,1,18000,"Hz");
+    add("filterResonance","Filter resonance",0,100,.1f,0,"%");
+    add("filterKeyFollow","Filter key follow",0,100,.1f,0,"%");
+    add("filterEnvAmount","Filter envelope amount",-100,100,.1f,0,"%");
+    result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"filterType",1},"Filter type",
+        juce::StringArray{"Bypass","TB-303 ladder","Sallen-Key 18 dB","Digital 12 dB","Digital 24 dB"},0));
     add("keyPan","Key pan",0,100,.1f,50,"%");
     add("drive","Zao drive",0,100,.1f,0,"%");
     add("time","Delay time",25,1000,.1f,180,"ms");
@@ -75,9 +96,25 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
         target.unison=std::clamp(juce::roundToInt(get(prefix+"Unison")),1,maxUnison);
         target.level=std::clamp(get(prefix+"Level")*.01f,0.f,1.f);
         target.detune=std::clamp(get(prefix+"Detune"),0.f,30.f);
+        target.spread=std::clamp(get(prefix+"Spread")*.01f,0.f,1.f);
+        target.pan=std::clamp(get(prefix+"Pan")*.01f,-1.f,1.f);
     }
-    settings.attack=std::clamp(get("attack"),.001f,2.f);
-    settings.release=std::clamp(get("release"),.01f,5.f);
+    settings.env[0]={std::clamp(get("attack"),.001f,2.f),std::clamp(get("ampDecay"),.01f,5.f),
+        std::clamp(get("ampSustain")*.01f,0.f,1.f),std::clamp(get("release"),.01f,5.f)};
+    for(int index=1;index<3;++index)
+    {
+        const juce::String prefix(index==1 ? "flt" : "mod");
+        settings.env[size_t(index)]={std::clamp(get(prefix+"Attack"),.001f,2.f),
+            std::clamp(get(prefix+"Decay"),.01f,5.f),std::clamp(get(prefix+"Sustain")*.01f,0.f,1.f),
+            std::clamp(get(prefix+"Release"),.01f,5.f)};
+    }
+    settings.modDepth=std::clamp(get("modDepth")*.01f,0.f,1.f);
+    settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,1);
+    settings.cutoff=std::clamp(get("filterCutoff"),30.f,18000.f);
+    settings.resonance=std::clamp(get("filterResonance")*.01f,0.f,1.f);
+    settings.keyFollow=std::clamp(get("filterKeyFollow")*.01f,0.f,1.f);
+    settings.filterEnv=std::clamp(get("filterEnvAmount")*.01f,-1.f,1.f);
+    settings.filterType=std::clamp(juce::roundToInt(get("filterType")),0,4);
     settings.pan=std::clamp(get("keyPan")*.01f,0.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
     settings.verbTime=std::clamp(get("time"),25.f,1000.f);
@@ -91,6 +128,43 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
 }
 float QinSynthProcessor::notePan(int note,float amount) noexcept
 { return std::clamp((float(note)-64.f)/44.f*amount,-.95f,.95f); }
+float QinSynthProcessor::advanceEnvelope(Envelope& envelope,const EnvelopeSettings& settings,bool held,
+                                        const std::array<float,3>& coefficient) const noexcept
+{
+    if(!held) envelope.stage=3;
+    const auto target=envelope.stage==0 ? 1.f : envelope.stage==1 || envelope.stage==2 ? settings.sustain : 0.f;
+    const auto amount=coefficient[size_t(envelope.stage==0 ? 0 : envelope.stage==3 ? 2 : 1)];
+    envelope.value+=amount*(target-envelope.value);
+    if(envelope.stage==0 && envelope.value>.999f) envelope.stage=1;
+    if(envelope.stage==1 && std::abs(envelope.value-settings.sustain)<.001f) envelope.stage=2;
+    return envelope.value;
+}
+float QinSynthProcessor::filterSample(FilterState& state,float input,float g,float onePole,float resonance,int type) const noexcept
+{
+    if(type==0) return input;
+    if(type==1)
+    {
+        auto value=std::tanh(input*1.8f-3.5f*resonance*state.ladder[3]);
+        for(auto& pole:state.ladder) { pole+=g*(value-pole); value=std::tanh(pole); }
+        return std::clamp(state.ladder[3]*1.3f,-4.f,4.f);
+    }
+    const auto k=std::clamp(1.4f-1.25f*resonance,.15f,1.4f);
+    const auto section=[g,k](float x,float& s1,float& s2)
+    {
+        const auto high=(x-k*s1-s2)/(1+g*(g+k));
+        const auto band=g*high+s1, low=g*band+s2;
+        s1=2*band-s1; s2=2*low-s2;
+        return low;
+    };
+    auto value=section(input,state.s1,state.s2);
+    if(type==2)
+    {
+        state.pole+=onePole*(value-state.pole);
+        return state.pole;
+    }
+    if(type==4) value=section(value,state.t1,state.t2);
+    return value;
+}
 double QinSynthProcessor::polyBlep(double phase,double step) noexcept
 {
     if(phase<step) { const auto t=phase/step; return t+t-t*t-1; }
@@ -164,41 +238,85 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
 void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start,int count,const Settings& settings,bool bypass)
 {
     if(count<=0) return;
-    const auto attackStep=1.0-std::exp(-1.0/(sampleRate*settings.attack));
-    const auto releaseStep=std::exp(-1.0/(sampleRate*settings.release));
+    std::array<std::array<float,3>,3> coefficients {};
+    for(size_t env=0;env<3;++env)
+    {
+        const auto& e=settings.env[env];
+        const std::array<float,3> times {e.attack,e.decay,e.release};
+        for(size_t stage=0;stage<3;++stage)
+            coefficients[env][stage]=float(1-std::exp(-1.0/(sampleRate*std::max(.001f,times[stage]))));
+    }
+    const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
+    std::array<std::array<std::array<double,maxUnison>,oscillatorCount>,maxVoices> steps {};
+    for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
+    {
+        const auto& voice=voices[voiceIndex];
+        if(!voice.active) continue;
+        const auto base=juce::MidiMessage::getMidiNoteInHertz(voice.note);
+        for(int osc=0;osc<oscillatorCount;++osc)
+        {
+            const auto& control=settings.oscillator[size_t(osc)];
+            if(control.level<=0) continue;
+            const auto center=base*std::ldexp(1.0,control.octave);
+            for(int u=0;u<control.unison;++u)
+            {
+                const auto offset=control.unison==1 ? 0.0 : 2.0*u/(control.unison-1)-1.0;
+                steps[voiceIndex][size_t(osc)][size_t(u)]=std::min(.49,center*std::pow(2.0,offset*control.detune/1200.0)/sampleRate);
+            }
+        }
+    }
     for(int i=start;i<start+count;++i)
     {
         double left=0,right=0;
-        for(auto& voice:voices)
+        for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
         {
+            auto& voice=voices[voiceIndex];
             if(!voice.active) continue;
-            if(voice.keyDown || voice.sustained)
-                voice.envelope+=float((1.0-voice.envelope)*attackStep);
-            else
-            {
-                voice.envelope*=float(releaseStep);
-                if(voice.envelope<1.e-4f) { voice.active=false; continue; }
-            }
-            const auto base=juce::MidiMessage::getMidiNoteInHertz(voice.note);
+            const auto held=voice.keyDown || voice.sustained;
+            const auto amp=advanceEnvelope(voice.env[0],settings.env[0],held,coefficients[0]);
+            const auto filterEnv=advanceEnvelope(voice.env[1],settings.env[1],held,coefficients[1]);
+            const auto modEnv=advanceEnvelope(voice.env[2],settings.env[2],held,coefficients[2]);
+            if(!held && amp<1.e-4f) { voice.active=false; continue; }
             double voiceLeft=0,voiceRight=0;
+            const auto spreadMod=settings.modTarget==1 ? settings.modDepth*modEnv : 0.f;
             for(int osc=0;osc<oscillatorCount;++osc)
             {
                 const auto& control=settings.oscillator[size_t(osc)];
                 if(control.level<=0) continue;
-                const auto center=base*std::ldexp(1.0,control.octave);
                 for(int u=0;u<control.unison;++u)
                 {
                     const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
-                    const auto detune=std::pow(2.0,offset*control.detune/1200.0);
-                    const auto step=std::min(.49,center*detune/sampleRate);
-                    const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],control.wave,step)
+                    const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],control.wave,
+                        steps[voiceIndex][size_t(osc)][size_t(u)])
                         *control.level/control.unison;
-                    const auto pan=std::clamp(double(voice.pan)+offset*.12,-.98,.98);
+                    const auto pan=std::clamp(double(voice.pan)+control.pan
+                        +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
                     voiceLeft+=value*std::sqrt((1-pan)*.5);
                     voiceRight+=value*std::sqrt((1+pan)*.5);
                 }
             }
-            const auto gain=.16*voice.velocity*voice.envelope;
+            if(settings.modTarget==0 && settings.modDepth>0)
+            {
+                const auto amount=settings.modDepth*modEnv;
+                voiceLeft=voiceLeft+amount*(std::tanh(voiceLeft*(1+3*amount))-voiceLeft);
+                voiceRight=voiceRight+amount*(std::tanh(voiceRight*(1+3*amount))-voiceRight);
+            }
+            if(settings.filterType!=0)
+            {
+                const auto octaves=settings.keyFollow*(voice.note-60)/12.f+settings.filterEnv*filterEnv*4.f;
+                const auto target=std::clamp(settings.cutoff*(std::abs(octaves)<1.e-6f ? 1.f : std::exp2(octaves)),
+                                             30.f,float(sampleRate*.44));
+                voice.cutoff+=cutoffSmoothing*(target-voice.cutoff);
+                const auto hz=std::clamp(voice.cutoff,25.f,float(sampleRate*.44));
+                const auto coefficient=settings.filterType==1
+                    ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)
+                    : std::tan(float(juce::MathConstants<double>::pi*hz/sampleRate));
+                const auto onePole=settings.filterType==2
+                    ? std::clamp(float(1-std::exp(-2*juce::MathConstants<double>::pi*hz/sampleRate)),0.f,1.f) : 0.f;
+                voiceLeft=filterSample(voice.filter[0],float(voiceLeft),coefficient,onePole,settings.resonance,settings.filterType);
+                voiceRight=filterSample(voice.filter[1],float(voiceRight),coefficient,onePole,settings.resonance,settings.filterType);
+            }
+            const auto gain=.16*voice.velocity*amp;
             left+=gain*voiceLeft; right+=gain*voiceRight;
         }
         buffer.setSample(0,i,float(std::clamp(left,-4.0,4.0)));

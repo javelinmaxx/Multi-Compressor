@@ -35,19 +35,26 @@ private:
     friend struct QinSynthTestAccess;
     static juce::AudioProcessorValueTreeState::ParameterLayout layout();
     struct Subvoice { double phase=0, triangle=0; };
+    struct Envelope { float value=0; int stage=0; };
+    struct FilterState { float s1=0,s2=0,t1=0,t2=0,pole=0; std::array<float,4> ladder {}; };
     struct Voice
     {
         std::array<std::array<Subvoice,maxUnison>,oscillatorCount> oscillators {};
+        std::array<Envelope,3> env {};
+        std::array<FilterState,2> filter {};
         int note=-1, channel=1;
         uint64_t age=0;
-        float velocity=0, envelope=0, pan=0;
+        float velocity=0, pan=0, cutoff=0;
         bool keyDown=false, sustained=false, active=false;
     };
-    struct OscillatorSettings { int wave=0, octave=0, unison=1; float level=0, detune=0; };
+    struct OscillatorSettings { int wave=0, octave=0, unison=1; float level=0, detune=0, spread=.12f, pan=0; };
+    struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f; };
     struct Settings
     {
         std::array<OscillatorSettings,oscillatorCount> oscillator;
-        float attack=0.01f, release=0.3f, pan=0, drive=0, output=0;
+        std::array<EnvelopeSettings,3> env;
+        float pan=0, drive=0, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, modDepth=0;
+        int filterType=0, modTarget=0;
         float verbTime=180, verbDecay=3, verbScatter=.7f, verbMix=.2f;
         float tapMotion=.5f, phaseMotion=.5f;
     };
@@ -58,6 +65,8 @@ private:
     static double oscillatorSample(Subvoice&,int,double) noexcept;
     static double polyBlep(double,double) noexcept;
     static float notePan(int,float) noexcept;
+    float advanceEnvelope(Envelope&,const EnvelopeSettings&,bool,const std::array<float,3>&) const noexcept;
+    float filterSample(FilterState&,float,float,float,float,int) const noexcept;
     std::array<Voice,maxVoices> voices {};
     std::array<zao::OpAmpFeedbackClipper,2> driveCircuit {};
     lan::ReverbEngine reverb;

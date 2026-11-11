@@ -1,330 +1,255 @@
 #include "PluginEditor.h"
 #include "../../EditorScaling.h"
+#include <cmath>
 
 namespace
 {
 const auto accent=juce::Colour(0xffc6b47b);
-constexpr std::array<const char*,23> ids {
-    "osc1Level","osc1Octave","osc1Unison","osc1Detune",
-    "osc2Level","osc2Octave","osc2Unison","osc2Detune",
-    "osc3Level","osc3Octave","osc3Unison","osc3Detune",
-    "attack","release","keyPan","drive","output",
-    "time","decay","scatter","verbMix","tapMotion","phaseMotion" };
-constexpr std::array<const char*,23> names {
-    "LEVEL","OCTAVE","UNISON","DETUNE",
-    "LEVEL","OCTAVE","UNISON","DETUNE",
-    "LEVEL","OCTAVE","UNISON","DETUNE",
-    "ATTACK","RELEASE","KEY PAN","ZAO DRIVE","OUTPUT",
-    "TIME","DECAY","SCATTER","MIX","TAP MOTION","PHASE MOTION" };
-constexpr std::array<const char*,23> hints {
-    "Sets the first oscillator's level.","Moves the first oscillator by whole octaves.",
-    "Sets up to eight unison copies for the first oscillator.","Spreads the first oscillator's unison copies in cents.",
-    "Sets the second oscillator's level.","Moves the second oscillator by whole octaves.",
-    "Sets up to eight unison copies for the second oscillator.","Spreads the second oscillator's unison copies in cents.",
-    "Sets the third oscillator's level.","Moves the third oscillator by whole octaves.",
-    "Sets up to eight unison copies for the third oscillator.","Spreads the third oscillator's unison copies in cents.",
-    "Sets the time for a new note to reach full level.","Sets how long a note fades after release.",
-    "Places lower MIDI notes left and higher notes right, like a piano recording.",
-    "Blends in Zao's op-amp feedback clipping circuit.","Adjusts the instrument's output gain.",
-    "Sets the base delay time of Lan's feedback network.","Sets how long Lan's delay-reverb tail decays.",
-    "Moves Lan's feedback from delay toward diffuse reverb.","Blends the delay-reverb with the synth signal.",
-    "Sets how far each MIDI note-on shifts Lan's feedback taps.",
-    "Sets how strongly each MIDI note-on changes Lan's phase scatter." };
-constexpr std::array<const char*,3> waveHints {
-    "Chooses the first oscillator's band-limited virtual-analog waveform.",
-    "Chooses the second oscillator's band-limited virtual-analog waveform.",
-    "Chooses the third oscillator's band-limited virtual-analog waveform." };
+const auto cyan=juce::Colour(0xff55aec7);
+struct Control { const char* id; const char* name; const char* hint; };
+constexpr std::array<Control,44> controls {{
+    {"osc1Level","LEVEL","Sets oscillator one's contribution to the mix."},
+    {"osc1Octave","OCTAVE","Transposes oscillator one by whole octaves."},
+    {"osc1Unison","UNISON","Sets the number of oscillator one copies."},
+    {"osc1Detune","DETUNE","Offsets oscillator one's unison copies in cents."},
+    {"osc1Spread","SPREAD","Sets how far oscillator one's detuned copies spread across stereo."},
+    {"osc1Pan","PAN","Positions oscillator one as a whole in stereo."},
+    {"osc2Level","LEVEL","Sets oscillator two's contribution to the mix."},
+    {"osc2Octave","OCTAVE","Transposes oscillator two by whole octaves."},
+    {"osc2Unison","UNISON","Sets the number of oscillator two copies."},
+    {"osc2Detune","DETUNE","Offsets oscillator two's unison copies in cents."},
+    {"osc2Spread","SPREAD","Sets how far oscillator two's detuned copies spread across stereo."},
+    {"osc2Pan","PAN","Positions oscillator two as a whole in stereo."},
+    {"osc3Level","LEVEL","Sets oscillator three's contribution to the mix."},
+    {"osc3Octave","OCTAVE","Transposes oscillator three by whole octaves."},
+    {"osc3Unison","UNISON","Sets the number of oscillator three copies."},
+    {"osc3Detune","DETUNE","Offsets oscillator three's unison copies in cents."},
+    {"osc3Spread","SPREAD","Sets how far oscillator three's detuned copies spread across stereo."},
+    {"osc3Pan","PAN","Positions oscillator three as a whole in stereo."},
+    {"attack","ATTACK","Sets how quickly the amplitude envelope rises."},
+    {"ampDecay","DECAY","Sets how quickly amplitude falls from its peak to sustain."},
+    {"ampSustain","SUSTAIN","Sets amplitude while the key remains held."},
+    {"release","RELEASE","Sets how quickly amplitude fades after note-off."},
+    {"fltAttack","ATTACK","Sets how quickly the filter envelope rises."},
+    {"fltDecay","DECAY","Sets how quickly filter motion falls to sustain."},
+    {"fltSustain","SUSTAIN","Sets the held level of filter modulation."},
+    {"fltRelease","RELEASE","Sets how quickly filter modulation fades after note-off."},
+    {"modAttack","ATTACK","Sets how quickly the modulation envelope rises."},
+    {"modDecay","DECAY","Sets how quickly the modulation envelope falls to sustain."},
+    {"modSustain","SUSTAIN","Sets the held level of effect modulation."},
+    {"modRelease","RELEASE","Sets how quickly effect modulation fades after note-off."},
+    {"modDepth","MOD DEPTH","Sets how strongly the modulation envelope affects its destination."},
+    {"filterCutoff","CUTOFF","Sets the filter's base cutoff frequency."},
+    {"filterResonance","RESONANCE","Emphasizes frequencies around the filter cutoff."},
+    {"filterKeyFollow","KEY FOLLOW","Raises the cutoff with MIDI note pitch."},
+    {"filterEnvAmount","ENV AMOUNT","Sets how far the filter envelope moves the cutoff."},
+    {"keyPan","KEY PAN","Places low MIDI notes left and high notes right."},
+    {"output","OUTPUT","Sets the final synth level."},
+    {"drive","ZAO DRIVE","Blends in Zao's op-amp clipping circuit."},
+    {"time","TIME","Sets Lan's delay and reverb time."},
+    {"decay","DECAY","Sets how long Lan's feedback tail lasts."},
+    {"scatter","SCATTER","Morphs Lan's delay into a diffuse reverb."},
+    {"verbMix","MIX","Blends the Lan effect with the synth."},
+    {"tapMotion","TAP MOTION","Sets how far note onsets move Lan's feedback taps."},
+    {"phaseMotion","PHASE MOTION","Sets how strongly note onsets change Lan's phase scatter."}
+}};
+void styleTab(juce::TextButton& button,const juce::String& title,int group)
+{
+    button.setButtonText(title); button.setClickingTogglesState(true); button.setRadioGroupId(group);
+    button.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
+    button.setColour(juce::TextButton::buttonOnColourId,accent);
+    button.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
+    button.setColour(juce::TextButton::textColourOnId,stageStyle::background);
+}
 }
 QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth) : AudioProcessorEditor(&synth)
 {
-    setOpaque(true);
-    look.accentColour=accent;
-    look.dialTopColour=juce::Colour(0xff645a45);
-    look.dialBottomColour=juce::Colour(0xff2a2925);
-    setLookAndFeel(&look);
+    setOpaque(true); look.accentColour=accent; look.dialTopColour=juce::Colour(0xff645a45);
+    look.dialBottomColour=juce::Colour(0xff2a2925); setLookAndFeel(&look);
     addAndMakeVisible(titleHint);
-    for(size_t i=0;i<pageTabs.size();++i)
-    {
-        auto& tab=pageTabs[i];
-        tab.setButtonText(i==0 ? "SOUND" : "FX");
-        tab.setName(i==0 ? "Sound page" : "FX page");
-        tab.setTooltip(i==0 ? "Shows the three oscillator tabs and their sound controls."
-                             : "Shows the voice, drive, and delay-reverb controls.");
-        tab.setClickingTogglesState(true);
-        tab.setRadioGroupId(1);
-        tab.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-        tab.setColour(juce::TextButton::buttonOnColourId,accent);
-        tab.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-        tab.setColour(juce::TextButton::textColourOnId,stageStyle::background);
-        tab.onClick=[this,i]{showPage(int(i));};
-        addAndMakeVisible(tab);
-    }
     for(size_t i=0;i<oscillatorTabs.size();++i)
     {
-        auto& tab=oscillatorTabs[i];
-        tab.setButtonText("OSC "+juce::String(int(i)+1));
-        tab.setName("Oscillator "+juce::String(int(i)+1)+" tab");
-        tab.setTooltip("Opens oscillator "+juce::String(int(i)+1)+" in the Sound editor.");
-        tab.setClickingTogglesState(true);
-        tab.setRadioGroupId(2);
-        tab.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-        tab.setColour(juce::TextButton::buttonOnColourId,accent);
-        tab.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-        tab.setColour(juce::TextButton::textColourOnId,stageStyle::background);
-        tab.onClick=[this,i]{showOscillator(int(i));};
-        addAndMakeVisible(tab);
+        auto& tab=oscillatorTabs[i]; styleTab(tab,"OSC "+juce::String(int(i)+1),2);
+        tab.setTooltip("Opens oscillator "+juce::String(int(i)+1)+" in the OSC panel.");
+        tab.onClick=[this,i]{showOscillator(int(i));}; addAndMakeVisible(tab);
+    }
+    for(size_t i=0;i<envelopeTabs.size();++i)
+    {
+        auto& tab=envelopeTabs[i]; styleTab(tab,i==0 ? "AMP" : i==1 ? "FLT" : "MOD",3);
+        tab.setTooltip(i==0 ? "Opens the amplitude envelope." : i==1 ? "Opens the filter envelope." : "Opens the effect modulation envelope.");
+        tab.onClick=[this,i]{showEnvelope(int(i));}; addAndMakeVisible(tab);
     }
     for(size_t i=0;i<fxTabs.size();++i)
     {
-        auto& tab=fxTabs[i];
-        tab.setButtonText(i==0 ? "VOICE + DRIVE" : "DELAY-VERB");
-        tab.setName(i==0 ? "Voice and drive tab" : "Delay-verb tab");
-        tab.setTooltip(i==0 ? "Shows voice shaping, key panning, Zao Drive, and output."
-                            : "Shows Lan's delay-reverb and MIDI onset motion controls.");
-        tab.setClickingTogglesState(true);
-        tab.setRadioGroupId(3);
-        tab.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-        tab.setColour(juce::TextButton::buttonOnColourId,accent);
-        tab.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-        tab.setColour(juce::TextButton::textColourOnId,stageStyle::background);
-        tab.onClick=[this,i]{showFxSection(int(i));};
-        addAndMakeVisible(tab);
+        auto& tab=fxTabs[i]; styleTab(tab,i==0 ? "DRIVE" : "DELAY",4);
+        tab.setTooltip(i==0 ? "Opens Zao Drive and output controls." : "Opens Lan's delay and reverb controls.");
+        tab.onClick=[this,i]{showFxSection(int(i));}; addAndMakeVisible(tab);
     }
     for(size_t i=0;i<sliders.size();++i)
     {
         auto& slider=sliders[i]; auto& label=labels[i];
         slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,90,18);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,17);
         slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
         slider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
-        slider.setName(names[i]); slider.setTitle(names[i]);
-        label.setText(names[i],juce::dontSendNotification);
+        slider.setName(controls[i].name); slider.setTitle(controls[i].name);
+        label.setText(controls[i].name,juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
-        label.setFont(juce::FontOptions(10.f));
-        label.setColour(juce::Label::textColourId,stageStyle::secondary);
+        label.setFont(juce::FontOptions(9.f)); label.setColour(juce::Label::textColourId,stageStyle::secondary);
         addAndMakeVisible(slider); addAndMakeVisible(label);
-        sliderAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,ids[i],slider);
-        editorTooltips::setHint(slider,label,hints[i]);
-        if(i<12 && i%4==2) slider.onValueChange=[this]{repaint();};
+        sliderAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,controls[i].id,slider);
+        editorTooltips::setHint(slider,label,controls[i].hint);
+        if(i<18 && i%6==2) slider.onValueChange=[this]{repaint();};
     }
+    sliders[30].setSliderStyle(juce::Slider::LinearHorizontal);
+    sliders[30].setTextBoxStyle(juce::Slider::TextBoxRight,false,42,18);
+    sliders[30].setColour(juce::Slider::thumbColourId,accent);
     for(size_t i=0;i<waves.size();++i)
     {
         auto& wave=waves[i]; auto& label=waveLabels[i];
         wave.addItem("Saw",1); wave.addItem("Pulse",2); wave.addItem("Triangle",3);
         wave.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a));
         wave.setColour(juce::ComboBox::textColourId,stageStyle::foreground);
-        wave.setTooltip(waveHints[i]);
-        label.setText("WAVE",juce::dontSendNotification);
-        label.setFont(juce::FontOptions(10.f));
-        label.setJustificationType(juce::Justification::centred);
-        label.setColour(juce::Label::textColourId,stageStyle::secondary);
-        label.setTooltip(waveHints[i]);
+        wave.setTooltip("Chooses oscillator "+juce::String(int(i)+1)+"'s virtual-analog waveform.");
+        label.setText("WAVE",juce::dontSendNotification); label.setFont(juce::FontOptions(9.f));
+        label.setJustificationType(juce::Justification::centred); label.setColour(juce::Label::textColourId,stageStyle::secondary);
         addAndMakeVisible(wave); addAndMakeVisible(label);
-        waveAttachments[i]=std::make_unique<State::ComboBoxAttachment>(synth.parameters,
-            "osc"+juce::String(int(i)+1)+"Wave",wave);
+        waveAttachments[i]=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"osc"+juce::String(int(i)+1)+"Wave",wave);
         wave.onChange=[this]{repaint();};
     }
-    pageTabs[0].setToggleState(true,juce::dontSendNotification);
+    for(const auto* option:{"Bypass","TB-303 ladder","Sallen-Key 18 dB","Digital 12 dB","Digital 24 dB"})
+        filterType.addItem(option,filterType.getNumItems()+1);
+    modTarget.addItem("Drive",1); modTarget.addItem("Spread",2);
+    filterType.setTooltip("Selects the TB-303, 18 dB Sallen-Key, or 12/24 dB digital filter model.");
+    modTarget.setTooltip("Routes the modulation envelope to drive or unison spread.");
+    for(auto* box:{&filterType,&modTarget})
+    { box->setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a)); box->setColour(juce::ComboBox::textColourId,stageStyle::foreground); addAndMakeVisible(*box); }
+    for(auto* label:{&filterTypeLabel,&modTargetLabel})
+    { label->setFont(juce::FontOptions(9.f)); label->setColour(juce::Label::textColourId,stageStyle::secondary); addAndMakeVisible(*label); }
+    filterTypeLabel.setText("FILTER TYPE",juce::dontSendNotification);
+    modTargetLabel.setText("MOD TARGET",juce::dontSendNotification);
+    filterTypeAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"filterType",filterType);
+    modTargetAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"modTarget",modTarget);
     oscillatorTabs[0].setToggleState(true,juce::dontSendNotification);
+    envelopeTabs[0].setToggleState(true,juce::dontSendNotification);
     fxTabs[0].setToggleState(true,juce::dontSendNotification);
-    updateVisibility();
-    editorScaling::enable(*this,designWidth,designHeight);
-    gpu.attach(*this);
+    updateVisibility(); editorScaling::enable(*this,designWidth,designHeight); gpu.attach(*this);
 }
-void QinSynthEditor::showPage(int page)
-{
-    currentPage=juce::jlimit(0,1,page);
-    for(size_t i=0;i<pageTabs.size();++i)
-        pageTabs[i].setToggleState(int(i)==currentPage,juce::dontSendNotification);
-    updateVisibility();
-    repaint();
-}
-void QinSynthEditor::showOscillator(int oscillator)
-{
-    currentOscillator=juce::jlimit(0,2,oscillator);
-    for(size_t i=0;i<oscillatorTabs.size();++i)
-        oscillatorTabs[i].setToggleState(int(i)==currentOscillator,juce::dontSendNotification);
-    updateVisibility();
-    repaint();
-}
-void QinSynthEditor::showFxSection(int section)
-{
-    currentFxSection=juce::jlimit(0,1,section);
-    for(size_t i=0;i<fxTabs.size();++i)
-        fxTabs[i].setToggleState(int(i)==currentFxSection,juce::dontSendNotification);
-    updateVisibility();
-    repaint();
-}
+void QinSynthEditor::showOscillator(int index)
+{ currentOscillator=juce::jlimit(0,2,index); for(size_t i=0;i<3;++i) oscillatorTabs[i].setToggleState(int(i)==currentOscillator,juce::dontSendNotification); updateVisibility(); repaint(); }
+void QinSynthEditor::showEnvelope(int index)
+{ currentEnvelope=juce::jlimit(0,2,index); for(size_t i=0;i<3;++i) envelopeTabs[i].setToggleState(int(i)==currentEnvelope,juce::dontSendNotification); updateVisibility(); repaint(); }
+void QinSynthEditor::showFxSection(int index)
+{ currentFxSection=juce::jlimit(0,1,index); for(size_t i=0;i<2;++i) fxTabs[i].setToggleState(int(i)==currentFxSection,juce::dontSendNotification); updateVisibility(); repaint(); }
 void QinSynthEditor::updateVisibility()
 {
     for(int osc=0;osc<3;++osc)
     {
-        const bool visible=currentPage==0 && currentOscillator==osc;
-        oscillatorTabs[size_t(osc)].setVisible(currentPage==0);
-        waves[size_t(osc)].setVisible(visible);
-        waveLabels[size_t(osc)].setVisible(visible);
-        for(int control=0;control<4;++control)
-        {
-            const auto index=size_t(osc*4+control);
-            sliders[index].setVisible(visible);
-            labels[index].setVisible(visible);
-        }
+        const auto selected=osc==currentOscillator; waves[size_t(osc)].setVisible(selected); waveLabels[size_t(osc)].setVisible(selected);
+        for(int control=0;control<6;++control) { const auto i=size_t(osc*6+control); sliders[i].setVisible(selected); labels[i].setVisible(selected); }
     }
-    for(auto& tab:fxTabs) tab.setVisible(currentPage==1);
-    for(size_t index=12;index<sliders.size();++index)
-    {
-        const auto visible=currentPage==1 && ((index<17)==(currentFxSection==0));
-        sliders[index].setVisible(visible);
-        labels[index].setVisible(visible);
-    }
+    for(int env=0;env<3;++env)
+        for(int control=0;control<4;++control) { const auto i=size_t(18+env*4+control); sliders[i].setVisible(env==currentEnvelope); labels[i].setVisible(env==currentEnvelope); }
+    sliders[30].setVisible(currentEnvelope==2); labels[30].setVisible(currentEnvelope==2);
+    modTarget.setVisible(currentEnvelope==2); modTargetLabel.setVisible(currentEnvelope==2);
+    for(size_t i=36;i<sliders.size();++i)
+    { const auto selected=i==36 || (currentFxSection==0 ? i==37 : i>=38); sliders[i].setVisible(selected); labels[i].setVisible(selected); }
 }
 void QinSynthEditor::resized()
 {
-    titleHint.setBounds(18,30,360,38);
-    pageTabs[0].setBounds(18,82,115,32);
-    pageTabs[1].setBounds(139,82,115,32);
-    for(int osc=0;osc<3;++osc) oscillatorTabs[size_t(osc)].setBounds(39+osc*112,158,106,35);
-    fxTabs[0].setBounds(39,158,154,35);
-    fxTabs[1].setBounds(199,158,154,35);
-    for(int osc=0;osc<3;++osc)
+    titleHint.setBounds(18,29,360,38);
+    for(int i=0;i<3;++i)
     {
-        waveLabels[size_t(osc)].setBounds(43,422,120,16);
-        waves[size_t(osc)].setBounds(45,458,132,29);
-        for(int control=0;control<4;++control)
+        oscillatorTabs[size_t(i)].setBounds(31+i*130,125,122,27);
+        envelopeTabs[size_t(i)].setBounds(455+i*73,412,68,27);
+        waveLabels[size_t(i)].setBounds(34,170,118,15); waves[size_t(i)].setBounds(34,186,154,27);
+        for(int control=0;control<6;++control)
         {
-            const auto index=size_t(osc*4+control);
-            constexpr std::array<int,4> positions {615,205,708,801};
-            const auto x=positions[size_t(control)];
-            labels[index].setBounds(x,422,90,16);
-            sliders[index].setBounds(x,438,90,98);
+            const auto index=size_t(i*6+control); const auto x=35+(control%3)*132, y=463+(control/3)*102;
+            labels[index].setBounds(x,y,103,15); sliders[index].setBounds(x,y+16,103,82);
         }
     }
-    for(int index=12;index<23;++index)
+    labels[35].setBounds(302,160,112,15); sliders[35].setBounds(302,176,112,82);
+    for(int env=0;env<3;++env)
+        for(int control=0;control<4;++control)
+        {
+            const auto index=size_t(18+env*4+control); const auto x=453+(control%2)*113, y=452+(control/2)*84;
+            labels[index].setBounds(x,y,102,15); sliders[index].setBounds(x,y+16,102,68);
+        }
+    labels[30].setBounds(451,632,104,15); sliders[30].setBounds(451,651,104,32);
+    modTargetLabel.setBounds(560,632,108,14); modTarget.setBounds(560,653,108,27);
+    filterTypeLabel.setBounds(455,145,211,15); filterType.setBounds(454,163,215,28);
+    for(int index=31;index<=34;++index)
     {
-        const auto effect=index>=17;
-        const auto column=effect ? index-17 : index-12;
-        const auto x=effect ? 48+column*145 : 78+column*150;
-        labels[size_t(index)].setBounds(x,276,112,17);
-        sliders[size_t(index)].setBounds(x,296,112,108);
+        const auto x=453+((index-31)%2)*113, y=203+((index-31)/2)*78;
+        labels[size_t(index)].setBounds(x,y,102,14); sliders[size_t(index)].setBounds(x,y+14,102,68);
+    }
+    for(int i=0;i<2;++i) fxTabs[size_t(i)].setBounds(703+i*97,124,92,27);
+    labels[36].setBounds(744,587,110,16); sliders[36].setBounds(744,604,110,83);
+    labels[37].setBounds(738,245,116,16); sliders[37].setBounds(738,261,116,95);
+    for(int i=38;i<44;++i)
+    {
+        const auto n=i-38,x=700+(n%2)*101,y=179+(n/2)*117;
+        labels[size_t(i)].setBounds(x,y,97,15); sliders[size_t(i)].setBounds(x,y+15,97,90);
     }
     const auto scale=editorScaling::transform(*this,designWidth,designHeight);
     titleHint.setTransform(scale);
-    for(auto& tab:pageTabs) tab.setTransform(scale);
     for(auto& tab:oscillatorTabs) tab.setTransform(scale);
+    for(auto& tab:envelopeTabs) tab.setTransform(scale);
     for(auto& tab:fxTabs) tab.setTransform(scale);
     for(auto& slider:sliders) slider.setTransform(scale);
     for(auto& label:labels) label.setTransform(scale);
     for(auto& wave:waves) wave.setTransform(scale);
     for(auto& label:waveLabels) label.setTransform(scale);
+    for(auto* box:{&filterType,&modTarget}) box->setTransform(scale);
+    for(auto* label:{&filterTypeLabel,&modTargetLabel}) label->setTransform(scale);
 }
-void QinSynthEditor::paint(juce::Graphics& graphics)
+void QinSynthEditor::paint(juce::Graphics& g)
 {
-    const auto cyan=juce::Colour(0xff55aec7);
-    graphics.fillAll(stageStyle::background);
-    graphics.saveState();
-    graphics.addTransform(editorScaling::transform(*this,designWidth,designHeight));
-    graphics.setGradientFill(juce::ColourGradient(juce::Colour(0xff222228),0,0,
-        stageStyle::background,0,designHeight,false));
-    graphics.fillRect(0,0,designWidth,designHeight);
-    graphics.setColour(stageStyle::secondary); graphics.setFont(juce::FontOptions(10.f));
-    graphics.drawText("J-SONIC / VIRTUAL ANALOG INSTRUMENT",18,12,500,16,juce::Justification::centredLeft);
-    graphics.setColour(stageStyle::foreground); graphics.setFont(juce::FontOptions(25.f));
-    graphics.drawText("QIN SYNTH",18,30,360,38,juce::Justification::centredLeft);
-    graphics.setColour(stageStyle::inset);
-    graphics.fillRoundedRectangle(juce::Rectangle<float>(650.f,30.f,252.f,35.f),5.f);
-    graphics.setColour(cyan); graphics.setFont(juce::FontOptions(12.f).withStyle("bold"));
-    graphics.drawText("16 VOICES   /   3 OSC   /   8x UNI",661,36,231,23,juce::Justification::centred);
-    if(currentPage==0)
+    g.fillAll(stageStyle::background); g.saveState(); g.addTransform(editorScaling::transform(*this,designWidth,designHeight));
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff222228),0,0,stageStyle::background,0,designHeight,false));
+    g.fillRect(0,0,designWidth,designHeight);
+    g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(10.f));
+    g.drawText("J-SONIC / VIRTUAL ANALOG INSTRUMENT",18,12,500,16,juce::Justification::centredLeft);
+    g.setColour(stageStyle::foreground); g.setFont(juce::FontOptions(25.f));
+    g.drawText("QIN SYNTH",18,30,360,38,juce::Justification::centredLeft);
+    g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(650,30,252,35),5);
+    g.setColour(cyan); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
+    g.drawText("16 VOICES  /  3 OSC  /  8x UNI",661,36,231,23,juce::Justification::centred);
+    const auto panel=juce::Colour(0xff27272c);
+    stageStyle::drawPanel(g,{16,90,420,600},panel);
+    stageStyle::drawPanel(g,{444,90,240,281},panel);
+    stageStyle::drawPanel(g,{444,379,240,311},panel);
+    stageStyle::drawPanel(g,{692,90,212,600},panel);
+    g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
+    g.drawText("OSC",30,99,120,20,juce::Justification::centredLeft);
+    g.drawText("FLT",455,99,120,20,juce::Justification::centredLeft);
+    g.drawText("ENV",455,388,120,20,juce::Justification::centredLeft);
+    g.drawText("FX",703,99,120,20,juce::Justification::centredLeft);
+    g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(9.f));
+    g.drawText("OSCILLATOR "+juce::String(currentOscillator+1)+" / WAVEFORM",34,276,322,16,juce::Justification::centredLeft);
+    g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(34,295,384,147),6);
+    for(int line=1;line<4;++line) { g.setColour(stageStyle::grid); g.drawHorizontalLine(295+line*36,34,418); }
+    const auto wave=waves[size_t(currentOscillator)].getSelectedId();
+    juce::Path waveform;
+    for(int point=0;point<=380;++point)
     {
-        stageStyle::drawPanel(graphics,{16.f,122.f,568.f,456.f},juce::Colour(0xff27272c));
-        stageStyle::drawPanel(graphics,{592.f,122.f,312.f,456.f},juce::Colour(0xff27272c));
-        graphics.setColour(accent); graphics.setFont(juce::FontOptions(12.f).withStyle("bold"));
-        graphics.drawText("OSCILLATOR "+juce::String(currentOscillator+1),37,132,260,20,juce::Justification::centredLeft);
-        graphics.drawText("UNISON / MIX",608,134,260,20,juce::Justification::centredLeft);
-        graphics.setColour(stageStyle::secondary); graphics.setFont(juce::FontOptions(10.f));
-        graphics.drawText("WAVEFORM",39,199,132,16,juce::Justification::centredLeft);
-        graphics.drawText("STACK SPREAD",610,199,176,16,juce::Justification::centredLeft);
-        graphics.drawText("OSCILLATOR SHAPE",39,401,245,17,juce::Justification::centredLeft);
-        graphics.drawText("Each tab retains its own waveform and unison settings.",39,539,500,19,juce::Justification::centredLeft);
-        graphics.setColour(stageStyle::grid);
-        graphics.fillRoundedRectangle(juce::Rectangle<float>(34.f,218.f,532.f,180.f),8.f);
-        graphics.setColour(stageStyle::inset);
-        graphics.fillRoundedRectangle(juce::Rectangle<float>(38.f,222.f,524.f,172.f),6.f);
-        graphics.setColour(cyan.withAlpha(.18f));
-        for(int line=1;line<4;++line) graphics.drawHorizontalLine(222+line*43,38.f,562.f);
-        for(int line=1;line<8;++line) graphics.drawVerticalLine(38+line*65,222.f,394.f);
-        const auto wave=waves[size_t(currentOscillator)].getSelectedId();
-        juce::Path waveform;
-        for(int point=0;point<=520;++point)
-        {
-            const auto cycle=std::fmod(point/145.f,1.f);
-            const auto shape=wave==2 ? (cycle<.5f ? 1.f : -1.f)
-                            : wave==3 ? (1.f-4.f*std::abs(cycle-.5f)) : (2.f*cycle-1.f);
-            const auto x=38.f+point, y=308.f-63.f*shape;
-            if(point==0) waveform.startNewSubPath(x,y); else waveform.lineTo(x,y);
-        }
-        graphics.setColour(cyan.withAlpha(.23f)); graphics.strokePath(waveform,juce::PathStrokeType(5.f));
-        graphics.setColour(cyan); graphics.strokePath(waveform,juce::PathStrokeType(1.7f));
-        graphics.setColour(stageStyle::inset);
-        graphics.fillRoundedRectangle(juce::Rectangle<float>(608.f,220.f,280.f,168.f),7.f);
-        const auto copies=juce::jlimit(1,8,juce::roundToInt(sliders[size_t(currentOscillator*4+2)].getValue()));
-        for(int copy=0;copy<8;++copy)
-        {
-            const auto active=copy<copies;
-            const auto x=627.f+copy*34.f;
-            const auto height=active ? 48.f+15.f*float(copy%3) : 22.f;
-            graphics.setColour(active ? cyan.withAlpha(.18f) : stageStyle::grid);
-            graphics.fillRoundedRectangle(juce::Rectangle<float>(x,352.f-height,21.f,height),3.f);
-            graphics.setColour(active ? cyan : stageStyle::secondary.withAlpha(.3f));
-            graphics.drawHorizontalLine(int(351.f-height),x,x+21.f);
-        }
-        graphics.setColour(cyan); graphics.setFont(juce::FontOptions(12.f).withStyle("bold"));
-        graphics.drawText(juce::String(copies)+" VOICE"+(copies==1 ? "" : "S"),623,233,245,22,juce::Justification::centred);
-        graphics.setColour(stageStyle::secondary); graphics.setFont(juce::FontOptions(10.f));
-        graphics.drawText("Per-oscillator level, count, and detune",608,539,277,18,juce::Justification::centredLeft);
+        const auto cycle=std::fmod(point/125.f,1.f);
+        const auto shape=wave==2 ? (cycle<.5f ? 1.f : -1.f)
+            : wave==3 ? (1.f-4.f*std::abs(cycle-.5f)) : 2.f*cycle-1.f;
+        const auto x=36.f+point,y=368.f-50.f*shape;
+        if(point==0) waveform.startNewSubPath(x,y); else waveform.lineTo(x,y);
     }
-    else
+    g.setColour(cyan.withAlpha(.2f)); g.strokePath(waveform,juce::PathStrokeType(4));
+    g.setColour(cyan); g.strokePath(waveform,juce::PathStrokeType(1.5f));
+    g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(10.f));
+    g.drawText(currentFxSection==0 ? "ZAO / SATURATION" : "LAN / DELAY-VERB",704,160,185,15,juce::Justification::centredLeft);
+    if(currentFxSection==0)
     {
-        stageStyle::drawPanel(graphics,{16.f,122.f,888.f,456.f},juce::Colour(0xff27272c));
-        stageStyle::drawPanel(graphics,{31.f,209.f,858.f,350.f},juce::Colour(0xff211f25));
-        graphics.setColour(accent); graphics.setFont(juce::FontOptions(12.f).withStyle("bold"));
-        graphics.drawText(currentFxSection==0 ? "VOICE / ZAO DRIVE" : "LAN DELAY-VERB / MIDI ONSET MOTION",
-            43,220,560,22,juce::Justification::centredLeft);
-        graphics.setColour(stageStyle::secondary); graphics.setFont(juce::FontOptions(10.f));
-        graphics.drawText(currentFxSection==0 ? "Pitch-based pan and analog output coloration"
-                                           : "MIDI note-ons steer the tap and phase; resonance tame stays off.",
-            43,244,680,18,juce::Justification::centredLeft);
-        graphics.setColour(stageStyle::inset);
-        graphics.fillRoundedRectangle(juce::Rectangle<float>(48.f,447.f,825.f,88.f),6.f);
-        if(currentFxSection==0)
-        {
-            graphics.setColour(cyan.withAlpha(.65f));
-            graphics.drawLine(96.f,490.f,825.f,490.f,2.f);
-            constexpr std::array<const char*,4> stages {"MIDI NOTE","VOICE AMP","ZAO CIRCUIT","OUTPUT"};
-            for(size_t stage=0;stage<stages.size();++stage)
-            {
-                const auto x=105.f+stage*236.f;
-                graphics.setColour(accent); graphics.fillEllipse(x-4.f,486.f,8.f,8.f);
-                graphics.setColour(cyan); graphics.setFont(juce::FontOptions(11.f));
-                graphics.drawText(stages[stage],x-64.f,500,128,18,juce::Justification::centred);
-            }
-        }
-        else
-        {
-            graphics.setColour(cyan.withAlpha(.65f));
-            graphics.drawLine(90.f,490.f,829.f,490.f,1.5f);
-            for(int tap=0;tap<8;++tap)
-            {
-                const auto x=116.f+tap*100.f;
-                const auto height=17.f+float((tap*5)%4)*10.f;
-                graphics.setColour(cyan.withAlpha(.3f));
-                graphics.fillRect(x,490.f-height,4.f,height);
-                graphics.setColour(accent);
-                graphics.fillEllipse(x-4.f,486.f,12.f,12.f);
-            }
-            graphics.setColour(cyan); graphics.setFont(juce::FontOptions(10.f));
-            graphics.drawText("EIGHT MOVING FEEDBACK TAPS",600,505,245,17,juce::Justification::centredRight);
-        }
+        g.setColour(stageStyle::grid); g.fillRoundedRectangle(juce::Rectangle<float>(707,392,182,153),5);
+        g.setColour(cyan); g.setFont(juce::FontOptions(10.f));
+        g.drawText("OSC  >  FLT  >  DRIVE",715,421,170,20,juce::Justification::centred);
+        g.drawText("            >  LAN  >  OUT",715,462,170,20,juce::Justification::centred);
     }
-    graphics.restoreState();
+    g.restoreState();
 }

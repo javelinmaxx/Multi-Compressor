@@ -15,14 +15,21 @@ struct QinSynthTestAccess
 struct QinSynthEditorTestAccess
 {
     static void oscillator(QinSynthEditor& editor,int index) { editor.showOscillator(index); }
-    static void page(QinSynthEditor& editor,int index) { editor.showPage(index); }
+    static void envelope(QinSynthEditor& editor,int index) { editor.showEnvelope(index); }
     static void fxSection(QinSynthEditor& editor,int index) { editor.showFxSection(index); }
     static bool oscillatorVisible(const QinSynthEditor& editor,int index)
-    { return editor.waves[size_t(index)].isVisible() && editor.sliders[size_t(index*4)].isVisible(); }
+    { return editor.waves[size_t(index)].isVisible() && editor.sliders[size_t(index*6)].isVisible(); }
     static bool voiceFxVisible(const QinSynthEditor& editor)
-    { return editor.sliders[12].isVisible() && editor.sliders[16].isVisible(); }
+    { return editor.sliders[37].isVisible() && editor.sliders[36].isVisible(); }
     static bool delayFxVisible(const QinSynthEditor& editor)
-    { return editor.sliders[17].isVisible() && editor.sliders[22].isVisible(); }
+    { return editor.sliders[38].isVisible() && editor.sliders[43].isVisible(); }
+    static bool driveVisible(const QinSynthEditor& editor) { return editor.sliders[37].isVisible(); }
+    static bool envelopeVisible(const QinSynthEditor& editor,int index)
+    { return editor.sliders[size_t(18+index*4)].isVisible(); }
+    static bool filterVisible(const QinSynthEditor& editor)
+    { return editor.filterType.isVisible() && editor.sliders[31].isVisible(); }
+    static bool modVisible(const QinSynthEditor& editor)
+    { return editor.sliders[30].isVisible() && editor.modTarget.isVisible(); }
 };
 static void set(QinSynthProcessor& processor,const char* id,float value)
 {
@@ -123,17 +130,107 @@ int main(int argc,char** argv)
             if(tailPower<1.e-6) throw std::runtime_error("Lan delay-reverb must retain an audible tail after note silence");
         }
         {
+            QinSynthProcessor left,right;
+            for(auto* p:{&left,&right}) { set(*p,"keyPan",0); set(*p,"verbMix",0); p->prepareToPlay(48000,256); }
+            set(left,"osc1Pan",-100); set(right,"osc1Pan",100);
+            juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            for(int i=0;i<8;++i) {left.processBlock(a,note); right.processBlock(b,note); note.clear();}
+            if(power(a,0)<power(a,1)*10 || power(b,1)<power(b,0)*10)
+                throw std::runtime_error("Per-oscillator pan must place the whole oscillator in stereo");
+        }
+        {
+            QinSynthProcessor narrow,wide;
+            for(auto* p:{&narrow,&wide})
+            { set(*p,"keyPan",0); set(*p,"verbMix",0); set(*p,"osc1Unison",8); set(*p,"osc1Detune",20); p->prepareToPlay(48000,256); }
+            set(narrow,"osc1Spread",0); set(wide,"osc1Spread",100);
+            juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            double narrowSide=0,wideSide=0;
+            for(int blockIndex=0;blockIndex<8;++blockIndex)
+            {
+                narrow.processBlock(a,note); wide.processBlock(b,note); note.clear();
+                for(int i=0;i<256;++i)
+                { narrowSide+=std::abs(a.getSample(0,i)-a.getSample(1,i)); wideSide+=std::abs(b.getSample(0,i)-b.getSample(1,i)); }
+            }
+            if(narrowSide>1.e-5 || wideSide<.01)
+                throw std::runtime_error("Spread must move detuned copies without moving the oscillator center");
+        }
+        for(int type=1;type<=4;++type)
+        {
+            QinSynthProcessor filtered,reference;
+            for(auto* p:{&filtered,&reference}) { set(*p,"verbMix",0); p->prepareToPlay(48000,256); }
+            set(filtered,"filterType",float(type)); set(filtered,"filterCutoff",250);
+            juce::AudioBuffer<float> audio(2,256),dry(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,84,1.f),0);
+            for(int blockIndex=0;blockIndex<16;++blockIndex)
+            { filtered.processBlock(audio,note); reference.processBlock(dry,note); note.clear(); }
+            const auto filteredPower=power(audio,0)+power(audio,1);
+            if(filteredPower<1.e-10 || filteredPower>=.5*(power(dry,0)+power(dry,1)))
+                throw std::runtime_error("Each filter type must attenuate a note above its cutoff");
+        }
+        {
+            QinSynthProcessor held,fading;
+            for(auto* p:{&held,&fading}) { set(*p,"verbMix",0); set(*p,"attack",.001f); p->prepareToPlay(48000,256); }
+            set(fading,"ampSustain",0); set(fading,"ampDecay",.01f);
+            juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            for(int i=0;i<36;++i) { held.processBlock(a,note); fading.processBlock(b,note); note.clear(); }
+            if(power(b,0)>power(a,0)*.001)
+                throw std::runtime_error("AMP decay and sustain must shape a held note");
+        }
+        {
+            QinSynthProcessor staticFilter,movingFilter;
+            for(auto* p:{&staticFilter,&movingFilter})
+            {
+                set(*p,"verbMix",0); set(*p,"filterType",3); set(*p,"filterCutoff",200);
+                set(*p,"fltAttack",.001f); set(*p,"fltSustain",100); p->prepareToPlay(48000,256);
+            }
+            set(movingFilter,"filterEnvAmount",100);
+            juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,72,1.f),0);
+            double difference=0;
+            for(int blockIndex=0;blockIndex<16;++blockIndex)
+            {
+                staticFilter.processBlock(a,note); movingFilter.processBlock(b,note); note.clear();
+                for(int i=0;i<256;++i) difference+=std::abs(a.getSample(0,i)-b.getSample(0,i));
+            }
+            if(difference<.1) throw std::runtime_error("FLT envelope must move the filter cutoff");
+        }
+        {
+            QinSynthProcessor plain,modulated;
+            for(auto* p:{&plain,&modulated})
+            { set(*p,"verbMix",0); set(*p,"modAttack",.001f); set(*p,"modSustain",100); p->prepareToPlay(48000,256); }
+            set(modulated,"modDepth",100); set(modulated,"modTarget",0);
+            juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            double difference=0;
+            for(int blockIndex=0;blockIndex<16;++blockIndex)
+            {
+                plain.processBlock(a,note); modulated.processBlock(b,note); note.clear();
+                for(int i=0;i<256;++i) difference+=std::abs(a.getSample(0,i)-b.getSample(0,i));
+            }
+            if(difference<.01) throw std::runtime_error("MOD envelope must change the chosen effect");
+        }
+        {
             QinSynthProcessor preview;
             QinSynthEditor editor(preview);
             if(!QinSynthEditorTestAccess::oscillatorVisible(editor,0)
                || QinSynthEditorTestAccess::oscillatorVisible(editor,1)
-               || QinSynthEditorTestAccess::voiceFxVisible(editor))
-                throw std::runtime_error("Sound page must show only the selected oscillator");
+               || !QinSynthEditorTestAccess::voiceFxVisible(editor)
+               || !QinSynthEditorTestAccess::envelopeVisible(editor,0)
+               || !QinSynthEditorTestAccess::filterVisible(editor))
+                throw std::runtime_error("OSC, ENV, FLT, and FX panels must be present together");
             QinSynthEditorTestAccess::oscillator(editor,2);
             if(!QinSynthEditorTestAccess::oscillatorVisible(editor,2)
                || QinSynthEditorTestAccess::oscillatorVisible(editor,0))
                 throw std::runtime_error("Oscillator tabs must change the visible Sound controls");
             QinSynthEditorTestAccess::oscillator(editor,0);
+            QinSynthEditorTestAccess::envelope(editor,1);
+            if(!QinSynthEditorTestAccess::envelopeVisible(editor,1)
+               || QinSynthEditorTestAccess::envelopeVisible(editor,0))
+                throw std::runtime_error("Envelope tabs must select their four ADSR controls");
+            QinSynthEditorTestAccess::envelope(editor,0);
             const auto save=[&editor](const char* name)
             {
                 const auto image=editor.createComponentSnapshot(editor.getLocalBounds());
@@ -145,17 +242,21 @@ int main(int argc,char** argv)
                     throw std::runtime_error("Qin UI preview could not be saved");
             };
             if(argc>1) save(argv[1]);
-            QinSynthEditorTestAccess::page(editor,1);
             if(!QinSynthEditorTestAccess::voiceFxVisible(editor)
-               || QinSynthEditorTestAccess::delayFxVisible(editor)
-               || QinSynthEditorTestAccess::oscillatorVisible(editor,0))
-                throw std::runtime_error("FX page must open on voice and drive controls");
+               || QinSynthEditorTestAccess::delayFxVisible(editor))
+                throw std::runtime_error("FX panel must open on drive controls");
+            QinSynthEditorTestAccess::envelope(editor,1);
             if(argc>2) save(argv[2]);
+            QinSynthEditorTestAccess::envelope(editor,0);
             QinSynthEditorTestAccess::fxSection(editor,1);
             if(!QinSynthEditorTestAccess::delayFxVisible(editor)
-               || QinSynthEditorTestAccess::voiceFxVisible(editor))
+               || QinSynthEditorTestAccess::driveVisible(editor))
                 throw std::runtime_error("Delay-verb tab must show only the reverb controls");
             if(argc>3) save(argv[3]);
+            QinSynthEditorTestAccess::envelope(editor,2);
+            if(!QinSynthEditorTestAccess::modVisible(editor))
+                throw std::runtime_error("MOD tab must show destination and depth controls");
+            if(argc>4) save(argv[4]);
         }
         std::cout<<"Qin Synth processor checks passed\n";
         return 0;
