@@ -4,6 +4,7 @@
 | --- | --- |
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
 | OSC 1/2/3 tabs | Opens the selected oscillator in the OSC panel. |
+| N | Adds a noise oscillator to each active MIDI voice. |
 | AMP tab | Opens the amplitude envelope. |
 | FLT tab | Opens the filter envelope. |
 | MOD tab | Opens the effect modulation envelope. |
@@ -20,19 +21,22 @@
 | AMP Decay | Sets how quickly amplitude falls from its peak to sustain. |
 | AMP Sustain | Sets amplitude while the key remains held. |
 | AMP Release | Sets how quickly amplitude fades after note-off. |
+| AMP Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
 | FLT Attack | Sets how quickly the filter envelope rises. |
 | FLT Decay | Sets how quickly filter motion falls to sustain. |
 | FLT Sustain | Sets the held level of filter modulation. |
 | FLT Release | Sets how quickly filter modulation fades after note-off. |
+| FLT Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
 | MOD Attack | Sets how quickly the modulation envelope rises. |
 | MOD Decay | Sets how quickly the modulation envelope falls to sustain. |
 | MOD Sustain | Sets the held level of effect modulation. |
 | MOD Release | Sets how quickly effect modulation fades after note-off. |
+| MOD Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
 | MOD Depth | Sets how strongly the modulation envelope affects its destination. |
 | MOD Target | Routes the modulation envelope to drive or unison spread. |
 | FLT Type | Selects the TB-303, 18 dB Sallen-Key, or 12/24 dB digital filter model. |
-| FLT Cutoff | Sets the filter's base cutoff frequency. |
-| FLT Resonance | Emphasizes frequencies around the filter cutoff. |
+| FLT Freq | Sets the filter's base cutoff on a logarithmic frequency scale. |
+| FLT Resonance | Emphasizes the filter cutoff with logarithmic control resolution. |
 | FLT Key Follow | Raises the cutoff with MIDI note pitch. |
 | FLT Env Amount | Sets how far the filter envelope moves the cutoff. |
 | Key Pan | Places low MIDI notes left and high notes right. |

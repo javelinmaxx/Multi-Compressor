@@ -32,6 +32,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     add("release","Release",.01f,5,.001f,.3f,"s");
     add("ampDecay","Amp decay",.01f,5,.001f,.2f,"s");
     add("ampSustain","Amp sustain",0,100,.1f,100,"%");
+    add("ampCurve","Amp curve",-100,100,.1f,0,"%");
     for(const char* prefix:{"flt","mod"})
     {
         const juce::String id(prefix);
@@ -39,16 +40,28 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         add(id+"Decay",id+" decay",.01f,5,.001f,.2f,"s");
         add(id+"Sustain",id+" sustain",0,100,.1f,0,"%");
         add(id+"Release",id+" release",.01f,5,.001f,.3f,"s");
+        add(id+"Curve",id+" curve",-100,100,.1f,0,"%");
     }
     add("modDepth","Mod depth",0,100,.1f,0,"%");
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"modTarget",1},"Mod destination",
         juce::StringArray{"Drive","Spread"},0));
-    add("filterCutoff","Filter cutoff",30,18000,1,18000,"Hz");
-    add("filterResonance","Filter resonance",0,100,.1f,0,"%");
+    juce::NormalisableRange<float> cutoffRange {30.f,18000.f,
+        [](float low,float high,float value) { return low*std::pow(high/low,value); },
+        [](float low,float high,float value) { return std::log(value/low)/std::log(high/low); },
+        [](float,float,float value) { return std::round(value); }};
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"filterCutoff",1},
+        "Filter cutoff",cutoffRange,18000.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
+    juce::NormalisableRange<float> resonanceRange {0.f,100.f,
+        [](float,float,float value) { return std::exp(value*std::log(101.f))-1.f; },
+        [](float,float,float value) { return std::log1p(value)/std::log(101.f); },
+        [](float,float,float value) { return std::round(value*10.f)*.1f; }};
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"filterResonance",1},
+        "Filter resonance",resonanceRange,0.f,juce::AudioParameterFloatAttributes().withLabel("%")));
     add("filterKeyFollow","Filter key follow",0,100,.1f,0,"%");
     add("filterEnvAmount","Filter envelope amount",-100,100,.1f,0,"%");
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"filterType",1},"Filter type",
         juce::StringArray{"Bypass","TB-303 ladder","Sallen-Key 18 dB","Digital 12 dB","Digital 24 dB"},0));
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"noise",1},"Noise oscillator",false));
     add("keyPan","Key pan",0,100,.1f,50,"%");
     add("drive","Zao drive",0,100,.1f,0,"%");
     add("time","Delay time",25,1000,.1f,180,"ms");
@@ -100,13 +113,14 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
         target.pan=std::clamp(get(prefix+"Pan")*.01f,-1.f,1.f);
     }
     settings.env[0]={std::clamp(get("attack"),.001f,2.f),std::clamp(get("ampDecay"),.01f,5.f),
-        std::clamp(get("ampSustain")*.01f,0.f,1.f),std::clamp(get("release"),.01f,5.f)};
+        std::clamp(get("ampSustain")*.01f,0.f,1.f),std::clamp(get("release"),.01f,5.f),
+        std::clamp(get("ampCurve")*.01f,-1.f,1.f)};
     for(int index=1;index<3;++index)
     {
         const juce::String prefix(index==1 ? "flt" : "mod");
         settings.env[size_t(index)]={std::clamp(get(prefix+"Attack"),.001f,2.f),
             std::clamp(get(prefix+"Decay"),.01f,5.f),std::clamp(get(prefix+"Sustain")*.01f,0.f,1.f),
-            std::clamp(get(prefix+"Release"),.01f,5.f)};
+            std::clamp(get(prefix+"Release"),.01f,5.f),std::clamp(get(prefix+"Curve")*.01f,-1.f,1.f)};
     }
     settings.modDepth=std::clamp(get("modDepth")*.01f,0.f,1.f);
     settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,1);
@@ -115,6 +129,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.keyFollow=std::clamp(get("filterKeyFollow")*.01f,0.f,1.f);
     settings.filterEnv=std::clamp(get("filterEnvAmount")*.01f,-1.f,1.f);
     settings.filterType=std::clamp(juce::roundToInt(get("filterType")),0,4);
+    settings.noise=get("noise")>=.5f;
     settings.pan=std::clamp(get("keyPan")*.01f,0.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
     settings.verbTime=std::clamp(get("time"),25.f,1000.f);
@@ -129,14 +144,20 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
 float QinSynthProcessor::notePan(int note,float amount) noexcept
 { return std::clamp((float(note)-64.f)/44.f*amount,-.95f,.95f); }
 float QinSynthProcessor::advanceEnvelope(Envelope& envelope,const EnvelopeSettings& settings,bool held,
-                                        const std::array<float,3>& coefficient) const noexcept
+                                        const std::array<float,3>& step) const noexcept
 {
-    if(!held) envelope.stage=3;
-    const auto target=envelope.stage==0 ? 1.f : envelope.stage==1 || envelope.stage==2 ? settings.sustain : 0.f;
-    const auto amount=coefficient[size_t(envelope.stage==0 ? 0 : envelope.stage==3 ? 2 : 1)];
-    envelope.value+=amount*(target-envelope.value);
-    if(envelope.stage==0 && envelope.value>.999f) envelope.stage=1;
-    if(envelope.stage==1 && std::abs(envelope.value-settings.sustain)<.001f) envelope.stage=2;
+    if(!held && envelope.stage!=3)
+    { envelope.stage=3; envelope.start=envelope.value; envelope.progress=0; }
+    if(envelope.stage==2) { envelope.value=settings.sustain; return envelope.value; }
+    const auto target=envelope.stage==0 ? 1.f : envelope.stage==1 ? settings.sustain : 0.f;
+    const auto increment=step[size_t(envelope.stage==0 ? 0 : envelope.stage==1 ? 1 : 2)];
+    envelope.progress=std::min(1.f,envelope.progress+increment);
+    const auto slope=envelope.stage==0 ? 6.9f : 5.f;
+    const auto base=(1.f-std::exp(-slope*envelope.progress))/(1.f-std::exp(-slope));
+    const auto shaped=std::pow(base,std::exp2(settings.curve*2.f));
+    envelope.value=envelope.start+(target-envelope.start)*shaped;
+    if(envelope.progress>=1.f && envelope.stage<2)
+    { envelope.start=envelope.value; envelope.progress=0; ++envelope.stage; }
     return envelope.value;
 }
 float QinSynthProcessor::filterSample(FilterState& state,float input,float g,float onePole,float resonance,int type) const noexcept
@@ -148,22 +169,30 @@ float QinSynthProcessor::filterSample(FilterState& state,float input,float g,flo
         for(auto& pole:state.ladder) { pole+=g*(value-pole); value=std::tanh(pole); }
         return std::clamp(state.ladder[3]*1.3f,-4.f,4.f);
     }
-    const auto k=std::clamp(1.4f-1.25f*resonance,.15f,1.4f);
-    const auto section=[g,k](float x,float& s1,float& s2)
+    const auto k=std::clamp(1.4f-1.1f*resonance,.3f,1.4f);
+    const auto section=[g](float x,float damping,float& s1,float& s2)
     {
-        const auto high=(x-k*s1-s2)/(1+g*(g+k));
-        const auto band=g*high+s1, low=g*band+s2;
+        // Trapezoidal SVF: the first integrator state belongs in both the
+        // input and denominator terms. Omitting g*s1 destabilizes high Q.
+        const auto a1=1.f/(1.f+g*(g+damping));
+        const auto a2=g*a1;
+        const auto v3=x-s2;
+        const auto band=a1*s1+a2*v3;
+        const auto low=s2+a2*s1+g*a2*v3;
         s1=2*band-s1; s2=2*low-s2;
         return low;
     };
-    auto value=section(input,state.s1,state.s2);
+    auto value=section(input,k,state.s1,state.s2);
     if(type==2)
     {
         state.pole+=onePole*(value-state.pole);
-        return state.pole;
+        value=state.pole;
     }
-    if(type==4) value=section(value,state.t1,state.t2);
-    return value;
+    if(type==4) value=section(value,1.4f-.55f*resonance,state.t1,state.t2);
+    if(!std::isfinite(value) || !std::isfinite(state.s1) || !std::isfinite(state.s2)
+       || !std::isfinite(state.t1) || !std::isfinite(state.t2))
+    { state={}; return 0; }
+    return 2.f*std::tanh(value*.5f);
 }
 double QinSynthProcessor::polyBlep(double phase,double step) noexcept
 {
@@ -204,6 +233,8 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
         *selected={}; selected->active=selected->keyDown=true;
         selected->note=note; selected->channel=message.getChannel(); selected->velocity=velocity;
         selected->age=++voiceAge; selected->pan=notePan(note,settings.pan);
+        selected->noiseState=0x9e3779b9u^uint32_t(selected->age*747796405u)^(uint32_t(note)*2891336453u);
+        if(selected->noiseState==0) selected->noiseState=1;
         for(int osc=0;osc<oscillatorCount;++osc)
             for(int u=0;u<maxUnison;++u)
                 selected->oscillators[size_t(osc)][size_t(u)].phase=
@@ -242,9 +273,9 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     for(size_t env=0;env<3;++env)
     {
         const auto& e=settings.env[env];
-        const std::array<float,3> times {e.attack,e.decay,e.release};
+        const std::array<float,3> times {e.attack*6.9f,e.decay*5.f,e.release*5.f};
         for(size_t stage=0;stage<3;++stage)
-            coefficients[env][stage]=float(1-std::exp(-1.0/(sampleRate*std::max(.001f,times[stage]))));
+            coefficients[env][stage]=float(1.0/(sampleRate*std::max(.001f,times[stage])));
     }
     const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
     std::array<std::array<std::array<double,maxUnison>,oscillatorCount>,maxVoices> steps {};
@@ -295,6 +326,14 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                     voiceRight+=value*std::sqrt((1+pan)*.5);
                 }
             }
+            if(settings.noise)
+            {
+                auto& random=voice.noiseState;
+                random^=random<<13; random^=random>>17; random^=random<<5;
+                const auto noise=(float(random>>8)*(1.f/8388607.5f)-1.f)*.3f;
+                voiceLeft+=noise*std::sqrt((1.f-voice.pan)*.5f);
+                voiceRight+=noise*std::sqrt((1.f+voice.pan)*.5f);
+            }
             if(settings.modTarget==0 && settings.modDepth>0)
             {
                 const auto amount=settings.modDepth*modEnv;
@@ -342,6 +381,15 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     verb.tame=0; verb.automatic=false; verb.shimmer=0; verb.predelayMs=0;
     juce::AudioBuffer<float> slice(buffer.getArrayOfWritePointers(),2,start,count);
     reverb.process(slice,verb,bypass);
+    for(int channel=0;channel<2;++channel)
+        for(int sample=start;sample<start+count;++sample)
+        {
+            const auto value=buffer.getSample(channel,sample);
+            if(!std::isfinite(value)) { buffer.setSample(channel,sample,0.f); continue; }
+            const auto magnitude=std::abs(value);
+            if(magnitude>2.f)
+                buffer.setSample(channel,sample,std::copysign(2.f+2.f*std::tanh((magnitude-2.f)*.5f),value));
+        }
 }
 void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffer& midi,bool bypass)
 {
