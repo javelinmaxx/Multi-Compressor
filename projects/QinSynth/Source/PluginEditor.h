@@ -29,7 +29,7 @@ public:
 class QinRetrigSwitch final : public juce::ToggleButton
 {
 public:
-    QinRetrigSwitch();
+    explicit QinRetrigSwitch(const juce::String& caption="RETRIG");
     void paintButton(juce::Graphics&,bool,bool) override;
 };
 
@@ -65,6 +65,9 @@ private:
     std::array<juce::TextButton,3> oscillatorTabs, envelopeTabs;
     std::array<juce::TextButton,2> fxTabs;
     juce::TextButton noiseButton {"N"};
+    QinRetrigSwitch transformerButton {"TRANSFORMER"};
+    juce::ComboBox driveMode;
+    juce::Label driveModeLabel;
     QinVoiceSlider voiceCount;
     std::array<juce::Slider,4> noiseSliders;
     std::array<juce::Label,4> noiseLabels;
@@ -89,6 +92,8 @@ private:
     std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
     std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
     std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
+    std::unique_ptr<State::ComboBoxAttachment> driveModeAttachment;
+    std::unique_ptr<State::ButtonAttachment> transformerAttachment;
     std::unique_ptr<State::ButtonAttachment> noiseAttachment, timesFiveAttachment;
     std::array<std::unique_ptr<State::SliderAttachment>,4> noiseSliderAttachments;
     std::unique_ptr<State::ComboBoxAttachment> noiseStyleAttachment;

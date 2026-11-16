@@ -16,6 +16,8 @@
 | FLT tab | Opens the filter envelope. |
 | MOD tab | Opens the effect modulation envelope. |
 | DRIVE tab | Opens drive and output controls. |
+| Drive Circuit | Selects BJT, op-amp, diode shunt, or series crossover drive from Zao. |
+| Transformer | Adds Ren's transformer to the output and saves CPU when off. |
 | DELAY tab | Opens Lan's delay and reverb controls. |
 | Osc Wave | Chooses the selected oscillator's virtual-analog waveform. |
 | Osc Level | Sets the selected oscillator's contribution to the mix. |
@@ -50,7 +52,7 @@
 | FLT Merge | Blends per-voice filters into one shared master filter at 100%. |
 | Key Pan | Places low MIDI notes left and high notes right. |
 | Output | Sets the final synth level. |
-| Drive | Blends in the op-amp clipping circuit. |
+| Drive | Blends in the selected Zao circuit. |
 | Time | Sets Lan's delay and reverb time. |
 | Decay | Sets how long Lan's feedback tail lasts. |
 | Scatter | Morphs Lan's delay into a diffuse reverb. |

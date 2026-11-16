@@ -115,6 +115,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     for(int osc=0;osc<oscillatorCount;++osc)
         result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{juce::String(prefixes[size_t(osc)])+"Retrig",1},
             "Oscillator "+juce::String(osc+1)+" retrig",false));
+    result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"driveMode",1},"Drive circuit",
+        juce::StringArray{"BJT CE","Op-Amp Feedback","Diode Shunt","Series Crossover"},1));
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"transformer",1},
+        "Output transformer",false));
     return result;
 }
 QinSynthProcessor::QinSynthProcessor()
@@ -132,9 +136,16 @@ bool QinSynthProcessor::isBusesLayoutSupported(const BusesLayout& buses) const
 void QinSynthProcessor::prepareToPlay(double rate,int)
 {
     sampleRate=std::isfinite(rate) && rate>=8000 ? rate : 48000;
-    voices={}; masterFilter={}; masterCutoff=smoothedFilterMerge=0;
+    voices={}; heldNotes={}; heldNoteCount=0;
+    masterFilter={}; masterCutoff=smoothedFilterMerge=0;
     voiceAge=onsetCount=0; onsetTap=onsetPhase=0; sustain=false;
-    for(auto& circuit:driveCircuit) circuit.prepare(sampleRate);
+    driveCircuit.prepare(sampleRate);
+    lastDriveMode=std::clamp(juce::roundToInt(parameters.getRawParameterValue("driveMode")->load()),0,3);
+    for(size_t mode=0;mode<driveWeights.size();++mode)
+    {
+        driveWeights[mode].reset(sampleRate,.015);
+        driveWeights[mode].setCurrentAndTargetValue(int(mode)==lastDriveMode ? 1.f : 0.f);
+    }
     for(auto& point:driveScopeInput) point.store(0,std::memory_order_relaxed);
     for(auto& point:driveScopeOutput) point.store(0,std::memory_order_relaxed);
     driveScopeWrite=driveScopeCounter=0; driveScopeEpoch.store(0,std::memory_order_relaxed);
@@ -142,7 +153,8 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
     // The MIDI onset is the only source of tap/phase motion. Lan's spectral
     // resonance analyser and tame filters remain dormant in this instrument.
     reverb.prepare(sampleRate,false);
-    setLatencySamples(0);
+    transformerStage.prepare(sampleRate);
+    setLatencySamples(ren::TransformerStage::latency);
 }
 void QinSynthProcessor::getStateInformation(juce::MemoryBlock& data)
 { if(auto xml=parameters.copyState().createXml()) copyXmlToBinary(*xml,data); }
@@ -208,6 +220,8 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.voiceCount=std::clamp(juce::roundToInt(get("voiceCount")),1,maxVoices);
     settings.pan=std::clamp(get("keyPan")*.01f,0.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
+    settings.driveMode=std::clamp(juce::roundToInt(get("driveMode")),0,3);
+    settings.transformer=get("transformer")>=.5f;
     settings.verbTime=std::clamp(get("time"),25.f,1000.f);
     settings.verbDecay=std::clamp(get("decay"),.3f,20.f);
     settings.verbScatter=std::clamp(get("scatter")*.01f,0.f,1.f);
@@ -298,34 +312,53 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
     {
         const auto note=message.getNoteNumber();
         const auto velocity=message.getFloatVelocity();
-        Voice* selected=nullptr;
-        const auto end=voices.begin()+settings.voiceCount;
-        for(auto it=voices.begin();it!=end;++it) if(!it->active) { selected=&*it; break; }
-        if(selected==nullptr)
-            selected=&*std::min_element(voices.begin(),end,[](const Voice& a,const Voice& b)
-            {
-                if(a.keyDown!=b.keyDown) return !a.keyDown;
-                return a.age<b.age;
-            });
-        const auto previousOscillators=selected->oscillators;
-        const auto hadPreviousNote=selected->age!=0;
-        *selected={}; selected->active=selected->keyDown=true;
-        selected->note=note; selected->channel=message.getChannel(); selected->velocity=velocity;
-        selected->age=++voiceAge; selected->pan=notePan(note,settings.pan);
-        selected->noiseState=0x9e3779b9u^uint32_t(selected->age*747796405u)^(uint32_t(note)*2891336453u);
-        if(selected->noiseState==0) selected->noiseState=1;
-        for(int osc=0;osc<oscillatorCount;++osc)
-            for(int u=0;u<maxUnison;++u)
-            {
-                auto& subvoice=selected->oscillators[size_t(osc)][size_t(u)];
-                if(settings.oscillator[size_t(osc)].retrig)
-                    subvoice={};
-                else if(hadPreviousNote)
-                    subvoice=previousOscillators[size_t(osc)][size_t(u)];
-                else
-                    subvoice.phase=std::fmod(.179*double(u)+.137*double(osc)
-                        +.073*double(selected->age),1.0);
-            }
+        const auto overlapping=heldNoteCount>0;
+        if(heldNoteCount==int(heldNotes.size()))
+        {
+            std::move(heldNotes.begin()+1,heldNotes.end(),heldNotes.begin());
+            --heldNoteCount;
+        }
+        heldNotes[size_t(heldNoteCount++)]={note,message.getChannel()};
+        if(settings.voiceCount==1 && overlapping && voices[0].active)
+        {
+            // A legato note changes pitch without restarting oscillators,
+            // envelopes, or filters, even when oscillator Retrig is enabled.
+            auto& voice=voices[0];
+            voice.note=note; voice.channel=message.getChannel();
+            voice.pan=notePan(note,settings.pan);
+            voice.keyDown=true; voice.sustained=false;
+        }
+        else
+        {
+            Voice* selected=nullptr;
+            const auto end=voices.begin()+settings.voiceCount;
+            for(auto it=voices.begin();it!=end;++it) if(!it->active) { selected=&*it; break; }
+            if(selected==nullptr)
+                selected=&*std::min_element(voices.begin(),end,[](const Voice& a,const Voice& b)
+                {
+                    if(a.keyDown!=b.keyDown) return !a.keyDown;
+                    return a.age<b.age;
+                });
+            const auto previousOscillators=selected->oscillators;
+            const auto hadPreviousNote=selected->age!=0;
+            *selected={}; selected->active=selected->keyDown=true;
+            selected->note=note; selected->channel=message.getChannel(); selected->velocity=velocity;
+            selected->age=++voiceAge; selected->pan=notePan(note,settings.pan);
+            selected->noiseState=0x9e3779b9u^uint32_t(selected->age*747796405u)^(uint32_t(note)*2891336453u);
+            if(selected->noiseState==0) selected->noiseState=1;
+            for(int osc=0;osc<oscillatorCount;++osc)
+                for(int u=0;u<maxUnison;++u)
+                {
+                    auto& subvoice=selected->oscillators[size_t(osc)][size_t(u)];
+                    if(settings.oscillator[size_t(osc)].retrig)
+                        subvoice={};
+                    else if(hadPreviousNote)
+                        subvoice=previousOscillators[size_t(osc)][size_t(u)];
+                    else
+                        subvoice.phase=std::fmod(.179*double(u)+.137*double(osc)
+                            +.073*double(selected->age),1.0);
+                }
+        }
         // Change only on MIDI note-ons. Alternating direction prevents the
         // feedback tap from repeatedly reinforcing the same frequencies.
         onsetTap=std::clamp((onsetCount++%2==0 ? 1.f : -1.f)
@@ -334,6 +367,26 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
     }
     else if(message.isNoteOff())
     {
+        bool removed=false;
+        for(int index=heldNoteCount-1;index>=0;--index)
+            if(heldNotes[size_t(index)].note==message.getNoteNumber()
+               && heldNotes[size_t(index)].channel==message.getChannel())
+            {
+                std::move(heldNotes.begin()+index+1,heldNotes.begin()+heldNoteCount,heldNotes.begin()+index);
+                --heldNoteCount;
+                removed=true;
+                break;
+            }
+        if(settings.voiceCount==1 && !removed) return;
+        if(settings.voiceCount==1 && voices[0].active && voices[0].keyDown
+           && voices[0].note==message.getNoteNumber() && voices[0].channel==message.getChannel()
+           && heldNoteCount>0)
+        {
+            const auto& previous=heldNotes[size_t(heldNoteCount-1)];
+            voices[0].note=previous.note; voices[0].channel=previous.channel;
+            voices[0].pan=notePan(previous.note,settings.pan);
+            return;
+        }
         for(auto& voice:voices)
             if(voice.active && voice.note==message.getNoteNumber() && voice.channel==message.getChannel() && voice.keyDown)
             { voice.keyDown=false; voice.sustained=sustain; }
@@ -345,7 +398,7 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
     }
     else if(message.isAllNotesOff() || message.isAllSoundOff())
     {
-        sustain=false;
+        sustain=false; heldNoteCount=0;
         for(auto& voice:voices)
         {
             voice.keyDown=voice.sustained=false;
@@ -513,16 +566,29 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     const auto voiceCutoff=cutoffWeight>1.e-5 ? float(std::exp(cutoffLogSum/cutoffWeight)) : 0.f;
     liveFilterCutoff.store(voiceCutoff>0 ? voiceCutoff+(masterCutoff-voiceCutoff)*smoothedFilterMerge : 0.f,
                            std::memory_order_relaxed);
+    if(settings.driveMode!=lastDriveMode)
+    {
+        if(driveWeights[size_t(settings.driveMode)].getCurrentValue()<=0.f)
+            driveCircuit.reset(settings.driveMode);
+        for(size_t mode=0;mode<driveWeights.size();++mode)
+            driveWeights[mode].setTargetValue(int(mode)==settings.driveMode ? 1.f : 0.f);
+        lastDriveMode=settings.driveMode;
+    }
     const auto stride=std::max(1u,uint32_t(sampleRate/(driveScopePoints*50.0)));
     for(int i=start;i<start+count;++i)
     {
         const auto capture=driveScopeCounter+1>=stride;
         const auto original=capture ? .5f*(buffer.getSample(0,i)+buffer.getSample(1,i)) : 0.f;
+        std::array<float,zao::circuitCount> weights {};
+        for(size_t mode=0;mode<weights.size();++mode) weights[mode]=driveWeights[mode].getNextValue();
         if(settings.drive>1.e-4f)
             for(int ch=0;ch<2;++ch)
             {
                 const auto dry=buffer.getSample(ch,i);
-                const auto driven=driveCircuit[size_t(ch)].process(dry*(1+5*settings.drive));
+                double driven=0;
+                for(size_t mode=0;mode<weights.size();++mode)
+                    if(weights[mode]>1.e-6f)
+                        driven+=weights[mode]*driveCircuit.process(int(mode),ch,dry*(1+5*settings.drive));
                 const auto result=dry+settings.drive*(driven-dry);
                 buffer.setSample(ch,i,!bypass && std::isfinite(result) ? float(std::clamp(result,-4.0,4.0)) : dry);
             }
@@ -548,6 +614,9 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     verb.tame=0; verb.automatic=false; verb.shimmer=0; verb.predelayMs=0;
     juce::AudioBuffer<float> slice(buffer.getArrayOfWritePointers(),2,start,count);
     reverb.process(slice,verb,bypass);
+    // Ren's delayed clean branch remains aligned; its nonlinear core stops
+    // once the off transition has faded out.
+    transformerStage.process(slice,6.f,0.f,0.f,1.f,settings.transformer,bypass);
     for(int channel=0;channel<2;++channel)
         for(int sample=start;sample<start+count;++sample)
         {

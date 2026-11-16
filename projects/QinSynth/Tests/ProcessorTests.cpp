@@ -12,6 +12,11 @@ struct QinSynthTestAccess
     static float tap(const QinSynthProcessor& p) { return p.onsetTap; }
     static float phase(const QinSynthProcessor& p) { return p.onsetPhase; }
     static uint32_t analysisJobs(const QinSynthProcessor& p) { return p.reverb.analysisJobs(); }
+    static bool transformerRunning(const QinSynthProcessor& p) { return p.transformerStage.isRunning(); }
+    static int monoNote(const QinSynthProcessor& p) { return p.voices[0].note; }
+    static bool monoHeld(const QinSynthProcessor& p) { return p.voices[0].keyDown; }
+    static double monoPhase(const QinSynthProcessor& p) { return p.voices[0].oscillators[0][0].phase; }
+    static float monoEnvelope(const QinSynthProcessor& p) { return p.voices[0].env[0].value; }
     static double secondPhase(const QinSynthProcessor& p,int osc)
     { return p.voices[1].oscillators[size_t(osc)][0].phase; }
     static bool allRetriggeredPhasesMatch(const QinSynthProcessor& p)
@@ -23,6 +28,8 @@ struct QinSynthTestAccess
     }
     static void noteOn(QinSynthProcessor& p,int note)
     { p.handleMidi(juce::MidiMessage::noteOn(1,note,.7f),p.readSettings()); }
+    static void noteOff(QinSynthProcessor& p,int note)
+    { p.handleMidi(juce::MidiMessage::noteOff(1,note),p.readSettings()); }
     static std::array<float,3> envelopeTimes(const QinSynthProcessor& p,int index)
     { const auto settings=p.readSettings(); const auto& e=settings.env[size_t(index)]; return {e.attack,e.decay,e.release}; }
     static bool stableFilters(const QinSynthProcessor& p)
@@ -68,7 +75,14 @@ struct QinSynthEditorTestAccess
     { return editor.sliders[37].isVisible() && editor.sliders[36].isVisible(); }
     static bool delayFxVisible(const QinSynthEditor& editor)
     { return editor.sliders[38].isVisible() && editor.sliders[43].isVisible(); }
-    static bool driveVisible(const QinSynthEditor& editor) { return editor.sliders[37].isVisible(); }
+    static bool driveVisible(const QinSynthEditor& editor)
+    { return editor.sliders[37].isVisible() && editor.driveMode.isVisible(); }
+    static bool transformerVisible(const QinSynthEditor& editor) { return editor.transformerButton.isVisible(); }
+    static int driveModeCount(const QinSynthEditor& editor) { return editor.driveMode.getNumItems(); }
+    static void selectDriveMode(QinSynthEditor& editor,int item)
+    { editor.driveMode.setSelectedId(item,juce::sendNotificationSync); }
+    static void setTransformer(QinSynthEditor& editor,bool on)
+    { editor.transformerButton.setToggleState(on,juce::sendNotificationSync); }
     static bool envelopeVisible(const QinSynthEditor& editor,int index)
     { return editor.sliders[size_t(18+index*4)].isVisible(); }
     static bool filterVisible(const QinSynthEditor& editor)
@@ -221,6 +235,102 @@ int main(int argc,char** argv)
                 for(int i=0;i<256;++i) difference+=std::abs(a.getSample(0,i)-b.getSample(0,i));
             }
             if(difference<1) throw std::runtime_error("Zao drive control must alter the generated tone");
+        }
+        {
+            std::array<std::array<float,256>,4> outputs {};
+            for(int mode=0;mode<4;++mode)
+            {
+                QinSynthProcessor instrument;
+                set(instrument,"drive",80); set(instrument,"driveMode",float(mode));
+                set(instrument,"verbMix",0); instrument.prepareToPlay(48000,256);
+                juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer events;
+                events.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+                for(int blockIndex=0;blockIndex<12;++blockIndex)
+                { instrument.processBlock(audio,events); events.clear(); }
+                if(power(audio,0)<1.e-8) throw std::runtime_error("Every Zao circuit must produce finite audio");
+                for(int sample=0;sample<256;++sample)
+                    outputs[size_t(mode)][size_t(sample)]=audio.getSample(0,sample);
+            }
+            for(int first=0;first<4;++first)
+                for(int second=first+1;second<4;++second)
+                {
+                    double difference=0;
+                    for(size_t sample=0;sample<256;++sample)
+                        difference+=std::abs(outputs[size_t(first)][sample]-outputs[size_t(second)][sample]);
+                    if(difference<.01) throw std::runtime_error("Zao drive modes must select distinct circuits");
+                }
+        }
+        {
+            QinSynthProcessor clean,coloured;
+            for(auto* p:{&clean,&coloured})
+            { set(*p,"verbMix",0); p->prepareToPlay(48000,256); }
+            if(clean.getLatencySamples()!=ren::TransformerStage::latency
+               || QinSynthTestAccess::transformerRunning(clean))
+                throw std::runtime_error("Transformer-off path must report fixed latency and skip the model");
+            set(coloured,"transformer",1);
+            juce::AudioBuffer<float> dry(2,256),wet(2,256); juce::MidiBuffer events;
+            events.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            double difference=0;
+            for(int blockIndex=0;blockIndex<12;++blockIndex)
+            {
+                clean.processBlock(dry,events); coloured.processBlock(wet,events); events.clear();
+                for(int sample=0;sample<256;++sample)
+                    difference+=std::abs(dry.getSample(0,sample)-wet.getSample(0,sample));
+            }
+            if(difference<.01 || !QinSynthTestAccess::transformerRunning(coloured))
+                throw std::runtime_error("Transformer-on must colour the synth output");
+            set(coloured,"transformer",0);
+            for(int blockIndex=0;blockIndex<12;++blockIndex)
+            { clean.processBlock(dry,events); coloured.processBlock(wet,events); }
+            double offDifference=0;
+            for(int sample=0;sample<256;++sample)
+                offDifference+=std::abs(dry.getSample(0,sample)-wet.getSample(0,sample));
+            if(QinSynthTestAccess::transformerRunning(coloured) || offDifference>.001)
+                throw std::runtime_error("Transformer-off must stop the model and return to the clean path");
+        }
+        {
+            QinSynthProcessor mono;
+            set(mono,"voiceCount",1); set(mono,"osc1Retrig",1); set(mono,"verbMix",0);
+            mono.prepareToPlay(48000,256);
+            QinSynthTestAccess::noteOn(mono,60);
+            juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer noEvents;
+            mono.processBlock(audio,noEvents);
+            const auto phaseBefore=QinSynthTestAccess::monoPhase(mono);
+            const auto envelopeBefore=QinSynthTestAccess::monoEnvelope(mono);
+            QinSynthTestAccess::noteOn(mono,64);
+            if(QinSynthTestAccess::monoNote(mono)!=64 || QinSynthTestAccess::active(mono)!=1
+               || std::abs(QinSynthTestAccess::monoPhase(mono)-phaseBefore)>1.e-9
+               || std::abs(QinSynthTestAccess::monoEnvelope(mono)-envelopeBefore)>1.e-7)
+                throw std::runtime_error("Mono legato must change pitch without restarting the voice");
+            QinSynthTestAccess::noteOn(mono,67);
+            QinSynthTestAccess::noteOff(mono,64);
+            if(QinSynthTestAccess::monoNote(mono)!=67)
+                throw std::runtime_error("Releasing an older key must keep the current legato note");
+            QinSynthTestAccess::noteOff(mono,67);
+            if(QinSynthTestAccess::monoNote(mono)!=60 || !QinSynthTestAccess::monoHeld(mono))
+                throw std::runtime_error("Releasing the top key must return to the previous held pitch");
+            QinSynthTestAccess::noteOff(mono,60);
+            if(QinSynthTestAccess::monoHeld(mono))
+                throw std::runtime_error("Mono envelope must release when no keys remain held");
+            QinSynthProcessor midiMono;
+            set(midiMono,"voiceCount",1); set(midiMono,"verbMix",0);
+            midiMono.prepareToPlay(48000,256);
+            juce::MidiBuffer events;
+            events.addEvent(juce::MidiMessage::noteOn(1,60,.7f),0);
+            events.addEvent(juce::MidiMessage::noteOn(1,64,.7f),64);
+            events.addEvent(juce::MidiMessage::noteOn(1,67,.7f),96);
+            events.addEvent(juce::MidiMessage::noteOff(1,67),128);
+            midiMono.processBlock(audio,events);
+            if(QinSynthTestAccess::monoNote(midiMono)!=64 || !QinSynthTestAccess::monoHeld(midiMono))
+                throw std::runtime_error("Sample-offset MIDI legato must return to the previous held note");
+            events.clear(); events.addEvent(juce::MidiMessage::noteOff(1,64),32);
+            midiMono.processBlock(audio,events);
+            if(QinSynthTestAccess::monoNote(midiMono)!=60 || !QinSynthTestAccess::monoHeld(midiMono))
+                throw std::runtime_error("Mono MIDI note stack must survive across process blocks");
+            events.clear(); events.addEvent(juce::MidiMessage::noteOff(1,60),64);
+            midiMono.processBlock(audio,events);
+            if(QinSynthTestAccess::monoHeld(midiMono))
+                throw std::runtime_error("Final MIDI note-off must release the mono voice");
         }
         {
             QinSynthProcessor tail;
@@ -563,6 +673,18 @@ int main(int argc,char** argv)
             if(!QinSynthEditorTestAccess::timesFiveVisible(editor))
                 throw std::runtime_error("The time multiplier must remain available on the AMP envelope");
             QinSynthEditorTestAccess::previewValue(editor,37,65);
+            if(!QinSynthEditorTestAccess::transformerVisible(editor)
+               || QinSynthEditorTestAccess::driveModeCount(editor)!=4)
+                throw std::runtime_error("FX must expose four Zao circuits and the output transformer");
+            QinSynthEditorTestAccess::selectDriveMode(editor,3);
+            QinSynthEditorTestAccess::setTransformer(editor,true);
+            if(std::abs(preview.parameters.getRawParameterValue("driveMode")->load()-2)>1.e-6
+               || preview.parameters.getRawParameterValue("transformer")->load()<.5f)
+                throw std::runtime_error("Drive circuit and transformer controls must update host parameters");
+            if(changes({707,392,182,153},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
+                throw std::runtime_error("Drive preview must follow the selected circuit");
+            QinSynthEditorTestAccess::selectDriveMode(editor,2);
+            QinSynthEditorTestAccess::setTransformer(editor,false);
             const auto save=[&editor](const char* name)
             {
                 const auto image=editor.createComponentSnapshot(editor.getLocalBounds());
@@ -584,7 +706,8 @@ int main(int argc,char** argv)
             QinSynthEditorTestAccess::envelope(editor,0);
             QinSynthEditorTestAccess::fxSection(editor,1);
             if(!QinSynthEditorTestAccess::delayFxVisible(editor)
-               || QinSynthEditorTestAccess::driveVisible(editor))
+               || QinSynthEditorTestAccess::driveVisible(editor)
+               || !QinSynthEditorTestAccess::transformerVisible(editor))
                 throw std::runtime_error("Delay-verb tab must show only the reverb controls");
             if(argc>3) save(argv[3]);
             QinSynthEditorTestAccess::envelope(editor,2);

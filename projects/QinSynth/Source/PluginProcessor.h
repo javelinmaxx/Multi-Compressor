@@ -1,7 +1,9 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../../LanReverb/Source/ReverbEngine.h"
-#include "../../ZaoDrive/Source/Circuits.h"
+#include "../../RenTransformer/Source/TransformerStage.h"
+#include "DriveCircuitBank.h"
+#include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -61,6 +63,7 @@ private:
         float noiseBandState=0, noiseLowState=0, noiseHighPassState=0;
         bool keyDown=false, sustained=false, active=false;
     };
+    struct HeldNote { int note=-1, channel=1; };
     struct OscillatorSettings { int wave=0, octave=0, unison=1; bool retrig=false; float level=0, detune=0, spread=.12f, pan=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
@@ -70,8 +73,8 @@ private:
         NoiseSettings noiseOscillator;
         std::array<EnvelopeSettings,3> env;
         float pan=0, drive=0, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
-        int filterType=0, modTarget=0, voiceCount=maxVoices;
-        bool noise=false;
+        int filterType=0, modTarget=0, voiceCount=maxVoices, driveMode=1;
+        bool noise=false, transformer=false;
         float verbTime=180, verbDecay=3, verbScatter=.7f, verbMix=.2f;
         float tapMotion=.5f, phaseMotion=.5f;
     };
@@ -85,7 +88,11 @@ private:
     float advanceEnvelope(Envelope&,const EnvelopeSettings&,bool,const std::array<float,3>&) const noexcept;
     float filterSample(FilterState&,float,float,float,float,int) const noexcept;
     std::array<Voice,maxVoices> voices {};
-    std::array<zao::OpAmpFeedbackClipper,2> driveCircuit {};
+    std::array<HeldNote,128> heldNotes {};
+    int heldNoteCount=0;
+    qin::DriveCircuitBank driveCircuit;
+    std::array<juce::SmoothedValue<float>,zao::circuitCount> driveWeights;
+    int lastDriveMode=1;
     std::array<FilterState,2> masterFilter {};
     float masterCutoff=0, smoothedFilterMerge=0;
     std::array<std::atomic<float>,driveScopePoints> driveScopeInput {}, driveScopeOutput {};
@@ -93,6 +100,7 @@ private:
     std::atomic<float> liveFilterCutoff {0};
     uint32_t driveScopeWrite=0, driveScopeCounter=0;
     lan::ReverbEngine reverb;
+    ren::TransformerStage transformerStage;
     uint64_t voiceAge=0, onsetCount=0;
     double sampleRate=48000;
     float onsetTap=0, onsetPhase=0;
