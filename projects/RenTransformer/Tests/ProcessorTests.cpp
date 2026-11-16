@@ -6,6 +6,16 @@ namespace
 {
 void transformerTests()
 {
+    character::TransformerCore driveOnly;
+    driveOnly.prepare (192000);
+    double driveError = 0;
+    for (int i = 0; i < 2048; ++i)
+    {
+        const auto input = static_cast<float> (0.31 * std::sin (2 * juce::MathConstants<double>::pi * 233 * i / 192000.0));
+        const auto expected = std::tanh (2.0f * input) / 2.0f;
+        driveError = std::max (driveError, static_cast<double> (std::abs (driveOnly.process (input, 2.0f, 0.7f, 0.0f) - expected)));
+    }
+    check (driveError < 1.0e-6, "zero Response leaves only drive saturation in the transformer core");
     for (double rate : { 44100.0, 48000.0, 96000.0 })
         for (float coreDb : { 0.0f, 6.0f, 18.0f })
         {
@@ -32,6 +42,33 @@ void transformerTests()
             }
             check (error < 1.0e-6, "Ren matches the original Yinyang transformer at three rates and drive levels");
         }
+    {
+        RenTransformerProcessor p; set (p, "response", 0); set (p, "evenHarmonics", 0);
+        p.prepareToPlay (48000, 127);
+        character::OversampledTransformer reference; reference.prepare (48000);
+        juce::MidiBuffer midi;
+        double error = 0, fullDifference = 0;
+        character::OversampledTransformer full; full.prepare (48000);
+        for (int base = 0; base < 4096; base += 127)
+        {
+            juce::AudioBuffer<float> b (2, 127);
+            std::array<float, 127> expected {};
+            for (int i = 0; i < 127; ++i)
+            {
+                const auto input = static_cast<float> (0.3 * std::sin (2 * juce::MathConstants<double>::pi * 137 * (base + i) / 48000.0));
+                b.setSample (0, i, input); b.setSample (1, i, input);
+                const auto drive = juce::Decibels::decibelsToGain (6.0f);
+                expected[static_cast<size_t> (i)] = reference.process (input, drive, 0.0f, 0.0f);
+                const auto complete = full.process (input, drive);
+                if (base >= 1024) fullDifference += std::abs (expected[static_cast<size_t> (i)] - complete);
+            }
+            p.processBlock (b, midi);
+            for (int i = 0; i < 127; ++i)
+                error = std::max (error, static_cast<double> (std::abs (b.getSample (0, i) - expected[static_cast<size_t> (i)])));
+        }
+        check (fullDifference > 0.01, "Response endpoints produce distinct transformer sounds");
+        check (error < 1.0e-6, "Ren zero Response follows the drive-only transformer path");
+    }
     for (int mode = 0; mode < 4; ++mode)
     {
         RenTransformerProcessor p;
@@ -80,10 +117,10 @@ int main (int argc, char** argv)
     {
         juce::ScopedJuceInitialiser_GUI gui;
         verifyParameterRetention<RenTransformerProcessor>();
-        stateTests<RenTransformerProcessor> (6); transformerTests();
+        stateTests<RenTransformerProcessor> (7); transformerTests();
         blockSizeTests<RenTransformerProcessor>();
         if (argc > 2 && juce::String (argv[1]) == "--editor")
-            editorTests<RenTransformerProcessor> (juce::File (argv[2]), 260, 4, 444);
+            editorTests<RenTransformerProcessor> (juce::File (argv[2]), 260, 5, 444);
         std::cout << checks << " Ren Transformer checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

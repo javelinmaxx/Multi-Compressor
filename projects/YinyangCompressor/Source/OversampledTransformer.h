@@ -18,10 +18,11 @@ public:
         converter.prepare(); core.prepare (sampleRate * factor);
     }
     void reset() noexcept { converter.reset(); core.reset(); }
-    float process (float input, float drive, float evenHarmonics = 0) noexcept
+    float process (float input, float drive, float evenHarmonics = 0,
+                   float responseAmount = 1.0f) noexcept
     {
         auto frame = converter.upsample (input);
-        for (auto& sample : frame) sample = core.process (sample, drive, evenHarmonics);
+        for (auto& sample : frame) sample = core.process (sample, drive, evenHarmonics, responseAmount);
         return converter.downsample (frame);
     }
 private:

@@ -26,7 +26,7 @@ fallback. See [GPU rendering and validation](projects/GPU_RENDERING.md).
 | [Shun De-Esser](projects/ShunDeEsser/README.md) | `ShunDeEsser` | Sibilance control | Four attenuation modes, relative detection, separate detector and attenuator tuning |
 | [Kuo Stereo](projects/KuoStereo/README.md) | `KuoStereo` | Stereo widening | Adaptive Haas delay, Velvet convolution, spectral transient protection, three-band sound-field meters |
 | [Zao Drive](projects/ZaoDrive/README.md) | `ZaoDrive` | Overdrive | Four circuit models, Smart harmonic shaping, Clear contour, waveform preview, Auto compensation |
-| [Ren Transformer](projects/RenTransformer/README.md) | `RenTransformer` | Transformer coloration | Yinyang's transformer stage in a compact four-knob interface |
+| [Ren Transformer](projects/RenTransformer/README.md) | `RenTransformer` | Transformer coloration | Yinyang's transformer stage with adjustable Response in a compact five-knob interface |
 | [Kuo Velvet](projects/KuoVelvet/README.md) | `KuoVelvet` | Convolution widening | Kuo's Velvet stage with Width, Transient, Attack, and Output controls |
 | [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
 | [Lan Reverb](projects/LanReverb/README.md) | `LanReverb` | Reverb / delay | Long stereo tails, live feedback-tap scattering, automatic resonance EQ and phase dispersion |
@@ -115,10 +115,11 @@ Bias for BJT, Input for op-amp, and Knee for the two passive diode modes.
 
 ### Ren Transformer
 
-![Ren Transformer's compact panel with Core Drive, DC Bias, Mix, and Output knobs and a hover hint](projects/RenTransformer/Previews/ren-transformer-tooltip.png)
+![Ren Transformer's compact panel with Core Drive, DC Bias, Response, Mix, and Output knobs and a hover hint](projects/RenTransformer/Previews/ren-transformer-tooltip.png)
 
 Use Yinyang's transformer independently: **Core Drive** sets saturation,
-**DC Bias** introduces asymmetry, **Mix** blends coloration, and **Output**
+**DC Bias** introduces asymmetry, **Response** moves from drive-only saturation
+to the full modeled filter and hysteresis, **Mix** blends coloration, and **Output**
 sets the level entering the transformer. The shared stage uses 4× oversampling,
 magnetic hysteresis, and a frequency-dependent transformer response.
 

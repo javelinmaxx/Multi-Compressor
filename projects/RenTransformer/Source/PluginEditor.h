@@ -17,10 +17,10 @@ private:
     juce::TooltipWindow tooltipWindow { this };
     editorTooltips::TitleHint titleHint { JucePlugin_VersionString };
     StageBypassButton bypass;
-    std::array<juce::Slider, 4> sliders;
-    std::array<juce::Label, 4> labels;
+    std::array<juce::Slider, 5> sliders;
+    std::array<juce::Label, 5> labels;
     using State = juce::AudioProcessorValueTreeState;
-    std::array<std::unique_ptr<State::SliderAttachment>, 4> attachments;
+    std::array<std::unique_ptr<State::SliderAttachment>, 5> attachments;
     std::unique_ptr<State::ButtonAttachment> bypassAttachment;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RenTransformerEditor)
 };

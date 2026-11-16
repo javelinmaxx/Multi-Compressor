@@ -12,19 +12,20 @@ RenTransformerEditor::RenTransformerEditor (RenTransformerProcessor& p) : AudioP
     addAndMakeVisible (bypass);
     bypass.setTooltip ("Bypasses processing while preserving the plugin's latency.");
     bypassAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "bypass", bypass);
-    constexpr std::array<const char*, 4> ids { "drive", "evenHarmonics", "mix", "output" };
-    constexpr std::array<const char*, 4> names { "CORE DRIVE", "DC BIAS", "MIX", "OUTPUT" };
-    constexpr std::array<const char*, 4> units { " dB", " %", " %", " dB" };
-    constexpr std::array<const char*, 4> hints {
+    constexpr std::array<const char*, 5> ids { "drive", "evenHarmonics", "response", "mix", "output" };
+    constexpr std::array<const char*, 5> names { "CORE DRIVE", "DC BIAS", "RESPONSE", "MIX", "OUTPUT" };
+    constexpr std::array<const char*, 5> units { " dB", " %", " %", " %", " dB" };
+    constexpr std::array<const char*, 5> hints {
         "Increases saturation in Yinyang's oversampled transformer stage.",
         "Adds transformer asymmetry to increase even harmonics.",
+        "Blends from drive-only saturation to the full filter and hysteresis response.",
         "Blends transformer coloration with the latency-aligned clean signal.",
         "Adjusts output gain before the transformer, also changing its input level." };
     for (size_t i = 0; i < sliders.size(); ++i)
     {
         auto& slider = sliders[i];
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 96, 18);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 76, 18);
         slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         slider.setColour (juce::Slider::textBoxTextColourId, foreground);
         slider.setTextValueSuffix (units[i]); slider.setName (names[i]); slider.setTitle (names[i]);
@@ -47,9 +48,9 @@ void RenTransformerEditor::resized()
     bypass.setBounds (346, 30, 82, 28);
     for (size_t i = 0; i < sliders.size(); ++i)
     {
-        const auto x = 30 + static_cast<int> (i) * 96;
-        labels[i].setBounds (x, 140, 96, 16);
-        sliders[i].setBounds (x, 156, 96, 76);
+        const auto x = 24 + static_cast<int> (i) * 80;
+        labels[i].setBounds (x, 140, 76, 16);
+        sliders[i].setBounds (x, 156, 76, 76);
     }
     const auto scale = editorScaling::transform (*this, designWidth, designHeight);
     titleHint.setTransform (scale);

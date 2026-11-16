@@ -33,33 +33,41 @@ public:
         for (auto& filter : distortionFilters) filter.reset();
         response.reset();
     }
-    float process (float x, float drive, float evenHarmonics) noexcept
+    float process (float x, float drive, float evenHarmonics, float responseAmount = 1.0f) noexcept
     {
-        // Filter only the generated-distortion residual below. Clean highs
-        // retain the transformer response.
+        // At full Response, filter only the generated-distortion residual.
+        // Ren can reduce both that rolloff and the loaded-transformer filter.
         const auto field = drive * x;
         const auto magnetization = hysteresis.process (field, drive);
         // The field/magnetization difference changes after a reversal. Scale
         // that branch gap to get a compact, rate-independent hysteresis loop.
         constexpr float hysteresisCoupling = 0.35f;
-        const auto effectiveField = field + hysteresisCoupling * (field - magnetization);
+        const auto coupling = hysteresisCoupling * responseAmount;
+        const auto effectiveField = field + coupling * (field - magnetization);
 
         flux = x + fluxCoefficient * (flux - x);
         // Flux adds a small signal-dependent bias for asymmetric coloration.
         // A controlled DC magnetizing current biases the core and makes its
         // transfer curve asymmetric, increasing even-order harmonics. The
         // zero setting preserves the original symmetric operating point.
-        const auto bias = 0.12f * std::tanh (flux * drive) + 0.8f * evenHarmonics;
+        const auto bias = responseAmount * (0.12f * std::tanh (flux * drive) + 0.8f * evenHarmonics);
         const auto b = std::tanh (bias);
         // Bias-corrected tanh, normalized for unity minor-loop small-signal
-        // slope. Filtering only (shaped - x) preserves clean highs while
-        // generated distortion rolls off above 500 Hz.
+        // slope. At full Response, filtering only (shaped - x) preserves clean
+        // highs while generated distortion rolls off above 500 Hz.
         const auto shaped = (std::tanh (effectiveField + bias) - b)
-                          / (drive * (1 + hysteresisCoupling) * (1 - b * b));
-        auto residual = shaped - x;
+                          / (drive * (1 + coupling) * (1 - b * b));
+        const auto rawResidual = shaped - x;
+        auto filteredResidual = rawResidual;
         for (auto& filter : distortionFilters)
-            residual = filter.process (residual);
-        return response.process (x + residual);
+            filteredResidual = filter.process (filteredResidual);
+        // Keep both filters warm at zero Response so automation does not bring
+        // stale filter memory into the sound when the knob rises again.
+        if (responseAmount >= 1.0f)
+            return response.process (x + filteredResidual);
+        const auto driven = x + rawResidual + responseAmount * (filteredResidual - rawResidual);
+        const auto coloured = response.process (driven);
+        return driven + responseAmount * (coloured - driven);
     }
 
 private:

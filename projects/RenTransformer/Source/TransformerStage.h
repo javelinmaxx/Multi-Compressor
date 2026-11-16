@@ -14,13 +14,14 @@ public:
     {
         for (auto& transformer : transformers) transformer.prepare (rate);
         cleanHistory = {}; bypassHistory = {}; position = 0;
-        for (auto* smoother : { &drive, &bias, &output, &mix, &enabledBlend, &bypassBlend })
+        for (auto* smoother : { &drive, &bias, &output, &mix, &response, &enabledBlend, &bypassBlend })
             smoother->reset (rate, 0.02);
         first = true; running = requested = false; warmSamples = 0;
     }
     bool isRunning() const noexcept { return running; }
     void process (juce::AudioBuffer<float>& buffer, float driveDb, float dcBias,
-                  float outputDb, float amount, bool enabled, bool bypassed) noexcept
+                  float outputDb, float amount, bool enabled, bool bypassed,
+                  float responseAmount = 1.0f) noexcept
     {
         // The nonlinear stage cannot contribute at zero Mix.
         // Existing fade-out and warm-up handling also applies to these states.
@@ -32,6 +33,7 @@ public:
         };
         set (drive, juce::Decibels::decibelsToGain (driveDb)); set (bias, dcBias);
         set (output, juce::Decibels::decibelsToGain (outputDb)); set (mix, amount);
+        set (response, std::clamp (responseAmount, 0.0f, 1.0f));
         set (bypassBlend, bypassed ? 1.0f : 0.0f);
         if (first)
         {
@@ -56,6 +58,7 @@ public:
             if (enabled && warmSamples > 0 && --warmSamples == 0) enabledBlend.setTargetValue (1.0f);
             const auto core = drive.getNextValue(), asymmetry = bias.getNextValue();
             const auto gain = output.getNextValue(), wet = mix.getNextValue();
+            const auto modeledResponse = response.getNextValue();
             const auto colour = enabledBlend.getNextValue(), bypass = bypassBlend.getNextValue();
             for (int channel = 0; channel < std::min (2, buffer.getNumChannels()); ++channel)
             {
@@ -64,7 +67,7 @@ public:
                 const auto input = std::isfinite (original) ? std::clamp (original, -32.0f, 32.0f) : 0.0f;
                 const auto clean = cleanHistory[c][position], dry = bypassHistory[c][position];
                 cleanHistory[c][position] = input * gain; bypassHistory[c][position] = input;
-                const auto coloured = running ? transformers[c].process (input * gain, core, asymmetry) : clean;
+                const auto coloured = running ? transformers[c].process (input * gain, core, asymmetry, modeledResponse) : clean;
                 const auto processed = clean + wet * colour * (coloured - clean);
                 buffer.setSample (channel, i, bypass >= 1.0f ? dry : processed + bypass * (dry - processed));
             }
@@ -78,6 +81,6 @@ private:
     size_t position = 0;
     int warmSamples = 0;
     bool first = true, running = false, requested = false;
-    juce::SmoothedValue<float> drive, bias, output, mix, enabledBlend, bypassBlend;
+    juce::SmoothedValue<float> drive, bias, output, mix, response, enabledBlend, bypassBlend;
 };
 }

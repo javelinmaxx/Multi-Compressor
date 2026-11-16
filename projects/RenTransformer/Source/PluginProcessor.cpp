@@ -17,6 +17,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout RenTransformerProcessor::cre
     add ("mix", "Mix", 0, 100, 0.1f, 100, "%");
     result.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "transformer", 1 }, "Transformer", true));
     result.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "bypass", 1 }, "Bypass", false));
+    add ("response", "Response", 0, 100, 0.1f, 100, "%");
     return result;
 }
 RenTransformerProcessor::RenTransformerProcessor()
@@ -57,7 +58,8 @@ void RenTransformerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         parameters.getRawParameterValue ("output")->load(),
         parameters.getRawParameterValue ("mix")->load() * 0.01f,
         parameters.getRawParameterValue ("transformer")->load() >= 0.5f,
-        parameters.getRawParameterValue ("bypass")->load() >= 0.5f);
+        parameters.getRawParameterValue ("bypass")->load() >= 0.5f,
+        parameters.getRawParameterValue ("response")->load() * 0.01f);
 }
 void RenTransformerProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
@@ -66,5 +68,6 @@ void RenTransformerProcessor::processBlockBypassed (juce::AudioBuffer<float>& bu
         parameters.getRawParameterValue ("evenHarmonics")->load() * 0.01f,
         parameters.getRawParameterValue ("output")->load(),
         parameters.getRawParameterValue ("mix")->load() * 0.01f,
-        parameters.getRawParameterValue ("transformer")->load() >= 0.5f, true);
+        parameters.getRawParameterValue ("transformer")->load() >= 0.5f, true,
+        parameters.getRawParameterValue ("response")->load() * 0.01f);
 }
