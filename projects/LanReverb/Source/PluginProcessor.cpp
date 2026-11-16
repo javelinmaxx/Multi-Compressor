@@ -30,6 +30,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout LanReverbProcessor::createPa
     add("highShelfHz","High shelf frequency",lan::shelfMinHz,lan::shelfMaxHz,0,8000,"Hz",.6f);
     add("highShelfDb","High shelf gain",-12,lan::shelfMaxBoostDb,.1f,0,"dB");
     add("shimmer","Shimmer",0,100,.1f,0,"%");
+    add("wetLowShelfHz","Wet low shelf frequency",lan::shelfMinHz,lan::shelfMaxHz,0,120,"Hz",.4f);
+    add("wetLowShelfDb","Wet low shelf gain",-12,lan::wetShelfMaxBoostDb,.1f,0,"dB");
+    add("wetHighShelfHz","Wet high shelf frequency",lan::shelfMinHz,lan::shelfMaxHz,0,12000,"Hz",.6f);
+    add("wetHighShelfDb","Wet high shelf gain",-12,lan::wetShelfMaxBoostDb,.1f,0,"dB");
+    add("wetTame","Wet tame",0,100,.1f,0,"%");
     return result;
 }
 LanReverbProcessor::LanReverbProcessor()
@@ -45,6 +50,9 @@ lan::Settings LanReverbProcessor::settings() const
     s.phase = get("phase")*.01f; s.tame = get("tame")*.01f; s.mix = get("mix")*.01f; s.outputDb = get("output");
     s.lowShelfHz = get("lowShelfHz"); s.lowShelfDb = std::clamp(get("lowShelfDb"),-12.f,lan::shelfMaxBoostDb);
     s.highShelfHz = get("highShelfHz"); s.highShelfDb = std::clamp(get("highShelfDb"),-12.f,lan::shelfMaxBoostDb); s.shimmer = get("shimmer")*.01f;
+    s.wetLowShelfHz = get("wetLowShelfHz"); s.wetLowShelfDb = std::clamp(get("wetLowShelfDb"),-12.f,lan::wetShelfMaxBoostDb);
+    s.wetHighShelfHz = get("wetHighShelfHz"); s.wetHighShelfDb = std::clamp(get("wetHighShelfDb"),-12.f,lan::wetShelfMaxBoostDb);
+    s.wetTame = get("wetTame")*.01f;
     s.automatic = get("automatic") >= .5f; s.bypass = get("bypass") >= .5f; return s;
 }
 juce::AudioProcessorParameter* LanReverbProcessor::getBypassParameter() const { return parameters.getParameter("bypass"); }

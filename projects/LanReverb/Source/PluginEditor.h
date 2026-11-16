@@ -26,12 +26,14 @@ private:
     StageBypassButton bypass;
     juce::TextButton automatic { "AUTO" }, sync { "SYNC" };
     bool timeSynced = false;
-    std::array<juce::Slider,12> sliders;
-    std::array<juce::Label,12> labels;
+    std::array<juce::Slider,13> sliders;
+    std::array<juce::Label,13> labels;
     using State = juce::AudioProcessorValueTreeState;
-    std::array<std::unique_ptr<State::SliderAttachment>,12> attachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,13> attachments;
     std::unique_ptr<State::ButtonAttachment> autoAttachment, bypassAttachment, syncAttachment;
-    std::array<SpectrumShelfHandle,2> shelfHandles {SpectrumShelfHandle(false),SpectrumShelfHandle(true)};
+    std::array<SpectrumShelfHandle,4> shelfHandles {
+        SpectrumShelfHandle(false),SpectrumShelfHandle(true),
+        SpectrumShelfHandle(false,true),SpectrumShelfHandle(true,true)};
     lan::Analysis analysis;
     lan::TapDisplay tapDisplay;
     lan::SpectrumDisplaySmoother spectrumDisplay;

@@ -12,8 +12,9 @@ namespace lan
 struct Settings
 {
     float timeMs = 90, decaySeconds = 10, predelayMs = 20, diffusion = .85f, width = 1.25f;
-    float tap = 0, phase = .6f, tame = .75f, mix = .8f, outputDb = 0, scatter = 1;
+    float tap = 0, phase = .6f, tame = .75f, wetTame = 0, mix = .8f, outputDb = 0, scatter = 1;
     float lowShelfHz = 200, lowShelfDb = 0, highShelfHz = 8000, highShelfDb = 0, shimmer = 0;
+    float wetLowShelfHz = 120, wetLowShelfDb = 0, wetHighShelfHz = 12000, wetHighShelfDb = 0;
     bool automatic = true, bypass = false;
 };
 inline constexpr std::array<float,8> tapRatios { .46375f,.54625f,.66625f,.77125f,.89875f,1.04875f,1.21625f,1.42375f };
@@ -24,9 +25,11 @@ struct TapDisplay
     std::array<float,8> feedbackTargetSeconds {}, fade {}, feedbackGainDb {}, injectionGainDb {};
     bool valid=false;
 };
-inline constexpr int spectrumBins = 64, maxBands = 16, analysisSize = 4096;
+inline constexpr int spectrumBins = 64, maxBands = 16, maxWetBands = 8, analysisSize = 4096;
 inline constexpr float tameLimitDb = 6;
+inline constexpr float wetTameLimitDb = 3;
 inline constexpr float shelfMinHz = 20, shelfMaxHz = 20000, shelfMaxBoostDb = 3;
+inline constexpr float wetShelfMaxBoostDb = 6;
 inline double shelfFrequencyCeiling (double rate) { return std::min(double(shelfMaxHz),rate*.49); }
 inline constexpr double feedbackKnee = .5, feedbackCeiling = 1;
 inline constexpr double phaseDelayLimitSeconds = .005, basePhaseBudgetSeconds = .001;
@@ -42,14 +45,16 @@ struct Band { float frequency = 0, width = 0, gainDb = 0; };
 struct Analysis
 {
     std::array<Band, maxBands> bands {};
-    std::array<float, spectrumBins> input {}, feedback {};
+    std::array<Band, maxWetBands> wetBands {};
+    std::array<float, spectrumBins> input {}, feedback {}, wet {};
     float strength = 0, frequency = 0;
-    int count = 0;
+    int count = 0, wetCount = 0;
     uint32_t revision = 0, generation = 0;
 };
 struct Frame
 {
-    std::array<std::array<float, analysisSize>, 4> audio {}; // input L/R, feedback L/R
+    std::array<std::array<float, analysisSize>, 6> audio {}; // input L/R, feedback L/R, pre-tame wet L/R
+    Settings wetSettings;
     double rate = 48000;
     float sourceHoldSeconds = 12;
     uint32_t generation = 0;
@@ -78,6 +83,17 @@ private:
     Analysis held;
     uint64_t previousSample = 0;
 };
+class WetTameAnalyser
+{
+public:
+    void reset() noexcept { power = {}; ready = false; }
+    void analyse (const Frame&, Analysis&);
+private:
+    juce::dsp::FFT fft { 12 };
+    std::array<float, 2*analysisSize> fftData {};
+    std::array<float, spectrumBins> power {};
+    bool ready = false;
+};
 class AnalysisService final : private juce::Thread
 {
 public:
@@ -86,8 +102,10 @@ public:
     ~AnalysisService() override;
     void prepare (double rate, bool worker);
     void release();
-    void setActive (bool correction, bool monitor, float sourceHoldSeconds = 12);
-    void push (float left, float right, float wetLeft, float wetRight) noexcept;
+    void setActive (bool correction, bool monitor, float sourceHoldSeconds = 12,
+                    const Settings& wetSettings = Settings {});
+    void push (float left, float right, float feedbackLeft, float feedbackRight,
+               float outputWetLeft = 0, float outputWetRight = 0) noexcept;
     void finishBlock(); // synchronous only in explicit offline test rendering
     bool read (Analysis&) const noexcept;
     uint32_t jobs() const noexcept { return submitted.load(); }
@@ -97,13 +115,14 @@ private:
     void compute();
     void publish (const Analysis&) noexcept;
     ResonanceAnalyser analyser;
+    WetTameAnalyser wetAnalyser;
     Frame ring, job;
     std::atomic<int> jobState { 0 }; // free, writing, ready, processing
     std::atomic<uint32_t> generation { 1 }, submitted { 0 }, version { 0 }, resultGeneration { 0 };
-    static constexpr int valuesSize = 2*spectrumBins+3*maxBands+3;
+    static constexpr int valuesSize = 3*spectrumBins+3*maxBands+3*maxWetBands+4;
     std::array<std::atomic<float>, valuesSize> values {};
     int position = 0, filled = 0, sinceJob = 0, interval = 4800;
-    bool enabled = false, correctionEnabled = false, offline = false;
+    bool enabled = false, correctionEnabled = false, wetEnabled = false, offline = false;
     uint32_t analysedGeneration = 0;
     uint64_t sampleCounter = 0;
 };
@@ -127,6 +146,8 @@ class ReverbEngine
 {
 public:
     static float responseDb (const Settings&, const Analysis&, double hz, double rate);
+    static float wetResponseDb (const Settings&, double hz, double rate);
+    static std::array<float,2> feedbackShelfGains (const Settings&, double rate);
     void prepare (double rate, bool worker = true);
     void release() { analysis.release(); }
     void process (juce::AudioBuffer<float>&, const Settings&, bool hostBypass = false);
@@ -143,7 +164,7 @@ private:
     {
         double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0;
         void configure (const Band&, double rate, float amount);
-        void shelf (bool high, double hz, double gainDb, double rate);
+        void shelf (bool high, double hz, double gainDb, double rate, double maxBoostDb = shelfMaxBoostDb);
         double magnitude (double hz, double rate) const;
         float process (float) noexcept;
     };
@@ -152,7 +173,16 @@ private:
         std::array<std::array<Filter, maxBands>, 8> filters;
         std::array<std::array<Filter,2>,8> shelves;
         int count = 0, shelfCount = 0;
+        float maximumBoostGain = 1;
         float process (float x, size_t line) noexcept;
+    };
+    struct WetEqBank
+    {
+        std::array<std::array<Filter,2>,2> shelves;
+        std::array<std::array<Filter,maxWetBands>,2> tameFilters;
+        int count = 0, tameCount = 0;
+        float processEq (float x, size_t channel) noexcept;
+        float processTame (float x, size_t channel) noexcept;
     };
     // A normalized two-junction lattice stays passive while its coefficients
     // move; a direct-form modulated biquad does not provide that guarantee.
@@ -192,9 +222,15 @@ private:
     Shimmer shimmer;
     juce::SmoothedValue<float> shimmerMix;
     std::array<float,4> appliedShelves {-1,-100,-1,-100};
+    std::array<float,4> appliedWetShelves {-1,-100,-1,-100};
     std::array<Bank, 2> banks;
+    std::array<WetEqBank,2> wetEqBanks;
     int activeBank = 0, pendingBank = 1, warm = 0;
     float bankFade = 1, bankStep = 1, previousTame = -1;
+    int activeWetEq = 0, pendingWetEq = 1;
+    float wetEqFade = 1, wetEqStep = 1, appliedBoostDb = -1;
+    uint32_t appliedWetRevision = 0;
+    float previousWetTame = -1;
     uint32_t appliedRevision = 0;
     bool appliedAuto = false, first = true;
     double sampleRate = 48000;
@@ -202,6 +238,7 @@ private:
     float matrixCos = 1, matrixSin = 0, lastDiffusion = -1;
     float lastScatter = -1, projectionCos = 0, projectionSin = 1;
     std::array<juce::SmoothedValue<float>, 8> feedbackGain, injectionGain;
+    std::array<float,8> effectiveLoopGain {};
     struct AtomicTapDisplay
     {
         std::array<std::atomic<float>,8> wetSeconds {}, feedbackFromSeconds {}, feedbackToSeconds {};

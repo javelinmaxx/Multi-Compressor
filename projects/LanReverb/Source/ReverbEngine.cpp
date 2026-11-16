@@ -1,5 +1,6 @@
 #include "ReverbEngine.h"
 #include <cmath>
+#include <limits>
 namespace lan
 {
 namespace
@@ -7,6 +8,25 @@ namespace
 constexpr double pi = juce::MathConstants<double>::pi;
 float smooth (float t) noexcept { return t*t*t*(t*(t*6-15)+10); }
 float finite (float x) noexcept { return std::isfinite(x) ? std::clamp(x,-16.f,16.f) : 0.f; }
+float feedbackBoostLimitDb (const Settings& s, double rate) noexcept
+{
+    // Use the shortest possible read interval and omit the positive phase-path
+    // delay. This upper-bounds every nominal line gain, without Diffusion's
+    // intentional ±3 dB tap motion.
+    double shortest = std::numeric_limits<double>::max();
+    const auto scatter = std::clamp(double(s.scatter),0.,1.);
+    const auto tap = std::clamp(double(s.tap),-1.,1.);
+    for (size_t i = 0; i < tapRatios.size(); ++i)
+    {
+        const auto wet = std::clamp(double(s.timeMs),1.,double(maximumTimeMs))*.001
+            *(1+scatter*(double(tapRatios[i])-1));
+        const auto seconds = wet*(1+tap*.3*(1+scatter*(double(tapPattern[i])-1)))
+            -scatter*std::clamp(double(s.phase),0.,1.)*phaseAccessoryBudget(rate);
+        shortest = std::min(shortest,std::max(0.,seconds));
+    }
+    const auto gain = std::min(.9995,std::pow(10.,-3*shortest/std::clamp(double(s.decaySeconds),.3,40.)));
+    return float(-20*std::log10(gain));
+}
 float interpolate (const std::vector<float>& buffer, size_t position, float delay) noexcept
 {
     const auto offset = std::clamp(delay,0.f,float(buffer.size()-2));
@@ -207,6 +227,69 @@ Analysis ResonanceAnalyser::analyse (const Frame& frame)
     if (result.count > 0) { result.frequency = result.bands[0].frequency; result.strength = std::clamp(-result.bands[0].gainDb/tameLimitDb,0.f,1.f); }
     held = result; return result;
 }
+void WetTameAnalyser::analyse (const Frame& frame, Analysis& result)
+{
+    if (frame.wetSettings.wetTame <= 0) { reset(); return; }
+    std::array<double,analysisSize/2+1> bins {};
+    for (int channel = 4; channel < 6; ++channel)
+    {
+        fftData.fill(0);
+        for (int i = 0; i < analysisSize; ++i)
+            fftData[size_t(i)] = frame.audio[size_t(channel)][size_t(i)]
+                *float(.5-.5*std::cos(2*pi*i/(analysisSize-1)));
+        fft.performFrequencyOnlyForwardTransform(fftData.data());
+        for (size_t bin = 1; bin < bins.size(); ++bin)
+            bins[bin] += .5*std::pow(4.*fftData[bin]/analysisSize,2);
+    }
+    const auto ceiling = shelfFrequencyCeiling(frame.rate);
+    const auto binHz = frame.rate/analysisSize;
+    const auto ratio = std::pow(ceiling/shelfMinHz,1./(spectrumBins-1));
+    const auto halfStep = std::sqrt(ratio);
+    std::array<double,spectrumBins> shape {}, frequency {};
+    double totalPower = 0, totalShape = 0;
+    for (int row = 0; row < spectrumBins; ++row)
+    {
+        const auto hz = shelfMinHz*std::pow(ratio,row);
+        const auto firstBin = std::clamp(int(std::floor(hz/halfStep/binHz)),1,analysisSize/2-1);
+        const auto lastBin = std::clamp(int(std::ceil(hz*halfStep/binHz)),firstBin,analysisSize/2-1);
+        double measured = 0;
+        for (int bin = firstBin; bin <= lastBin; ++bin) measured += bins[size_t(bin)];
+        measured /= lastBin-firstBin+1;
+        auto& level = power[size_t(row)];
+        level = ready ? .65f*level+.35f*float(measured) : float(measured);
+        frequency[size_t(row)] = hz;
+        shape[size_t(row)] = std::pow(10.,ReverbEngine::wetResponseDb(frame.wetSettings,hz,frame.rate)/10.)/hz;
+        totalPower += level; totalShape += shape[size_t(row)];
+        result.wet[size_t(row)] = float(10*std::log10(std::max(1e-12,double(level))));
+    }
+    ready = true;
+    if (totalPower < 1e-10) return;
+    const auto pinkScale = totalPower/totalShape;
+    struct Candidate { float excess = 0, frequency = 0, width = 0; };
+    std::array<Candidate,spectrumBins> candidates {};
+    for (int row = 1; row < spectrumBins-1; ++row)
+    {
+        const auto measured = double(power[size_t(row)]);
+        if (measured < 1e-10) continue;
+        const auto excess = 10*std::log10(measured/std::max(1e-16,pinkScale*shape[size_t(row)]));
+        if (excess <= 0) continue;
+        candidates[size_t(row)] = {float(excess),float(frequency[size_t(row)]),
+                                    float(std::max(frequency[size_t(row)]*.18,2*binHz))};
+    }
+    std::sort(candidates.begin(),candidates.end(),[] (const Candidate& a, const Candidate& b)
+        { return a.excess > b.excess; });
+    for (const auto& candidate : candidates)
+    {
+        if (candidate.excess <= 0 || result.wetCount >= maxWetBands) break;
+        bool neighboring = false;
+        for (int i = 0; i < result.wetCount; ++i)
+            neighboring |= std::abs(std::log(candidate.frequency/result.wetBands[size_t(i)].frequency)) < .17f;
+        if (neighboring) continue;
+        const auto cut = std::min(wetTameLimitDb,candidate.excess)
+            *std::clamp(frame.wetSettings.wetTame,0.f,1.f);
+        result.wetBands[size_t(result.wetCount++)] = {candidate.frequency,candidate.width,-cut};
+    }
+}
 AnalysisService::AnalysisService() : Thread("Lan resonance analysis") {}
 AnalysisService::~AnalysisService() { release(); }
 void AnalysisService::release() { stopThread(-1); }
@@ -214,7 +297,7 @@ void AnalysisService::prepare (double rate, bool worker)
 {
     release(); ring = {}; job = {}; ring.rate = job.rate = rate;
     position = filled = sinceJob = 0; sampleCounter = 0; interval = std::max(1,juce::roundToInt(rate*.1));
-    enabled = correctionEnabled = false; offline = !worker; analysedGeneration = 0; analyser.reset();
+    enabled = correctionEnabled = wetEnabled = false; offline = !worker; analysedGeneration = 0; analyser.reset(); wetAnalyser.reset();
     // Keep publication versions monotonic across host re-prepares so an open
     // editor cannot mistake a new frame for the previous stream's revision.
     generation.fetch_add(1); submitted.store(0); version.fetch_add(1);
@@ -223,27 +306,34 @@ void AnalysisService::prepare (double rate, bool worker)
     version.fetch_add(1);
     if (worker) startThread(juce::Thread::Priority::low);
 }
-void AnalysisService::setActive (bool correction, bool monitor, float sourceHoldSeconds)
+void AnalysisService::setActive (bool correction, bool monitor, float sourceHoldSeconds,
+                                 const Settings& wetSettings)
 {
     ring.sourceHoldSeconds = sourceHoldSeconds;
-    const auto capture = correction || monitor;
-    if (enabled == capture && correctionEnabled == correction) return;
-    enabled = capture; correctionEnabled = correction;
+    ring.wetSettings = wetSettings;
+    const auto wet = wetSettings.wetTame > 0;
+    const auto capture = correction || monitor || wet;
+    if (enabled == capture && correctionEnabled == correction && wetEnabled == wet) return;
+    enabled = capture; correctionEnabled = correction; wetEnabled = wet;
     generation.fetch_add(1); filled = sinceJob = position = 0;
 }
-void AnalysisService::push (float left, float right, float wetLeft, float wetRight) noexcept
+void AnalysisService::push (float left, float right, float feedbackLeft, float feedbackRight,
+                            float outputWetLeft, float outputWetRight) noexcept
 {
     ++sampleCounter;
     if (!enabled) return;
     const auto p = size_t(position);
-    ring.audio[0][p] = left; ring.audio[1][p] = right; ring.audio[2][p] = wetLeft; ring.audio[3][p] = wetRight;
+    ring.audio[0][p] = left; ring.audio[1][p] = right;
+    ring.audio[2][p] = feedbackLeft; ring.audio[3][p] = feedbackRight;
+    ring.audio[4][p] = outputWetLeft; ring.audio[5][p] = outputWetRight;
     position = (position+1)%analysisSize; filled = std::min(analysisSize,filled+1); ++sinceJob;
     if (filled < analysisSize || sinceJob < interval) return;
     int expected = 0;
     if (!jobState.compare_exchange_strong(expected,1,std::memory_order_acquire)) return;
-    for (size_t ch = 0; ch < 4; ++ch)
+    for (size_t ch = 0; ch < ring.audio.size(); ++ch)
         for (int i = 0; i < analysisSize; ++i) job.audio[ch][size_t(i)] = ring.audio[ch][size_t((position+i)%analysisSize)];
     job.generation = generation.load(); job.rate = ring.rate; job.sourceHoldSeconds = ring.sourceHoldSeconds;
+    job.wetSettings = ring.wetSettings;
     job.sampleEnd = sampleCounter; job.spectrumOnly = !correctionEnabled;
     sinceJob = 0; submitted.fetch_add(1); jobState.store(2,std::memory_order_release);
 }
@@ -251,8 +341,11 @@ void AnalysisService::compute()
 {
     int expected = 2;
     if (!jobState.compare_exchange_strong(expected,3,std::memory_order_acquire)) return;
-    if (analysedGeneration != job.generation) { analyser.reset(true); analysedGeneration = job.generation; }
-    publish(job.spectrumOnly ? analyser.spectrum(job) : analyser.analyse(job));
+    if (analysedGeneration != job.generation)
+    { analyser.reset(true); wetAnalyser.reset(); analysedGeneration = job.generation; }
+    auto result = job.spectrumOnly ? analyser.spectrum(job) : analyser.analyse(job);
+    wetAnalyser.analyse(job,result);
+    publish(result);
     jobState.store(0,std::memory_order_release);
 }
 void AnalysisService::finishBlock() { if (offline) compute(); }
@@ -267,8 +360,11 @@ void AnalysisService::publish (const Analysis& a) noexcept
     int at = 0;
     for (float v : a.input) values[size_t(at++)].store(v);
     for (float v : a.feedback) values[size_t(at++)].store(v);
+    for (float v : a.wet) values[size_t(at++)].store(v);
     for (auto b : a.bands) { values[size_t(at++)].store(b.frequency); values[size_t(at++)].store(b.width); values[size_t(at++)].store(b.gainDb); }
-    values[size_t(at++)].store(float(a.count)); values[size_t(at++)].store(a.strength); values[size_t(at)].store(a.frequency);
+    for (auto b : a.wetBands) { values[size_t(at++)].store(b.frequency); values[size_t(at++)].store(b.width); values[size_t(at++)].store(b.gainDb); }
+    values[size_t(at++)].store(float(a.count)); values[size_t(at++)].store(a.strength);
+    values[size_t(at++)].store(a.frequency); values[size_t(at)].store(float(a.wetCount));
     resultGeneration.store(a.generation); version.fetch_add(1);
 }
 bool AnalysisService::read (Analysis& a) const noexcept
@@ -277,8 +373,11 @@ bool AnalysisService::read (Analysis& a) const noexcept
     Analysis copy; int at = 0;
     for (auto& v : copy.input) v = values[size_t(at++)].load();
     for (auto& v : copy.feedback) v = values[size_t(at++)].load();
+    for (auto& v : copy.wet) v = values[size_t(at++)].load();
     for (auto& b : copy.bands) { b.frequency = values[size_t(at++)].load(); b.width = values[size_t(at++)].load(); b.gainDb = values[size_t(at++)].load(); }
-    copy.count = int(values[size_t(at++)].load()); copy.strength = values[size_t(at++)].load(); copy.frequency = values[size_t(at)].load();
+    for (auto& b : copy.wetBands) { b.frequency = values[size_t(at++)].load(); b.width = values[size_t(at++)].load(); b.gainDb = values[size_t(at++)].load(); }
+    copy.count = int(values[size_t(at++)].load()); copy.strength = values[size_t(at++)].load();
+    copy.frequency = values[size_t(at++)].load(); copy.wetCount = int(values[size_t(at)].load());
     copy.generation = resultGeneration.load(); copy.revision = before;
     if (before != version.load() || copy.generation != generation.load()) return false;
     a = copy; return true;
@@ -303,9 +402,9 @@ void ReverbEngine::Filter::configure (const Band& band, double rate, float amoun
     b0 = (1+alpha*gain)/denominator; b1 = -2*std::cos(omega)/denominator; b2 = (1-alpha*gain)/denominator;
     a1 = b1; a2 = (1-alpha/gain)/denominator; z1 = z2 = 0;
 }
-void ReverbEngine::Filter::shelf (bool high, double hz, double gainDb, double rate)
+void ReverbEngine::Filter::shelf (bool high, double hz, double gainDb, double rate, double maxBoostDb)
 {
-    const auto a = std::pow(10.,std::clamp(gainDb,-12.,double(shelfMaxBoostDb))/40);
+    const auto a = std::pow(10.,std::clamp(gainDb,-12.,maxBoostDb)/40);
     const auto omega = 2*pi*std::clamp(hz,double(shelfMinHz),shelfFrequencyCeiling(rate))/rate;
     const auto c = std::cos(omega), beta = std::sqrt(2*a)*std::sin(omega);
     const auto sign = high ? 1. : -1.;
@@ -335,9 +434,25 @@ float ReverbEngine::responseDb (const Settings& s, const Analysis& a, double hz,
     if (s.automatic)
         for (int i = 0; i < std::clamp(a.count,0,maxBands); ++i)
         { filter.configure(a.bands[size_t(i)],rate,tameScale(a,s.tame)); magnitude *= filter.magnitude(hz,rate); }
-    filter.shelf(false,s.lowShelfHz,s.lowShelfDb,rate); magnitude *= filter.magnitude(hz,rate);
-    filter.shelf(true,s.highShelfHz,s.highShelfDb,rate); magnitude *= filter.magnitude(hz,rate);
+    const auto gains = feedbackShelfGains(s,rate);
+    filter.shelf(false,s.lowShelfHz,gains[0],rate); magnitude *= filter.magnitude(hz,rate);
+    filter.shelf(true,s.highShelfHz,gains[1],rate); magnitude *= filter.magnitude(hz,rate);
     return float(20*std::log10(std::max(1e-12,magnitude)));
+}
+std::array<float,2> ReverbEngine::feedbackShelfGains (const Settings& s, double rate)
+{
+    const auto positive = std::max(0.f,s.lowShelfDb)+std::max(0.f,s.highShelfDb);
+    const auto scale = positive > 0 ? std::min(1.f,feedbackBoostLimitDb(s,rate)/positive) : 1.f;
+    return {std::min(0.f,s.lowShelfDb)+scale*std::max(0.f,s.lowShelfDb),
+            std::min(0.f,s.highShelfDb)+scale*std::max(0.f,s.highShelfDb)};
+}
+float ReverbEngine::wetResponseDb (const Settings& s, double hz, double rate)
+{
+    Filter filter;
+    filter.shelf(false,s.wetLowShelfHz,s.wetLowShelfDb,rate,wetShelfMaxBoostDb);
+    const auto low = filter.magnitude(hz,rate);
+    filter.shelf(true,s.wetHighShelfHz,s.wetHighShelfDb,rate,wetShelfMaxBoostDb);
+    return float(20*std::log10(std::max(1e-12,low*filter.magnitude(hz,rate))));
 }
 float ReverbEngine::Filter::process (float x) noexcept
 {
@@ -347,6 +462,16 @@ float ReverbEngine::Bank::process (float x, size_t line) noexcept
 {
     for (int i = 0; i < count; ++i) x = filters[line][size_t(i)].process(x);
     for (int i = 0; i < shelfCount; ++i) x = shelves[line][size_t(i)].process(x);
+    return x;
+}
+float ReverbEngine::WetEqBank::processEq (float x, size_t channel) noexcept
+{
+    for (int i = 0; i < count; ++i) x = shelves[channel][size_t(i)].process(x);
+    return x;
+}
+float ReverbEngine::WetEqBank::processTame (float x, size_t channel) noexcept
+{
+    for (int i = 0; i < tameCount; ++i) x = tameFilters[channel][size_t(i)].process(x);
     return x;
 }
 float ReverbEngine::Line::phaseProcess (float x) noexcept
@@ -451,7 +576,10 @@ void ReverbEngine::prepare (double rate, bool worker)
 {
     sampleRate = std::isfinite(rate) && rate >= 8000 ? rate : 48000;
     analysis.prepare(sampleRate,worker); latest = {}; banks = {}; activeBank = 0; pendingBank = 1;
-    shimmer.prepare(sampleRate); shimmerMix.reset(sampleRate,transitionSeconds); appliedShelves = {-1,-100,-1,-100};
+    wetEqBanks = {}; activeWetEq = 0; pendingWetEq = 1; wetEqFade = 1; appliedWetRevision = 0; previousWetTame = -1;
+    wetEqStep = float(1/(sampleRate*.05)); appliedWetShelves = {-1,-100,-1,-100};
+    shimmer.prepare(sampleRate); shimmerMix.reset(sampleRate,transitionSeconds); appliedShelves = {-1,-100,-1,-100}; appliedBoostDb = -1;
+    effectiveLoopGain = {};
     trackedPhaseBands = {}; phaseRevision = 0; previousPhase = -1; phaseActive = false;
     warm = 0; bankFade = 1; bankStep = float(1/(sampleRate*transitionSeconds)); appliedRevision = 0; previousTame = -1; appliedAuto = false; first = true;
     tapDisplay.valid.store(false,std::memory_order_relaxed);
@@ -510,10 +638,10 @@ void ReverbEngine::update (const Settings& s)
 {
     const auto active = s.automatic && (s.tame > .001f || s.phase*s.scatter > .001f);
     analysis.setActive(active,spectrumMonitor.load(std::memory_order_relaxed),
-                       std::clamp(s.decaySeconds,.3f,40.f)+1.25f);
+                       std::clamp(s.decaySeconds,.3f,40.f)+1.25f,s);
     Analysis next;
-    if (active && analysis.read(next)) latest = next;
-    if (!active) latest = {};
+    if ((active || s.wetTame > 0) && analysis.read(next)) latest = next;
+    if (!active && s.wetTame <= 0) latest = {};
     const auto set = [this] (auto& smoother, float value)
     { if (first) smoother.setCurrentAndTargetValue(value); else smoother.setTargetValue(value); };
     set(mix,std::clamp(s.mix,0.f,1.f)); set(outputGain,juce::Decibels::decibelsToGain(std::clamp(s.outputDb,-24.f,12.f)));
@@ -534,7 +662,8 @@ void ReverbEngine::update (const Settings& s)
         else line.wetTap.target(float(sampleRate)*wetSeconds);
         const auto delaySamples = float(sampleRate)*seconds;
         if (first) line.tap.prepare(sampleRate,delaySamples); else line.tap.target(delaySamples);
-        // Nominal decay gains; the complete loop may exceed unity with shelf boost.
+        // Nominal RT60 gain. Positive shelves receive only the remaining
+        // headroom, while Diffusion's tap motion remains independent.
         set(feedbackGain[i],std::min(.9995f,float(std::pow(10.,-3*(seconds+s.scatter*(line.phaseMemory.size()+2*maxBands)/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f)))));
         const auto sourceGain = std::pow(10.,-3*(wetSeconds+s.scatter*(line.phaseMemory.size()+2*maxBands)/sampleRate)/std::clamp(s.decaySeconds,.3f,40.f));
         set(injectionGain[i],.35355339f*float(std::sqrt(std::max(0.,1-sourceGain*sourceGain))));
@@ -546,7 +675,9 @@ void ReverbEngine::update (const Settings& s)
         if (first) predelayTap[ch].prepare(sampleRate,samples); else predelayTap[ch].target(samples);
     }
     const std::array<float,4> shelfSettings {s.lowShelfHz,s.lowShelfDb,s.highShelfHz,s.highShelfDb};
-    if (bankFade >= 1 && warm == 0 && (shelfSettings != appliedShelves || latest.revision != appliedRevision || active != appliedAuto || std::abs(s.tame-previousTame) > .005f))
+    const auto boostDb = feedbackBoostLimitDb(s,sampleRate);
+    if (bankFade >= 1 && warm == 0 && (shelfSettings != appliedShelves || std::abs(boostDb-appliedBoostDb) > .001f
+        || latest.revision != appliedRevision || active != appliedAuto || std::abs(s.tame-previousTame) > .005f))
     {
         pendingBank = 1-activeBank; auto& bank = banks[size_t(pendingBank)]; bank = {};
         bank.count = active && s.tame > 0 ? latest.count : 0;
@@ -557,16 +688,40 @@ void ReverbEngine::update (const Settings& s)
             for (size_t line = 0; line < 8; ++line) bank.filters[line][size_t(k)].configure(latest.bands[size_t(k)],sampleRate,amount);
             reduction = std::max(reduction,std::clamp(-latest.bands[size_t(k)].gainDb,0.f,tameLimitDb)*amount);
         }
+        const auto cappedGains = feedbackShelfGains(s,sampleRate);
         for (int shelf = 0; shelf < 2; ++shelf)
         {
-            const auto gain = shelf == 0 ? s.lowShelfDb : s.highShelfDb;
+            const auto gain = cappedGains[size_t(shelf)];
             if (std::abs(gain) < .001f) continue;
             for (auto& line : bank.shelves) line[size_t(bank.shelfCount)].shelf(shelf != 0,shelf == 0 ? s.lowShelfHz : s.highShelfHz,gain,sampleRate);
+            bank.maximumBoostGain *= juce::Decibels::decibelsToGain(std::max(0.f,gain));
             ++bank.shelfCount;
         }
-        appliedShelves = shelfSettings;
+        appliedShelves = shelfSettings; appliedBoostDb = boostDb;
         displayedReduction.store(reduction); warm = juce::roundToInt(sampleRate*.02); bankFade = 0;
         appliedRevision = latest.revision; appliedAuto = active; previousTame = s.tame;
+    }
+    const std::array<float,4> wetShelves {s.wetLowShelfHz,s.wetLowShelfDb,s.wetHighShelfHz,s.wetHighShelfDb};
+    if (first || (wetEqFade >= 1 && (wetShelves != appliedWetShelves
+        || std::abs(s.wetTame-previousWetTame) > .001f
+        || (s.wetTame > 0 && latest.revision != appliedWetRevision))))
+    {
+        const auto target = first ? activeWetEq : 1-activeWetEq;
+        auto& bank = wetEqBanks[size_t(target)]; bank = {};
+        for (int shelf = 0; shelf < 2; ++shelf)
+        {
+            const auto gain = wetShelves[size_t(2*shelf+1)];
+            if (std::abs(gain) < .001f) continue;
+            for (auto& channel : bank.shelves)
+                channel[size_t(bank.count)].shelf(shelf != 0,wetShelves[size_t(2*shelf)],gain,sampleRate,wetShelfMaxBoostDb);
+            ++bank.count;
+        }
+        bank.tameCount = s.wetTame > 0 ? latest.wetCount : 0;
+        for (int band = 0; band < bank.tameCount; ++band)
+            for (auto& channel : bank.tameFilters)
+                channel[size_t(band)].configure(latest.wetBands[size_t(band)],sampleRate,1.f);
+        appliedWetShelves = wetShelves; appliedWetRevision = latest.revision; previousWetTame = s.wetTame;
+        if (!first) { pendingWetEq = target; wetEqFade = 0; }
     }
     first = false;
 }
@@ -593,16 +748,22 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
     for (auto pair : {std::pair<float*,float>{&safeSettings.timeMs,defaults.timeMs}, {&safeSettings.decaySeconds,defaults.decaySeconds},
                       {&safeSettings.predelayMs,defaults.predelayMs}, {&safeSettings.diffusion,defaults.diffusion}, {&safeSettings.width,defaults.width},
                       {&safeSettings.tap,defaults.tap}, {&safeSettings.phase,defaults.phase}, {&safeSettings.tame,defaults.tame},
+                      {&safeSettings.wetTame,defaults.wetTame},
                       {&safeSettings.mix,defaults.mix}, {&safeSettings.outputDb,defaults.outputDb}, {&safeSettings.scatter,defaults.scatter},
                       {&safeSettings.lowShelfHz,defaults.lowShelfHz}, {&safeSettings.lowShelfDb,defaults.lowShelfDb},
-                      {&safeSettings.highShelfHz,defaults.highShelfHz}, {&safeSettings.highShelfDb,defaults.highShelfDb}, {&safeSettings.shimmer,defaults.shimmer}})
+                      {&safeSettings.highShelfHz,defaults.highShelfHz}, {&safeSettings.highShelfDb,defaults.highShelfDb}, {&safeSettings.shimmer,defaults.shimmer},
+                      {&safeSettings.wetLowShelfHz,defaults.wetLowShelfHz}, {&safeSettings.wetLowShelfDb,defaults.wetLowShelfDb},
+                      {&safeSettings.wetHighShelfHz,defaults.wetHighShelfHz}, {&safeSettings.wetHighShelfDb,defaults.wetHighShelfDb}})
         if (!std::isfinite(*pair.first)) *pair.first = pair.second;
     safeSettings.scatter = std::clamp(safeSettings.scatter,0.f,1.f);
     safeSettings.phase = std::clamp(safeSettings.phase,0.f,1.f);
     safeSettings.tame = std::clamp(safeSettings.tame,0.f,1.f);
+    safeSettings.wetTame = std::clamp(safeSettings.wetTame,0.f,1.f);
     safeSettings.shimmer = std::clamp(safeSettings.shimmer,0.f,1.f);
     safeSettings.lowShelfHz = std::clamp(safeSettings.lowShelfHz,shelfMinHz,shelfMaxHz); safeSettings.lowShelfDb = std::clamp(safeSettings.lowShelfDb,-12.f,shelfMaxBoostDb);
     safeSettings.highShelfHz = std::clamp(safeSettings.highShelfHz,shelfMinHz,shelfMaxHz); safeSettings.highShelfDb = std::clamp(safeSettings.highShelfDb,-12.f,shelfMaxBoostDb);
+    safeSettings.wetLowShelfHz = std::clamp(safeSettings.wetLowShelfHz,shelfMinHz,shelfMaxHz); safeSettings.wetLowShelfDb = std::clamp(safeSettings.wetLowShelfDb,-12.f,wetShelfMaxBoostDb);
+    safeSettings.wetHighShelfHz = std::clamp(safeSettings.wetHighShelfHz,shelfMinHz,shelfMaxHz); safeSettings.wetHighShelfDb = std::clamp(safeSettings.wetHighShelfDb,-12.f,wetShelfMaxBoostDb);
     const bool initial = first; update(safeSettings);
     const auto bypassed = safeSettings.bypass || hostBypass;
     if (initial) bypass.setCurrentAndTargetValue(bypassed ? 1.f : 0.f); else bypass.setTargetValue(bypassed ? 1.f : 0.f);
@@ -678,12 +839,19 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
             for (size_t base = 0; base < 8; base += 2*stride)
                 for (size_t i = 0; i < stride; ++i)
                 { const auto a = scattered[base+i], b = scattered[base+i+stride]; scattered[base+i] = matrixCos*a+matrixSin*b; scattered[base+i+stride] = -matrixSin*a+matrixCos*b; }
+        const auto maximumBoost = std::max(banks[size_t(activeBank)].maximumBoostGain,
+            bankFade < 1 ? banks[size_t(pendingBank)].maximumBoostGain : 1.f);
         for (size_t line = 0; line < 8; ++line)
-            scattered[line] *= feedbackGain[line].getNextValue()
+        {
+            // During Time/Decay automation or a filter-bank fade, the old EQ
+            // can have more boost than the new nominal gain allows. Bound the
+            // loop multiplier until the capped shelf bank finishes its fade.
+            effectiveLoopGain[line] = std::min(feedbackGain[line].getNextValue(),1.f/maximumBoost);
+            scattered[line] *= effectiveLoopGain[line]
                 *tapGainMotion[line].process(diffusionAmount*scatterAmount,safeSettings.timeMs);
+        }
         // Bound only the returning feedback, with a shared gain for all lines.
-        // Positive shelf gain can sustain the tail at an equilibrium level;
-        // there is no unconditional attenuation to force it to die away.
+        // Diffusion's temporary gain motion may still bring a tap above unity.
         limitFeedback(scattered);
         for (size_t line = 0; line < 8; ++line)
         {
@@ -698,13 +866,31 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
             auto& memory = lines[line]; memory.delay[memory.position] = std::isfinite(value) ? value : 0;
             memory.position = (memory.position+1)%memory.delay.size();
         }
-        analysis.push(sourceLeft,sourceRight,probeLeft,probeRight);
         const auto stereoWidth = width.getNextValue();
         const auto normalization = 1/std::max(1.f,stereoWidth);
         const auto mid = .5f*(wetLeft+wetRight)*normalization, side = .5f*(wetLeft-wetRight)*stereoWidth*normalization;
+        std::array<float,2> wetReturn {mid+side,mid-side}, preTame {};
+        for (size_t channel = 0; channel < wetReturn.size(); ++channel)
+        {
+            const auto activeEq = wetEqBanks[size_t(activeWetEq)].processEq(wetReturn[channel],channel);
+            const auto activeTamed = wetEqBanks[size_t(activeWetEq)].processTame(activeEq,channel);
+            preTame[channel] = activeEq;
+            wetReturn[channel] = activeTamed;
+            if (wetEqFade < 1)
+            {
+                const auto pendingEq = wetEqBanks[size_t(pendingWetEq)].processEq(mid+(channel == 0 ? side : -side),channel);
+                const auto pendingTamed = wetEqBanks[size_t(pendingWetEq)].processTame(pendingEq,channel);
+                const auto blend = smooth(wetEqFade);
+                preTame[channel] += blend*(pendingEq-activeEq);
+                wetReturn[channel] += blend*(pendingTamed-activeTamed);
+            }
+        }
+        if (wetEqFade < 1)
+        { wetEqFade = std::min(1.f,wetEqFade+wetEqStep); if (wetEqFade >= 1) activeWetEq = pendingWetEq; }
+        analysis.push(sourceLeft,sourceRight,probeLeft,probeRight,preTame[0],preTame[1]);
         const auto wet = mix.getNextValue(), gain = outputGain.getNextValue(), bypassAmount = bypass.getNextValue();
-        const auto processedLeft = ((1-wet)*dryLeft+wet*(mid+side))*gain;
-        const auto processedRight = ((1-wet)*dryRight+wet*(mid-side))*gain;
+        const auto processedLeft = ((1-wet)*dryLeft+wet*wetReturn[0])*gain;
+        const auto processedRight = ((1-wet)*dryRight+wet*wetReturn[1])*gain;
         const auto channelLeft = right != nullptr ? processedLeft : .5f*(processedLeft+processedRight);
         left[sample] = channelLeft+bypassAmount*(dryLeft-channelLeft);
         if (right != nullptr) right[sample] = processedRight+bypassAmount*(dryRight-processedRight);
@@ -721,7 +907,7 @@ void ReverbEngine::process (juce::AudioBuffer<float>& buffer, const Settings& se
         tapDisplay.feedbackToSeconds[i].store(float(line.tap.nextPosition()/sampleRate),std::memory_order_relaxed);
         tapDisplay.feedbackTargetSeconds[i].store(float(line.tap.targetPosition()/sampleRate),std::memory_order_relaxed);
         tapDisplay.fade[i].store(line.tap.fadeProgress(),std::memory_order_relaxed);
-        const auto feedback=feedbackGain[i].getCurrentValue()*tapGainMotion[i].gain();
+        const auto feedback=effectiveLoopGain[i]*tapGainMotion[i].gain();
         tapDisplay.feedbackGainDb[i].store(20.f*std::log10(std::max(feedback,1.e-6f)),std::memory_order_relaxed);
         tapDisplay.injectionGainDb[i].store(20.f*std::log10(std::max(injectionGain[i].getCurrentValue(),1.e-6f)),std::memory_order_relaxed);
     }

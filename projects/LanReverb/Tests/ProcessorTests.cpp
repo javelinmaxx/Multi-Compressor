@@ -202,25 +202,31 @@ struct ReverbEngineTestAccess
         }
         check(low.magnitude(30,48000) < .4 && low.magnitude(5000,48000) > .99,"low shelf changes bass while preserving the upper band");
         check(high.magnitude(17000,48000) < .4 && high.magnitude(100,48000) > .99,"high shelf changes treble while preserving the lower band");
-        // Exhaust actual uncompensated shelf gains at all frequency endpoints.
+        // Every positive feedback shelf is reduced to the nominal loop headroom.
         for (double rate : {8000.,44100.,48000.,96000.,192000.})
             for (float lf : {20.f,20000.f}) for (float hf : {20.f,20000.f})
                 for (float lg : {-12.f,0.f,3.f}) for (float hg : {-12.f,0.f,3.f})
                 {
                     Settings s; s.automatic = false; s.lowShelfHz = lf; s.highShelfHz = hf; s.lowShelfDb = lg; s.highShelfDb = hg;
+                    const auto allowed = ReverbEngine::feedbackShelfGains(s,rate);
                     for (int point = 0; point < 128; ++point)
                     {
                         const auto hz = 20*std::pow(rate*.45/20,point/127.);
                         const auto db = ReverbEngine::responseDb(s,{},hz,rate);
-                        check(db <= std::max(0.f,lg)+std::max(0.f,hg)+.001f && db >= std::min(0.f,lg)+std::min(0.f,hg)-.001f,
-                              "uncompensated shelf response stays within the individual gain endpoints");
+                        check(db <= std::max(0.f,allowed[0])+std::max(0.f,allowed[1])+.001f
+                              && db >= std::min(0.f,allowed[0])+std::min(0.f,allowed[1])-.001f,
+                              "feedback response stays within the capped shelf gain endpoints");
                     }
                 }
         Settings boosted; boosted.automatic = false; boosted.lowShelfDb = 3;
-        check(ReverbEngine::responseDb(boosted,{},30,48000) > 2.9,"low shelf provides the requested positive gain");
+        check(ReverbEngine::responseDb(boosted,{},30,48000) > 0
+              && ReverbEngine::responseDb(boosted,{},30,48000) <= ReverbEngine::feedbackShelfGains(boosted,48000)[0]+.01f,
+              "low shelf uses only available positive loop headroom");
         check(std::abs(ReverbEngine::responseDb(boosted,{},5000,48000)) < .01,"low shelf boost does not attenuate the unaffected high band");
         boosted.lowShelfDb = 0; boosted.highShelfDb = 3;
-        check(ReverbEngine::responseDb(boosted,{},18000,48000) > 2.8,"high shelf provides the requested positive gain");
+        check(ReverbEngine::responseDb(boosted,{},18000,48000) > 0
+              && ReverbEngine::responseDb(boosted,{},18000,48000) <= ReverbEngine::feedbackShelfGains(boosted,48000)[1]+.01f,
+              "high shelf uses only available positive loop headroom");
         check(std::abs(ReverbEngine::responseDb(boosted,{},100,48000)) < .01,"high shelf boost does not attenuate the unaffected low band");
         for (bool highShelf : {false,true})
         {
@@ -242,18 +248,118 @@ struct ReverbEngineTestAccess
         // Exercise actual feedback filter state, not only coefficient formulas.
         ReverbEngine::Bank bank; bank.count = 1; bank.shelfCount = 2;
         bank.filters[0][0].configure({1000,1000.f/14,-6},48000,1);
-        bank.shelves[0][0].shelf(false,200,-9,48000); bank.shelves[0][1].shelf(true,8000,3,48000);
+        Settings s; s.tame = 1; s.lowShelfDb = -9; s.highShelfDb = 3;
+        const auto gains = ReverbEngine::feedbackShelfGains(s,48000);
+        bank.shelves[0][0].shelf(false,200,gains[0],48000); bank.shelves[0][1].shelf(true,8000,gains[1],48000);
         std::array<double,3> frequencies {100,1000,10000}; std::array<std::complex<double>,3> measured {};
         for (int i = 0; i < 32768; ++i)
         {
             const auto y = bank.process(i == 0 ? 1.f : 0.f,0);
             for (size_t j = 0; j < frequencies.size(); ++j) measured[j] += double(y)*std::polar(1.,-juce::MathConstants<double>::twoPi*frequencies[j]*i/48000);
         }
-        Settings s; s.tame = 1; s.lowShelfDb = -9; s.highShelfDb = 3;
         Analysis single; single.count = 1; single.bands[0] = {1000,1000.f/14,-6};
         for (size_t i = 0; i < frequencies.size(); ++i)
             check(std::abs(20*std::log10(std::abs(measured[i]))-ReverbEngine::responseDb(s,single,frequencies[i],48000)) < .001,
                   "rendered feedback shelves and tamer agree with the displayed response curve");
+        Settings wet; wet.wetLowShelfDb = 6; wet.wetHighShelfDb = -12;
+        check(ReverbEngine::wetResponseDb(wet,25,48000) > 5.8f
+              && ReverbEngine::wetResponseDb(wet,18000,48000) < -11.f,
+              "wet-output shelves retain independent positive and negative gain outside feedback");
+        for (double rate : {8000.,48000.,96000.})
+        {
+            ReverbEngine engine; engine.prepare(rate,false);
+            for (float time : {20.f,90.f,500.f}) for (float decay : {.3f,10.f,40.f})
+                for (float scatter : {0.f,1.f}) for (float tap : {-1.f,1.f})
+                {
+                    Settings trial; trial.automatic = false; trial.phase = 1;
+                    trial.timeMs = time; trial.decaySeconds = decay;
+                    trial.scatter = scatter; trial.tap = tap;
+                    trial.lowShelfDb = trial.highShelfDb = 3;
+                    juce::AudioBuffer<float> silence(2,1); silence.clear(); engine.process(silence,trial);
+                    float largestGain = 0;
+                    for (const auto& gain : engine.feedbackGain) largestGain = std::max(largestGain,gain.getTargetValue());
+                    for (int point = 0; point < 64; ++point)
+                    {
+                        const auto hz = 20*std::pow(rate*.45/20,point/63.);
+                        const auto loopDb = 20*std::log10(largestGain)+ReverbEngine::responseDb(trial,{},hz,rate);
+                        check(loopDb <= .001f,"nominal feedback loop stays at or below zero dB at every tested frequency");
+                    }
+                }
+        }
+    }
+    static void wetTameTests()
+    {
+        Frame frame; frame.rate = 48000; frame.wetSettings.wetTame = 1;
+        for (int i = 0; i < analysisSize; ++i)
+            frame.audio[4][size_t(i)] = frame.audio[5][size_t(i)]
+                = float(.2*std::sin(juce::MathConstants<double>::twoPi*1000*i/48000.)
+                        +.2*std::sin(juce::MathConstants<double>::twoPi*5000*i/48000.));
+        WetTameAnalyser analyser; Analysis result; analyser.analyse(frame,result);
+        bool cutLow = false, cutHigh = false;
+        for (int i = 0; i < result.wetCount; ++i)
+        {
+            const auto band = result.wetBands[size_t(i)];
+            check(band.gainDb <= 0 && band.gainDb >= -wetTameLimitDb-.001f,
+                  "each wet tame band cuts by at most three dB and never boosts");
+            cutLow |= std::abs(band.frequency-1000) < 150 && band.gainDb < -2.9f;
+            cutHigh |= std::abs(band.frequency-5000) < 600 && band.gainDb < -2.9f;
+        }
+        check(cutLow && cutHigh,"pink-target comparison gives two separated wet peaks three dB each");
+        frame.wetSettings.wetTame = 0; result = {}; analyser.analyse(frame,result);
+        check(result.wetCount == 0,"zero Wet Tame suspends wet-band analysis");
+    }
+    static void wetRoutingTests()
+    {
+        Settings plain; plain.automatic = false; plain.phase = 0; plain.predelayMs = 0; plain.mix = 1;
+        auto shaped = plain; shaped.wetLowShelfDb = 6; shaped.wetHighShelfDb = -6;
+        ReverbEngine a,b; a.prepare(48000,false); b.prepare(48000,false);
+        double outputDifference = 0, feedbackError = 0;
+        for (int at = 0; at < 24000; at += 128)
+        {
+            juce::AudioBuffer<float> input(2,128), changed(2,128);
+            for (int i = 0; i < 128; ++i)
+            {
+                const auto x = at < 8000 ? float(.2*std::sin(juce::MathConstants<double>::twoPi*180*(at+i)/48000.)
+                                                +.08*std::sin(juce::MathConstants<double>::twoPi*5000*(at+i)/48000.)) : 0.f;
+                input.setSample(0,i,x); input.setSample(1,i,x);
+            }
+            changed.makeCopyOf(input); a.process(input,plain); b.process(changed,shaped);
+            for (int i = 0; i < 128; ++i)
+                outputDifference += std::abs(input.getSample(0,i)-changed.getSample(0,i));
+            for (size_t line = 0; line < a.lines.size(); ++line)
+            {
+                const auto& left = a.lines[line]; const auto& right = b.lines[line];
+                const auto index = (left.position+left.delay.size()-1)%left.delay.size();
+                feedbackError = std::max(feedbackError,double(std::abs(left.delay[index]-right.delay[index])));
+            }
+        }
+        check(outputDifference > .01,"wet EQ changes the audible wet return");
+        check(feedbackError < 1e-7,"wet EQ does not enter the feedback lines");
+        Settings untreated = plain; untreated.timeMs = 20;
+        auto treated = untreated; treated.wetTame = 1;
+        ReverbEngine clean, tamed; clean.prepare(48000,false); tamed.prepare(48000,false);
+        double tameDifference = 0, tameFeedbackError = 0;
+        for (int at = 0; at < 48000; at += 128)
+        {
+            juce::AudioBuffer<float> dry(2,128), cut(2,128);
+            for (int i = 0; i < 128; ++i)
+            {
+                const auto x = float(.15*std::sin(juce::MathConstants<double>::twoPi*1000*(at+i)/48000.));
+                dry.setSample(0,i,x); dry.setSample(1,i,x);
+            }
+            cut.makeCopyOf(dry); clean.process(dry,untreated); tamed.process(cut,treated);
+            if (at > 24000)
+                for (int i = 0; i < 128; ++i)
+                    tameDifference += std::abs(dry.getSample(0,i)-cut.getSample(0,i));
+            for (size_t line = 0; line < clean.lines.size(); ++line)
+            {
+                const auto& left = clean.lines[line]; const auto& right = tamed.lines[line];
+                const auto index = (left.position+left.delay.size()-1)%left.delay.size();
+                tameFeedbackError = std::max(tameFeedbackError,double(std::abs(left.delay[index]-right.delay[index])));
+            }
+        }
+        check(tameDifference > .01,"wet tame audibly reduces a persistent output resonance");
+        check(tameFeedbackError < 1e-7,"wet tame leaves the feedback network unchanged");
     }
     static void shimmerBypassTests()
     {
@@ -729,7 +835,7 @@ void tempoSyncTests (const juce::File& directory)
 }
 void processorTests()
 {
-    stateTests<LanReverbProcessor>(20);
+    stateTests<LanReverbProcessor>(25);
     LanReverbProcessor p; set(p,"mix",0); set(p,"automatic",0); p.prepareToPlay(48000,128);
     check(p.getLatencySamples() == 0,"reverb introduces no dry-path latency");
     juce::MidiBuffer midi; juce::AudioBuffer<float> b(2,128);
@@ -922,7 +1028,6 @@ void sustainedFeedbackTests (const juce::File& directory)
     report << "rate,boost_db,time_s,rms,peak\n";
     for (double rate : {44100.,48000.,96000.})
     {
-        double reference = 0;
         for (float boost : {0.f,3.f})
         {
             lan::Settings settings; settings.automatic = false; settings.scatter = 0; settings.phase = 0;
@@ -950,12 +1055,10 @@ void sustainedFeedbackTests (const juce::File& directory)
                 if (window >= 24 && window < 32) middle += power/8;
                 if (window >= 40) late += power/8;
             }
-            if (boost < 1) reference = late;
-            else
+            if (boost > 0)
             {
                 std::cout << "Sustained feedback rate=" << rate << " mid=" << middle << " late=" << late << " peak=" << maximum << '\n';
-                check(late > reference*1000 && late > .001,"soft limiting permits an audible sustained tail long after excitation stops");
-                check(late > middle*.5 && late < middle*2,"sustained late energy settles rather than growing or being forced to decay");
+                check(late <= middle*1.2+1e-15,"capped late feedback energy does not grow after excitation stops");
             }
         }
         // A louder fresh source can exceed the feedback ceiling: the limiter
@@ -1154,7 +1257,7 @@ void editorTests (const juce::File& destination)
     std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor()); editor->addToDesktop(0); editor->setVisible(true);
     check(editor->getWidth() == 740 && editor->getHeight() == 808,"editor includes the three-second tap display");
     int sliders = 0;
-    constexpr std::array<const char*,12> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","shimmer","mix","output"};
+    constexpr std::array<const char*,13> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","shimmer","wetTame","mix","output"};
     for (auto* child : editor->getChildren())
     {
         if (auto* slider = dynamic_cast<juce::Slider*>(child))
@@ -1171,7 +1274,7 @@ void editorTests (const juce::File& destination)
         if (auto* hint = dynamic_cast<editorTooltips::TitleHint*>(child))
             check(hint->getTooltip().contains("J-Sonic Team") && hint->getTooltip().contains(JucePlugin_VersionString),"title hover shows release information");
     }
-    check(sliders == 12,"all twelve controls are present");
+    check(sliders == 13,"all thirteen controls are present");
     juce::Slider* timeControl = nullptr; juce::Button* syncControl = nullptr;
     for (auto* child : editor->getChildren())
     {
@@ -1193,23 +1296,29 @@ void editorTests (const juce::File& destination)
     for (auto* child : editor->getChildren())
         if (auto* handle = dynamic_cast<SpectrumShelfHandle*>(child))
         {
-            const auto high = handle->getName() == "High shelf";
+            const auto wet = handle->getName().startsWith("Wet ");
+            const auto high = handle->getName().contains("high");
+            const auto frequencyId = wet ? (high ? "wetHighShelfHz" : "wetLowShelfHz")
+                                         : (high ? "highShelfHz" : "lowShelfHz");
+            const auto gainId = wet ? (high ? "wetHighShelfDb" : "wetLowShelfDb")
+                                    : (high ? "highShelfDb" : "lowShelfDb");
             const auto hz = high ? 80.25f : 16000.5f;
             const juce::Point<float> position {float(42+656*std::log(hz/20)/std::log(20000./20)),181};
             const auto now = juce::Time::getCurrentTime();
             juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(),position,juce::ModifierKeys::leftButtonModifier,1,0,0,0,0,editor.get(),editor.get(),now,position,now,1,true);
             handle->mouseDown(event); handle->mouseDrag(event);
-            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfHz" : "lowShelfHz")->load()-hz) < .1,"shelf horizontal drag updates the host frequency");
-            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load()+6) < .11,"shelf vertical drag updates the host gain");
+            check(std::abs(p.parameters.getRawParameterValue(frequencyId)->load()-hz) < .1,"shelf horizontal drag updates the host frequency");
+            check(std::abs(p.parameters.getRawParameterValue(gainId)->load()+6) < .11,"shelf vertical drag updates the host gain");
             handle->mouseDoubleClick(event); handle->mouseUp(event);
-            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load()) < .01,"double-click restores a neutral shelf");
-            const auto aboveZero = event.withNewPosition(juce::Point<float>{position.x,140.f});
+            check(std::abs(p.parameters.getRawParameterValue(gainId)->load()) < .01,"double-click restores a neutral shelf");
+            const auto aboveZero = event.withNewPosition(juce::Point<float>{position.x,120.f});
             handle->mouseDown(aboveZero); handle->mouseDrag(aboveZero); handle->mouseUp(aboveZero);
-            check(std::abs(p.parameters.getRawParameterValue(high ? "highShelfDb" : "lowShelfDb")->load()-3) < .001,"dragging above the zero line caps shelf gain at three dB");
-            check(std::abs(p.parameters.getParameter(high ? "highShelfDb" : "lowShelfDb")->getNormalisableRange().end-3) < .001,"host automation caps shelf boost at three dB");
+            const auto maximum = wet ? lan::wetShelfMaxBoostDb : lan::shelfMaxBoostDb;
+            check(std::abs(p.parameters.getRawParameterValue(gainId)->load()-maximum) < .001,"dragging above the zero line caps the selected shelf gain");
+            check(std::abs(p.parameters.getParameter(gainId)->getNormalisableRange().end-maximum) < .001,"host automation uses the selected shelf boost range");
             check(handle->getTooltip().endsWithChar('.'),"draggable shelf has a one-sentence hint"); ++shelves;
         }
-    check(shelves == 2,"both draggable shelf handles are present");
+    check(shelves == 4,"feedback and wet-output shelves have separate draggable handles");
     for (auto* parameter : p.getParameters()) parameter->setValueNotifyingHost(parameter->getDefaultValue());
     juce::MidiBuffer midi;
     for (int at = 0; at < 28800; at += 128)
@@ -1272,7 +1381,7 @@ int main (int argc, char** argv)
         directory.createDirectory();
         if (argc > 2 && juce::String(argv[1]) == "--editor") editorTests(juce::File(argv[2]));
         else if (argc > 2 && juce::String(argv[1]) == "--shimmer") shimmerTests(directory);
-        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); lan::ReverbEngineTestAccess::multiPhaseTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); lan::ReverbEngineTestAccess::eqTests(directory); shimmerTests(directory); lan::ReverbEngineTestAccess::feedbackLimiterTests(directory); sustainedFeedbackTests(directory); }
+        else { analyserTests(directory); inputProtectionTests(directory); relativeDecayTests(directory); feedbackRoutingTests(directory); lan::ReverbEngineTestAccess::multiPhaseTests(directory); tapTests(); tempoSyncTests(directory); processorTests(); scatterTests(directory); measurements(directory); lan::ReverbEngineTestAccess::eqTests(directory); lan::ReverbEngineTestAccess::wetTameTests(); lan::ReverbEngineTestAccess::wetRoutingTests(); shimmerTests(directory); lan::ReverbEngineTestAccess::feedbackLimiterTests(directory); sustainedFeedbackTests(directory); }
         std::cout << checks << " Lan Reverb checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

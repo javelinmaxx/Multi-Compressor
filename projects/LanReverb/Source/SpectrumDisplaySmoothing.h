@@ -14,14 +14,14 @@ public:
     void reset() noexcept { ready=false; }
     bool hasFrame() const noexcept { return ready; }
     const std::array<float,spectrumBins>& trace(int channel) const noexcept
-    { return display[size_t(std::clamp(channel,0,1))]; }
+    { return display[size_t(std::clamp(channel,0,2))]; }
     void update(const Analysis& frame,float seconds) noexcept
     {
         if(frame.revision==0) { reset(); return; }
         const auto elapsed=std::clamp(std::isfinite(seconds) ? seconds : .05f,.001f,.5f);
-        for(int channel=0;channel<2;++channel)
+        for(int channel=0;channel<3;++channel)
         {
-            const auto& input=channel==0 ? frame.input : frame.feedback;
+            const auto& input=channel==0 ? frame.input : channel==1 ? frame.feedback : frame.wet;
             auto& output=display[size_t(channel)];
             for(int bin=0;bin<spectrumBins;++bin)
             {
@@ -48,7 +48,7 @@ public:
         ready=true;
     }
 private:
-    std::array<std::array<float,spectrumBins>,2> display {};
+    std::array<std::array<float,spectrumBins>,3> display {};
     bool ready=false;
 };
 }

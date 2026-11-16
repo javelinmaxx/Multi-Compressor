@@ -4,7 +4,7 @@
 |---|---|
 | Time | Sets the repeat time or room size in milliseconds, or selects a musical note length when Sync is on. |
 | Sync | Synchronizes Time to the DAW tempo using straight, dotted or triplet note lengths. |
-| Decay | Sets the nominal feedback decay time before filtering, while shelf boost can sustain an indefinite tail. |
+| Decay | Sets the nominal feedback decay time, with positive shelf gain capped to the available loop headroom. |
 | Pre-delay | Delays the signal entering the reverb while leaving the dry signal immediate. |
 | Scatter | Morphs aligned delay repeats at zero into a dense stereo reverb at full. |
 | Diffusion | Adjusts feedback mixing density and glides each tap's level by up to plus or minus three decibels every half Time. |
@@ -12,9 +12,12 @@
 | Tap Shift | Moves the feedback read taps through a 250-millisecond crossfade to scatter existing ringing frequencies. |
 | Phase | Sets feedback phase dispersion and correction across sixteen resonance bands within a five-millisecond delay budget. |
 | Tame | Sets narrow feedback attenuation across up to sixteen resonance bands within a shared six-decibel limit while protecting incoming notes. |
+| Wet Tame | Cuts wet-output peaks above a pink-noise target shaped by the wet EQ, by up to three decibels per band. |
 | Shimmer | Adds a softly faded octave-up layer to the feedback-loop injection using a twice-oversampled grain shifter; Saves CPU when Off. |
-| Low shelf handle | Drag across the full frequency range and vertically for up to +3 dB shelf gain, or double-click to reset. |
-| High shelf handle | Drag across the full frequency range and vertically for up to +3 dB shelf gain, or double-click to reset. |
+| Feedback low shelf handle | Drag the feedback shelf across frequency and vertically for up to +3 dB before loop-gain capping, or double-click to reset. |
+| Feedback high shelf handle | Drag the feedback shelf across frequency and vertically for up to +3 dB before loop-gain capping, or double-click to reset. |
+| Wet low shelf handle | Drag the wet-output shelf across frequency and vertically for up to +6 dB, or double-click to reset. |
+| Wet high shelf handle | Drag the wet-output shelf across frequency and vertically for up to +6 dB, or double-click to reset. |
 | Dry / Wet | Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent. |
 | Output | Adjusts the final output level after the dry and wet signals are mixed. |
 | Auto | Compares spectral peaks and frequency decay rates to guide input-protected feedback correction; Saves CPU when Off. |

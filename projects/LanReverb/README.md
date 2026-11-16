@@ -19,9 +19,10 @@ feedback resonance control. Version **0.7.5**, by **J-Sonic Team**, **2026**.
 | Tap Shift | −100–100% / 0% | Offsets feedback read positions by different amounts per line |
 | Phase | 0–100% / 60% | All-pass phase dispersion and automatic phase/tap steering |
 | Tame | 0–100% / 75% | Strength of narrow automatic feedback EQ, sharing a 6 dB total cut budget |
+| Wet Tame | 0–100% / Off | Cuts wet-output peaks above a level-matched pink spectrum shaped by the wet EQ, up to 3 dB per band |
 | Shimmer | 0–100% / Off | Adds a +12-semitone, 2× oversampled layer to the source feeding the delay network |
-| Low shelf handle | 20–20,000 Hz / 200 Hz; −12–+3 dB / 0 dB | Drag its L node horizontally for frequency and vertically for gain |
-| High shelf handle | 20–20,000 Hz / 8,000 Hz; −12–+3 dB / 0 dB | Drag its H node horizontally for frequency and vertically for gain |
+| Feedback shelf handles | 20–20,000 Hz; −12–+3 dB / 0 dB | Drag the gold L/H nodes to shape the feedback; positive gain is capped by the loop headroom |
+| Wet shelf handles | 20–20,000 Hz; −12–+6 dB / 0 dB | Drag the cyan L/H nodes to shape only the wet output |
 | Dry / Wet | 0–100% / 80% | Linear mix, including true full-wet operation for sends |
 | Output | −24–12 dB / 0 dB | Final output gain |
 | Auto | On | Enables input-aware spectral peak analysis and automatic correction |
@@ -29,15 +30,15 @@ feedback resonance control. Version **0.7.5**, by **J-Sonic Team**, **2026**.
 
 The ebony-and-gold editor matches the collection, scales from 50% to 120%, and
 provides one-sentence control hints. Hover over its title for developer, year,
-and version. The plot compares input and feedback power spectra; gold markers
-indicate tracked resonance bands. The drawn spectra use light smoothing across
+and version. The plot compares input and feedback power spectra, plus the wet spectrum when Wet Tame is active; gold markers
+indicate tracked feedback resonances and cyan markers indicate wet tame bands. The drawn spectra use light smoothing across
 neighboring log-frequency bins and between display frames to avoid jagged,
 flickering traces; the analyser and feedback processing use their original data.
 The input and feedback spectra keep updating while the editor is open, even
 with Auto, Tame, and Phase off. In that state the worker computes only the
-spectra; resonance detection and correction stay off. Closing the editor also
-stops spectrum capture when Auto is off.
-A pale target EQ curve combines the narrow tamer filters with the two uncompensated shelves. The reduction readout shows the deepest
+spectra and wet tame if enabled; feedback resonance detection and correction stay off. Closing the editor also
+stops spectrum capture when Auto and Wet Tame are off.
+A pale target EQ curve combines the narrow feedback tamer filters with the capped feedback shelves; a cyan curve overlays the wet-output EQ. The reduction readout shows the deepest
 requested EQ cut, not a broadband gain-reduction meter.
 
 The tap display below the controls shows all eight wet pickups (cyan) and
@@ -70,7 +71,7 @@ reserved during prepare so tempo automation never allocates memory on the audio
 thread. This increases reserved delay memory to roughly 42 MB at 48 kHz and
 scales with sample rate, independent of the current Time setting. Host latency
 remains zero; the reported tail is 120 s with neutral/cut shelves and potentially
-infinite with either shelf boosted.
+infinite with either feedback shelf boosted because diffusion can momentarily raise loop gain.
 
 ## Delay to reverb with Scatter
 
@@ -101,14 +102,14 @@ feedback, leaving the first wet pickup and dry path untouched.
 
 `input → wet pre-delay → original + Shimmer octave layer → input injection → delay-line writes`
 
-`delay-line wet taps → stereo pickups → Width → dry/wet mix → Output`
+`delay-line wet taps → stereo pickups → Width → wet shelf EQ → wet tame → dry/wet mix → Output`
 
-`separate feedback taps → narrow tamer EQ → uncompensated shelves → phase dispersion → damping → orthogonal mixing → feedback gains → linked soft limiter → delay-line writes`
+`separate feedback taps → narrow feedback tamer EQ → capped shelves → phase dispersion → damping → orthogonal mixing → capped feedback gains → linked soft limiter → delay-line writes`
 
-The wet return is read **before** EQ, phase processing and loop damping. Those
+The wet return is read **before** feedback EQ, phase processing and loop damping. Those
 stages process only the recirculated signal, which is added to the independent
-input injection at the next delay-line write. They can change later repeats,
-but never act as inserts on the wet output or dry signal. Manual Tap Shift and
+input injection at the next delay-line write. The separate wet EQ and wet tame
+process only the wet output after Width; neither affects the feedback or dry signal. Manual Tap Shift and
 automatic phase-guided tap steering move the feedback read heads only; the wet
 read heads retain the Time/Scatter spacing. Automatic feedback gain adjustments
 also do not change the source injection gain.
@@ -185,18 +186,26 @@ automation and session recall, and remain usable at 50%–120% UI scaling.
 Both shelves independently cover 20 Hz–20 kHz with continuous frequency values,
 and their transition frequencies can cross freely. At low sample rates,
 the display and DSP cap the frequency at 98% of Nyquist.
-The curve shows the requested EQ response, excluding level-dependent limiting;
+The curve shows the capped feedback EQ response, excluding level-dependent limiting;
 the feedback filter banks follow it
 through their existing 20 ms warm-up and 250 ms crossfade.
 
 Shelves process **feedback only**, including when Auto is off. They do not
 filter the dry signal or the first wet arrivals. Both shelves range from
 −12 dB to +3 dB, with the same limits for dragging and host automation.
-Positive gain is applied directly, with **no compensation** or reduction of
-other frequencies. Boosted bands can exceed unity around the feedback loop
-and sustain the tail after the input stops, even though the nominal Decay gains
-remain below unity. A linked soft limiter bounds the returning feedback level
-without applying continuous decay. Auto/Tame remain available for resonance control.
+Positive shelf gain is limited by the nominal loop gain headroom, including the
+combined boost of both shelves. The loop remains at or below unity with
+Diffusion's tap-level motion excluded from this calculation; its ±3 dB movement
+can briefly push loop gain above unity. A linked soft limiter bounds returning
+feedback. Auto/Tame remain available for feedback resonance control.
+
+The cyan L/H handles control separate wet-output shelves from −12 to +6 dB.
+They do not change the feedback loop or dry path. **Wet Tame** compares the
+measured pre-tame wet spectrum with a level-matched pink spectrum multiplied by
+the wet EQ response. It selects up to eight separated excess peaks and applies
+attenuation only, capped at **3 dB per band** before Wet Tame scaling. Each wet
+filter changes smoothly through a short bank crossfade. Wet Tame off skips its
+analysis and filtering; the wet shelves still work.
 
 ## Shimmer input layer
 
@@ -275,8 +284,8 @@ constant, reducing the influence of old decisions.
 Two fixed filter banks warm for 20 ms and crossfade over 250 ms, preventing
 coefficient jumps. The callback neither runs FFTs nor waits for the worker; it
 uses a bounded single job slot and lock-free atomic result publication. Missed
-jobs are dropped rather than queued without bound. Auto Off stops analysis submissions; so does Tame at zero when Phase is zero
-or Scatter is zero. Phase still supplies its static
+jobs are dropped rather than queued without bound. Auto Off stops feedback-correction analysis when Wet Tame and the spectrum monitor are also off; so does Tame at zero when Phase is zero
+or Scatter is zero. Wet Tame can run independently. Phase still supplies its static
 manual dispersion when Auto is off and Scatter is above zero.
 
 Protection favors preserving observed musical content while a note is present
@@ -292,9 +301,9 @@ combined norm of 0.5, it is exactly unity. Above that knee it smoothly approache
 a norm of 1: `r_out = 0.5 + 0.5 × tanh(2 × r_in − 1)`. Relative line balance is
 preserved, with no independent channel clipping or attack/release overshoot.
 
-There is no fixed gain reduction or leakage in this limiter. When shelf boost
-offsets the loop's losses, feedback can settle at a bounded sustained level
-rather than exploding or being forced to decay. Not every setting will sustain,
+There is no fixed gain reduction or leakage in this limiter. Diffusion gain
+motion can briefly offset the loop's losses, and feedback may settle at a bounded
+sustained level rather than exploding. Not every setting will sustain,
 and the tail can evolve or settle into resonant modes. The limiter does not
 freeze the existing waveform or guarantee a spectrally unchanged infinite tail.
 
@@ -304,7 +313,7 @@ is unchanged. This is a feedback-stability control, not a final output ceiling:
 fresh input, stereo pickup summation and Output gain can still produce peaks
 above 0 dBFS. Nonfinite input samples and delay writes remain contained.
 
-With either shelf boosted, the processor reports a **potentially infinite tail**
+With either feedback shelf boosted, the processor reports a **potentially infinite tail**
 to the host, including VST3's infinite-tail flag. With both shelves neutral or
 cut, it retains its ordinary 120 s tail report.
 
@@ -325,7 +334,7 @@ minimal Xvfb environments. Plot generation needs Python `numpy` and `matplotlib`
 macOS also provides `LanReverb_AU`; the root `build-macos-all.sh` discovers this
 project automatically. Windows workflows are unchanged. The latency reported to
 the host is **zero samples**; wet pre-delay and feedback delay remain intentional
-effect timing. The tail report is 120 s with neutral/cut shelves and potentially infinite with shelf boost.
+effect timing. The tail report is 120 s with neutral/cut feedback shelves and potentially infinite with feedback shelf boost because diffusion can momentarily raise loop gain.
 
 See the [test report](Tests/Reports/README.md) for reproducible measurements and
 scope, and [TOOLTIPS.md](TOOLTIPS.md) for the complete hover text.

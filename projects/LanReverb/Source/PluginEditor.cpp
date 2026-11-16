@@ -3,12 +3,12 @@
 using namespace stageStyle;
 namespace
 {
-constexpr std::array<const char*,12> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","shimmer","mix","output"};
-constexpr std::array<const char*,12> names {"TIME","DECAY","PRE-DELAY","SCATTER","DIFFUSION","WIDTH","TAP SHIFT","PHASE","TAME","SHIMMER","DRY / WET","OUTPUT"};
-constexpr std::array<const char*,12> units {" ms"," s"," ms"," %"," %"," %"," %"," %"," %"," %"," %"," dB"};
-constexpr std::array<const char*,12> hints {
+constexpr std::array<const char*,13> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","shimmer","wetTame","mix","output"};
+constexpr std::array<const char*,13> names {"TIME","DECAY","PRE-DELAY","SCATTER","DIFFUSION","WIDTH","TAP SHIFT","PHASE","TAME","SHIMMER","WET TAME","DRY / WET","OUTPUT"};
+constexpr std::array<const char*,13> units {" ms"," s"," ms"," %"," %"," %"," %"," %"," %"," %"," %"," %"," dB"};
+constexpr std::array<const char*,13> hints {
     "Sets the repeat time or room size in milliseconds, or selects a musical note length when Sync is on.",
-    "Sets the nominal feedback decay time before filtering, while shelf boost can sustain an indefinite tail.",
+    "Sets the nominal feedback decay time, with positive shelf gain capped to the available loop headroom.",
     "Delays the signal entering the reverb while leaving the dry signal immediate.",
     "Morphs aligned delay repeats at zero into a dense stereo reverb at full.",
     "Adjusts feedback mixing density and glides each tap's level by up to plus or minus three decibels every half Time.",
@@ -17,6 +17,7 @@ constexpr std::array<const char*,12> hints {
     "Sets feedback phase dispersion and correction across sixteen resonance bands within a five-millisecond delay budget.",
     "Sets narrow feedback attenuation across up to sixteen resonance bands within a shared six-decibel limit while protecting incoming notes.",
     "Adds a softly faded octave-up layer to the feedback-loop injection using a twice-oversampled grain shifter; Saves CPU when Off.",
+    "Cuts wet-output peaks above a pink-noise target shaped by the wet EQ, by up to three decibels per band.",
     "Blends the immediate dry signal with the reverb and reaches a fully wet output at one hundred percent.",
     "Adjusts the final output level after the dry and wet signals are mixed." };
 }
@@ -52,11 +53,13 @@ LanReverbEditor::LanReverbEditor (LanReverbProcessor& p) : AudioProcessorEditor(
         attachments[i] = std::make_unique<State::SliderAttachment>(p.parameters,ids[i],slider);
         editorTooltips::setHint(slider,labels[i],hints[i]);
     }
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < 4; ++i)
     {
         auto& handle = shelfHandles[size_t(i)]; addAndMakeVisible(handle);
-        const auto frequencyId = i == 0 ? "lowShelfHz" : "highShelfHz";
-        const auto gainId = i == 0 ? "lowShelfDb" : "highShelfDb";
+        constexpr std::array<const char*,4> frequencies {"lowShelfHz","highShelfHz","wetLowShelfHz","wetHighShelfHz"};
+        constexpr std::array<const char*,4> gains {"lowShelfDb","highShelfDb","wetLowShelfDb","wetHighShelfDb"};
+        const auto frequencyId = frequencies[size_t(i)];
+        const auto gainId = gains[size_t(i)];
         handle.begin = [this,frequencyId,gainId]
         { processor.parameters.getParameter(frequencyId)->beginChangeGesture(); processor.parameters.getParameter(gainId)->beginChangeGesture(); };
         handle.end = [this,frequencyId,gainId]
@@ -91,9 +94,11 @@ void LanReverbEditor::moveShelf (int which, juce::Point<float> position)
     const auto rate = processor.getSampleRate() > 0 ? processor.getSampleRate() : 48000.;
     const auto ceiling = lan::shelfFrequencyCeiling(rate);
     const auto frequency = lan::shelfMinHz*std::pow(ceiling/lan::shelfMinHz,std::clamp((position.x-42)/656.f,0.f,1.f));
-    const auto gain = std::clamp((160-position.y)/3.5f,-12.f,lan::shelfMaxBoostDb);
-    auto* frequencyParameter = processor.parameters.getParameter(which == 0 ? "lowShelfHz" : "highShelfHz");
-    auto* gainParameter = processor.parameters.getParameter(which == 0 ? "lowShelfDb" : "highShelfDb");
+    const auto gain = std::clamp((160-position.y)/3.5f,-12.f,which >= 2 ? lan::wetShelfMaxBoostDb : lan::shelfMaxBoostDb);
+    constexpr std::array<const char*,4> frequencies {"lowShelfHz","highShelfHz","wetLowShelfHz","wetHighShelfHz"};
+    constexpr std::array<const char*,4> gains {"lowShelfDb","highShelfDb","wetLowShelfDb","wetHighShelfDb"};
+    auto* frequencyParameter = processor.parameters.getParameter(frequencies[size_t(which)]);
+    auto* gainParameter = processor.parameters.getParameter(gains[size_t(which)]);
     frequencyParameter->setValueNotifyingHost(frequencyParameter->convertTo0to1(float(frequency)));
     gainParameter->setValueNotifyingHost(gainParameter->convertTo0to1(gain));
     updateShelves(); repaint();
@@ -102,10 +107,12 @@ void LanReverbEditor::updateShelves()
 {
     const auto s = processor.settings(); const auto rate = processor.getSampleRate() > 0 ? processor.getSampleRate() : 48000.;
     const auto ceiling = lan::shelfFrequencyCeiling(rate);
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < 4; ++i)
     {
-        const auto hz = std::clamp(double(i == 0 ? s.lowShelfHz : s.highShelfHz),double(lan::shelfMinHz),ceiling);
-        const auto gain = i == 0 ? s.lowShelfDb : s.highShelfDb;
+        const std::array<float,4> frequency {s.lowShelfHz,s.highShelfHz,s.wetLowShelfHz,s.wetHighShelfHz};
+        const std::array<float,4> gains {s.lowShelfDb,s.highShelfDb,s.wetLowShelfDb,s.wetHighShelfDb};
+        const auto hz = std::clamp(double(frequency[size_t(i)]),double(lan::shelfMinHz),ceiling);
+        const auto gain = gains[size_t(i)];
         const auto x = 42+656*std::log(hz/lan::shelfMinHz)/std::log(ceiling/lan::shelfMinHz); const auto y = 160-gain*3.5f;
         shelfHandles[size_t(i)].setBounds(juce::roundToInt(x)-8,juce::roundToInt(y)-8,16,16);
     }
@@ -115,13 +122,13 @@ void LanReverbEditor::resized()
     titleHint.setBounds(24,30,420,36); automatic.setBounds(526,36,78,26); bypass.setBounds(620,36,96,26);
     for (size_t i = 0; i < sliders.size(); ++i)
     {
-        const auto top = i < 6;
-        const auto x = 45+int(top ? i : i-6)*110;
-        const auto y = top ? 310 : 422, controlWidth = 100;
+        const auto top = i < 7;
+        const auto x = top ? 36+int(i)*96 : 45+int(i-7)*110;
+        const auto y = top ? 310 : 422, controlWidth = top ? 88 : 100;
         labels[i].setBounds(x,y,controlWidth,16); sliders[i].setBounds(x,y+20,controlWidth,76);
     }
     updateShelves();
-    labels[0].setBounds(45,310,46,16); sync.setBounds(98,307,47,20);
+    labels[0].setBounds(36,310,46,16); sync.setBounds(88,307,47,20);
     const auto transform = editorScaling::transform(*this,designWidth,designHeight);
     titleHint.setTransform(transform); automatic.setTransform(transform); bypass.setTransform(transform); sync.setTransform(transform);
     for (auto& slider : sliders) slider.setTransform(transform);
@@ -174,13 +181,20 @@ void LanReverbEditor::paint (juce::Graphics& g)
     for (int line = 1; line < 4; ++line) { g.setColour(grid); g.drawHorizontalLine(int(plot.getY()+line*plot.getHeight()/4),plot.getX(),plot.getRight()); }
     if (analysis.revision > 0 && spectrumDisplay.hasFrame())
     {
+        const auto wetColour=juce::Colour(0xff86c8de);
         for (int band = 0; active && band < analysis.count; ++band)
         {
             const auto& b = analysis.bands[size_t(band)];
             const auto x = plot.getX()+plot.getWidth()*std::log(std::max(lan::shelfMinHz,b.frequency)/lan::shelfMinHz)/std::log(ceiling/lan::shelfMinHz);
             g.setColour(amber.withAlpha(.13f)); g.fillRect(juce::Rectangle<float>(x-4,plot.getY(),8,plot.getHeight()));
         }
-        for (int which = 0; which < 2; ++which)
+        for (int band = 0; settings.wetTame > 0 && band < analysis.wetCount; ++band)
+        {
+            const auto& b = analysis.wetBands[size_t(band)];
+            const auto x = plot.getX()+plot.getWidth()*std::log(std::max(lan::shelfMinHz,b.frequency)/lan::shelfMinHz)/std::log(ceiling/lan::shelfMinHz);
+            g.setColour(wetColour.withAlpha(.09f)); g.fillRect(juce::Rectangle<float>(x-3,plot.getY(),6,plot.getHeight()));
+        }
+        for (int which = 0; which < (settings.wetTame > 0 ? 3 : 2); ++which)
         {
             juce::Path path;
             const auto& values=spectrumDisplay.trace(which);
@@ -200,30 +214,36 @@ void LanReverbEditor::paint (juce::Graphics& g)
                              x+2.f*step/3.f,std::clamp(second-slopeSecond/3.f,low,high),
                              x+step,second);
             }
-            g.setColour(which == 0 ? secondary.withAlpha(.65f) : amber); g.strokePath(path,juce::PathStrokeType(which == 0 ? 1.f : 1.5f));
+            g.setColour(which == 0 ? secondary.withAlpha(.65f) : which == 1 ? amber : wetColour.withAlpha(.6f));
+            g.strokePath(path,juce::PathStrokeType(which == 0 ? 1.f : 1.5f));
         }
     }
     else { g.setColour(secondary); g.drawText("Listening to the feedback tail",plot,juce::Justification::centred); }
-    // The target curve uses the same coefficients and gain budget as the
-    // feedback banks; the live bank follows it through its 250 ms crossfade.
-    juce::Path eq;
+    // The two target curves use the same coefficients as the separate
+    // feedback and wet-output filter banks while those banks crossfade.
+    juce::Path feedbackEq, wetEq;
     for (int i = 0; i < 768; ++i)
     {
         const auto hz = lan::shelfMinHz*std::pow(ceiling/lan::shelfMinHz,i/767.);
-        const auto db = lan::ReverbEngine::responseDb(settings,analysis,hz,rate);
         const auto x = plot.getX()+plot.getWidth()*i/767.f;
-        const auto y = std::clamp(160-db*3.5f,plot.getY(),plot.getBottom());
-        if (i == 0) eq.startNewSubPath(x,y); else eq.lineTo(x,y);
+        const auto feedbackY = std::clamp(160-lan::ReverbEngine::responseDb(settings,analysis,hz,rate)*3.5f,plot.getY(),plot.getBottom());
+        const auto wetY = std::clamp(160-lan::ReverbEngine::wetResponseDb(settings,hz,rate)*3.5f,plot.getY(),plot.getBottom());
+        if (i == 0) { feedbackEq.startNewSubPath(x,feedbackY); wetEq.startNewSubPath(x,wetY); }
+        else { feedbackEq.lineTo(x,feedbackY); wetEq.lineTo(x,wetY); }
     }
-    g.setColour(foreground.withAlpha(.8f)); g.strokePath(eq,juce::PathStrokeType(1.2f));
+    g.setColour(foreground.withAlpha(.8f)); g.strokePath(feedbackEq,juce::PathStrokeType(1.2f));
+    const auto wetColour=juce::Colour(0xff86c8de);
+    g.setColour(wetColour.withAlpha(.9f)); g.strokePath(wetEq,juce::PathStrokeType(1.4f));
     g.setColour(secondary); g.setFont(juce::FontOptions(8.f));
-    g.drawText("TARGET EQ / 0 dB",48,149,110,10,juce::Justification::centredLeft);
+    g.drawText("FB EQ",48,149,44,10,juce::Justification::centredLeft);
+    g.setColour(wetColour); g.drawText("WET EQ",96,149,52,10,juce::Justification::centredLeft);
+    g.setColour(secondary); g.drawText("0 dB",153,149,36,10,juce::Justification::centredLeft);
     const auto shelfText = [] (const char* name, float hz, float db)
     { return juce::String(name)+" "+(hz >= 1000 ? juce::String(hz/1000,1)+"k" : juce::String(hz,0))+" Hz / "+juce::String(db,1)+" dB"; };
     g.drawText(shelfText("LO",settings.lowShelfHz,settings.lowShelfDb),42,119,230,11,juce::Justification::centredLeft);
     g.drawText(shelfText("HI",settings.highShelfHz,settings.highShelfDb),468,119,230,11,juce::Justification::centredRight);
     g.setColour(secondary); g.setFont(juce::FontOptions(9.f));
-    g.drawText("INPUT / GOLD: FEEDBACK",40,258,230,16,juce::Justification::centredLeft);
+    g.drawText("INPUT / GOLD: FEEDBACK / CYAN: WET EQ",40,258,310,16,juce::Justification::centredLeft);
     g.drawText("OUT "+juce::String(juce::Decibels::gainToDecibels(outputPeak,-100.f),1)+" dBFS",500,258,198,16,juce::Justification::centredRight);
     g.setColour(foreground); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("TAP DISTRIBUTION",40,550,230,18,juce::Justification::centredLeft);
