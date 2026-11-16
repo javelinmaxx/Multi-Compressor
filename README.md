@@ -28,7 +28,7 @@ fallback. See [GPU rendering and validation](projects/GPU_RENDERING.md).
 | [Zao Drive](projects/ZaoDrive/README.md) | `ZaoDrive` | Overdrive | Four circuit models, Smart harmonic shaping, Clear contour, waveform preview, Auto compensation |
 | [Ren Transformer](projects/RenTransformer/README.md) | `RenTransformer` | Transformer coloration | Yinyang's transformer stage with adjustable Response in a compact five-knob interface |
 | [Kuo Velvet](projects/KuoVelvet/README.md) | `KuoVelvet` | Convolution widening | Kuo's Velvet stage with Width, Transient, Attack, and Output controls |
-| [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment and Auto Depth |
+| [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment, and click-to-audition delta |
 | [Lan Reverb](projects/LanReverb/README.md) | `LanReverb` | Reverb / delay | Long stereo tails, live feedback-tap scattering, automatic resonance EQ and phase dispersion |
 | [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | 4× twelve-band transient enhancement with 5 ms lookahead or dynamically softened tube-style drive, Mix, and crossover spectrum display |
 | [Qin Synth](projects/QinSynth/README.md) | `QinSynth` | MIDI instrument | Sixteen-voice virtual-analog synthesis, three eightfold-unison oscillators, key panning, Zao drive, MIDI-steered Lan delay-reverb |
@@ -151,6 +151,7 @@ independently of the manual settings, and **Transient** sets its release time.
 processing to opposing transient shifts.
 The side spectrogram moves left to right, colouring early bands green and late
 bands red, with white left-channel and gold right-channel traces for applied phase.
+Click the phase field to audition only the difference between processed and delayed dry audio.
 
 [Controls and signal path](projects/XuanPhase/README.md) ·
 [Phase and transient measurements](projects/XuanPhase/Tests/Reports/REPORT.md) ·

@@ -11,4 +11,4 @@
 | Transient | Sets how quickly automatic phase correction releases after a transient, with longer times retaining it longer. |
 | Stereo Link | Links automatic correction at +100%, processes channels independently at 0%, and separates their transients toward -100%. |
 | Bypass | Bypasses phase processing while preserving the fixed 50 ms latency. |
-| Phase Field | Shows three seconds of input transients moving left to right, with early bands green, late bands red, and applied left phase in white and right phase in gold on a plus or minus 180 degree scale with correction targets capped at plus or minus 150 degrees. |
+| Phase Field | Click the phase field to audition only the phase-rotated difference from the delayed input. |

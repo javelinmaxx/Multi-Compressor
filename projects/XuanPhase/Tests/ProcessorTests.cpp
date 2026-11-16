@@ -479,17 +479,39 @@ void phaseDisplayTests()
         check (! seams.next(), "phase wrap crossings split the path instead of drawing across the display");
     }
 }
+void deltaSoloTests()
+{
+    std::vector<float> input (8192, 0.f);
+    input[0] = .8f;
+    for (size_t i = 512; i < 2048; ++i)
+        input[i] += .2f*std::sin (juce::MathConstants<double>::twoPi*700*i/48000);
+    xuan::Settings neutral, rotated, delta;
+    rotated.low = 90; rotated.high = -45;
+    delta = rotated; delta.deltaSolo = true;
+    const auto dry = run (neutral, input);
+    const auto wet = run (rotated, input);
+    const auto audition = run (delta, input);
+    double maximumError = 0, deltaEnergy = 0;
+    for (size_t i = 0; i < input.size(); ++i)
+    {
+        maximumError = std::max (maximumError, std::abs (double (audition[i])-(double (wet[i])-dry[i])));
+        deltaEnergy += double (audition[i])*audition[i];
+    }
+    check (maximumError < 2e-6 && deltaEnergy > .01,
+           "Delta Solo auditions processed minus latency-aligned dry audio on the same phase path");
+}
 void dspTests (const juce::File& directory)
 {
     directory.createDirectory();
+    deltaSoloTests();
     phaseDisplayTests();
     phaseCapTests (directory);
     XuanPhaseProcessor saved, restored;
     set (saved, "link", -70);
-    set (saved, "depth", -75); set (saved, "transient", 700);
+    set (saved, "depth", -75); set (saved, "transient", 700); set (saved, "deltaSolo", 1);
     juce::MemoryBlock state; saved.getStateInformation (state); restored.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
-    check (std::abs (restored.settings().depth+75) < .001f && std::abs (restored.settings().transient-700) < .001f && std::abs (restored.settings().link+70) < .001f,
-           "negative Depth and Transient release survive session recall");
+    check (std::abs (restored.settings().depth+75) < .001f && std::abs (restored.settings().transient-700) < .001f && std::abs (restored.settings().link+70) < .001f
+           && restored.settings().deltaSolo, "negative Depth, Transient release, and Delta Solo survive session recall");
     set (saved, "depth", 50);
     auto oldOutput = saved.parameters.copyState();
     for (int i = oldOutput.getNumChildren()-1; i >= 0; --i)
@@ -501,11 +523,11 @@ void dspTests (const juce::File& directory)
            "older Output states migrate to shared Stereo Link without treating gain as a link value");
     auto oldState = saved.parameters.copyState();
     for (int i = oldState.getNumChildren()-1; i >= 0; --i)
-        if (oldState.getChild (i).getProperty ("id").toString() == "transient") oldState.removeChild (i, nullptr);
+        if (const auto id = oldState.getChild (i).getProperty ("id").toString(); id == "transient" || id == "deltaSolo") oldState.removeChild (i, nullptr);
     XuanPhaseProcessor legacy;
     legacy.parameters.replaceState (oldState);
-    check (std::abs (legacy.settings().depth-50) < .001f && std::abs (legacy.settings().transient-200) < .001f,
-           "sessions predating Transient retain their stored positive Depth and the new default release");
+    check (std::abs (legacy.settings().depth-50) < .001f && std::abs (legacy.settings().transient-200) < .001f
+           && ! legacy.settings().deltaSolo, "older sessions retain Depth and default to normal audition output");
     std::ofstream phase ((directory.getChildFile ("phase.csv")).getFullPathName().toStdString());
     phase << "setting,frequency,phase_deg,gain_db\n";
     for (double rate : {8000., 44100., 48000., 96000., 192000.})
@@ -762,7 +784,7 @@ void dspTests (const juce::File& directory)
     }
     check (remaining[0] < 1 && remaining[2] > remaining[1]+1,
            "the live worker releases short Transient settings faster than long settings");
-    XuanPhaseProcessor bypassed; set (bypassed, "low", 90); set (bypassed, "link", -100); bypassed.prepareToPlay (48000, 128);
+    XuanPhaseProcessor bypassed; set (bypassed, "low", 90); set (bypassed, "link", -100); set (bypassed, "deltaSolo", 1); bypassed.prepareToPlay (48000, 128);
     double bypassError = 0;
     for (int at = 0; at < 4096; at += 128)
     {
@@ -771,7 +793,7 @@ void dspTests (const juce::File& directory)
         for (int i = 0; i < 128; ++i)
             bypassError = std::max (bypassError, std::abs (static_cast<double> (block.getSample (0, i))-(at+i == 2400 ? 1 : 0)));
     }
-    check (bypassError < 1e-6, "host bypass ignores nonzero rotation and negative Stereo Link while retaining exactly 50 ms latency");
+    check (bypassError < 1e-6, "host bypass ignores rotation, negative Stereo Link, and Delta Solo while retaining exactly 50 ms latency");
 }
 void hostedEditorTests()
 {
@@ -912,6 +934,21 @@ void editor (const juce::File& path)
     set (p, "low", 0);
     check (meter != nullptr && meter->getX() >= 524 && meter->getHeight() > meter->getWidth(), "vertical phase meter sits beside the original controls");
     check (meter->getTooltip().isNotEmpty(), "phase meter has a hover hint explaining colours and scroll direction");
+    const auto clickField = [&] (juce::Point<float> point)
+    {
+        const auto now = juce::Time::getCurrentTime();
+        meter->mouseDown (juce::MouseEvent (
+            juce::Desktop::getInstance().getMainMouseSource(), point,
+            juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, meter, meter,
+            now, point, now, 1, false));
+    };
+    clickField ({100.f, 110.f});
+    check (p.settings().deltaSolo, "clicking the phase field enables the host-automatable Delta Solo parameter");
+    clickField ({230.f, 110.f});
+    check (! p.settings().deltaSolo, "clicking the phase trace again restores the full output");
+    clickField ({12.f, 12.f});
+    check (! p.settings().deltaSolo, "clicking outside the phase view does not toggle Delta Solo");
     const auto green = XuanPhaseMeter::timingColour (-1, 1), red = XuanPhaseMeter::timingColour (1, 1);
     check (green.getGreen() > green.getRed() && red.getRed() > red.getGreen(), "early bands use green and late bands use red");
     p.prepareToPlay (48000, 128); p.setMeterVisible (true);
@@ -957,9 +994,11 @@ void editor (const juce::File& path)
     }
     check (onsetSeen && earlySeen && lateSeen, "live transient spectra contain both early and lagging timing indications");
     check (meter->historySize() > 30 && movedRight, "new spectra enter on the left and existing columns move right");
+    set (p, "deltaSolo", 1);
     auto image = e->createComponentSnapshot (e->getLocalBounds()); juce::MemoryOutputStream png;
     path.getParentDirectory().createDirectory();
     check (juce::PNGImageFormat().writeImageToStream (image, png) && path.replaceWithData (png.getData(), png.getDataSize()), "native phase editor preview is saved");
+    set (p, "deltaSolo", 0);
     set (p, "automatic", 0); bool manualSpectrum = false;
     for (int at = 0; at < 12032; at += 128)
     {
@@ -1017,7 +1056,7 @@ int main (int argc, char** argv)
             const juce::File directory (argv[2]); directory.createDirectory();
             onsetAccuracyTests (directory); std::cout << checks << " onset accuracy checks passed\n"; return 0;
         }
-        stateTests<XuanPhaseProcessor> (8);
+        stateTests<XuanPhaseProcessor> (9);
         dspTests (argc > 2 && juce::String (argv[1]) == "--report" ? juce::File (argv[2]) : juce::File ("/tmp/xuan-report"));
         if (argc > 2 && juce::String (argv[1]) == "--editor") editor (juce::File (argv[2]));
         std::cout << checks << " Xuan Phase checks passed\n"; return 0;

@@ -12,6 +12,7 @@ struct Settings
     float low = 0, high = 0, split = 1000, depth = 50, link = 100;
     bool automatic = false, bypass = false;
     float transient = 200;
+    bool deltaSolo = false;
     bool operator== (const Settings& b) const noexcept
     { return juce::exactlyEqual (low, b.low) && juce::exactlyEqual (high, b.high)
           && juce::exactlyEqual (split, b.split) && juce::exactlyEqual (depth, b.depth) && juce::exactlyEqual (link, b.link) && automatic == b.automatic
@@ -144,6 +145,6 @@ private:
     double sampleRate = 48000;
     int delay = 1200, lookahead = 1200, aheadPosition = 0, partitions = 18, spectrumPosition = -1, position = 0, dryPosition = 0, ringPosition = 0;
     int active = 0, pending = -1, fadePosition = 0, fadeLength = 240;
-    juce::SmoothedValue<float> bypassBlend;
+    juce::SmoothedValue<float> bypassBlend, deltaSoloBlend;
 };
 }

@@ -5,6 +5,8 @@ independent low/high rotation, a smooth adjustable crossover, signed Auto Depth,
 Transient release, Stereo Link, and **25 ms correction lookahead** in a
 50%–120% scalable editor, with **50 ms total reported latency**.
 The 840 × 490 default panel includes a vertical phase-field meter beside the controls.
+Click its spectrogram or phase trace to toggle **Delta Solo**, which auditions
+the phase-rotated output minus the latency-aligned dry input.
 
 ![Xuan Phase native editor](Previews/xuan-phase.png)
 
@@ -24,6 +26,8 @@ the detector **25 ms lookahead before convolution**, so phase targets can settle
 before the transient enters the filter. The plugin reports
 `round(sampleRate × 0.05)` samples to the host: **2,400 samples at 48 kHz**.
 Neutral, Auto Off, and host/plugin bypass all retain that same 50 ms latency.
+Delta Solo also retains that latency and fades between normal and difference
+output over 5 ms; bypass still returns the delayed dry input.
 Host/plugin bypass keeps the selected phase processing and Auto detector hot,
 so current correction targets are ready when the wet signal returns. Auto Off
 and zero Depth still suspend automatic correction analysis; a visible meter can
@@ -123,6 +127,10 @@ frequency axis. **New data enters at the left and moves right** toward older
 history. Brighter pixels mean more input energy; **green** marks frequency bands
 arriving before the detected transient anchor, and **red** marks those arriving
 after it. Colours describe observed input timing, so they also work with Auto Off.
+Click the spectrogram or phase trace to audition only the processing difference;
+click again to restore the normal output. The **DELTA SOLO** label lights up
+while this saved, automatable audition mode is active. A neutral phase response
+has almost no delta signal.
 Timing colors interpolate between adjacent detected bands; spectral energy
 remains unchanged, so genuine gaps in the input still appear dark.
 A small display hold makes short onsets visible without changing the audio detector.

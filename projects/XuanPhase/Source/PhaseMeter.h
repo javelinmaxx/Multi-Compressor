@@ -13,6 +13,7 @@ public:
     explicit XuanPhaseMeter (XuanPhaseProcessor&);
     ~XuanPhaseMeter() override;
     void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
     void visibilityChanged() override;
     void setActive (bool);
     int historySize() const noexcept { return columnsWritten; }
@@ -25,6 +26,7 @@ private:
     static constexpr int columns = 90;
     void timerCallback() override;
     void append (const xuan::SpectrumFrame&);
+    void toggleDeltaSolo();
     XuanPhaseProcessor& processor;
     juce::Image history { juce::Image::ARGB, columns, xuan::meterBins, true };
     std::array<float, columns> transient {}, peak {};

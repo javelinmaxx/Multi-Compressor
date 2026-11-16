@@ -6,10 +6,25 @@ const auto early = juce::Colour (0xff72ce9c), late = juce::Colour (0xfff07880);
 }
 XuanPhaseMeter::XuanPhaseMeter (XuanPhaseProcessor& p) : processor (p)
 {
-    setTooltip ("Shows three seconds of input transients moving left to right, with early bands green, late bands red, and applied left phase in white and right phase in gold on a plus or minus 180 degree scale with correction targets capped at plus or minus 150 degrees.");
+    setTooltip ("Click the phase field to audition only the phase-rotated difference from the delayed input.");
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
     lastColumn = lastInput = juce::Time::getMillisecondCounterHiRes();
 }
 XuanPhaseMeter::~XuanPhaseMeter() { stopTimer(); processor.setMeterVisible (false); }
+void XuanPhaseMeter::toggleDeltaSolo()
+{
+    if (auto* parameter = processor.parameters.getParameter ("deltaSolo"))
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (parameter->getValue() >= .5f ? 0.f : 1.f);
+        parameter->endChangeGesture();
+        repaint();
+    }
+}
+void XuanPhaseMeter::mouseDown (const juce::MouseEvent& event)
+{
+    if (juce::Rectangle<int> (38, 64, 228, 204).contains (event.getPosition())) toggleDeltaSolo();
+}
 void XuanPhaseMeter::visibilityChanged() { setActive (isShowing()); }
 void XuanPhaseMeter::setActive (bool active)
 {
@@ -132,7 +147,10 @@ void XuanPhaseMeter::paint (juce::Graphics& g)
 {
     drawPanel (g, getLocalBounds().toFloat(), juce::Colour (0xff14171b));
     g.setColour (foreground); g.setFont (juce::FontOptions (13).withStyle ("bold"));
-    g.drawText ("PHASE FIELD", 14, 12, 250, 20, juce::Justification::centredLeft);
+    g.drawText ("PHASE FIELD", 14, 12, 155, 20, juce::Justification::centredLeft);
+    const auto deltaSolo = processor.parameters.getRawParameterValue ("deltaSolo")->load() >= .5f;
+    g.setColour (deltaSolo ? amber : secondary); g.setFont (juce::FontOptions (9).withStyle (deltaSolo ? "bold" : "plain"));
+    g.drawText (deltaSolo ? "DELTA SOLO" : "CLICK FOR DELTA", 162, 14, 104, 17, juce::Justification::centredRight);
     g.setFont (juce::FontOptions (9));
     g.setColour (early); g.drawText ("EARLY", 14, 34, 50, 16, juce::Justification::centredLeft);
     g.setColour (late); g.drawText ("LATE", 68, 34, 50, 16, juce::Justification::centredLeft);

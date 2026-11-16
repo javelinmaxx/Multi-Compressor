@@ -39,6 +39,6 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void parameterChanged (const juce::String&, float) override { engine.changed(); }
     xuan::PhaseEngine engine;
-    std::array<std::atomic<float>*, 8> raw {};
+    std::array<std::atomic<float>*, 9> raw {};
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (XuanPhaseProcessor)
 };

@@ -1,6 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-namespace { constexpr std::array<const char*, 8> ids { "low", "high", "split", "depth", "link", "automatic", "bypass", "transient" }; }
+namespace { constexpr std::array<const char*, 9> ids { "low", "high", "split", "depth", "link", "automatic", "bypass", "transient", "deltaSolo" }; }
 juce::AudioProcessorValueTreeState::ParameterLayout XuanPhaseProcessor::createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -20,6 +20,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout XuanPhaseProcessor::createPa
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "automatic", 1 }, "Auto phase", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "bypass", 1 }, "Bypass", false));
     add ("transient", "Transient release", 20, 1000, 1, 200, "ms");
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "deltaSolo", 1 }, "Delta solo", false));
     return layout;
 }
 XuanPhaseProcessor::XuanPhaseProcessor()
@@ -37,7 +38,7 @@ XuanPhaseProcessor::~XuanPhaseProcessor()
 xuan::Settings XuanPhaseProcessor::settings() const noexcept
 {
     const auto value = [&] (size_t i) { return raw[i]->load (std::memory_order_relaxed); };
-    return { value (0), value (1), value (2), value (3), value (4), value (5) >= .5f, value (6) >= .5f, value (7) };
+    return { value (0), value (1), value (2), value (3), value (4), value (5) >= .5f, value (6) >= .5f, value (7), value (8) >= .5f };
 }
 void XuanPhaseProcessor::prepareToPlay (double rate, int)
 {

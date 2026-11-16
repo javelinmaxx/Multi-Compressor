@@ -455,6 +455,7 @@ void PhaseEngine::prepare (double rate, std::function<Settings()> provider, bool
     for (int ch = 0; ch < 2; ++ch) { slots[0].kernels[static_cast<size_t> (ch)].build (ir, partitions); prepareMeter (slots[0], ir, ch); }
     slots[0].state.store (3);
     bypassBlend.reset (rate, .005); bypassBlend.setCurrentAndTargetValue (s.bypass ? 1.f : 0.f);
+    deltaSoloBlend.reset (rate, .005); deltaSoloBlend.setCurrentAndTargetValue (s.deltaSolo ? 1.f : 0.f);
     meterBypass = s.bypass ? 1.f : 0.f; publishRotation();
     if (worker) startThread (juce::Thread::Priority::normal);
 }
@@ -571,6 +572,7 @@ void PhaseEngine::process (juce::AudioBuffer<float>& buffer, const Settings& s, 
     autoActive.store (s.automatic && ! juce::exactlyEqual (s.depth, 0.f), std::memory_order_relaxed);
     channelCount = channels;
     bypassBlend.setTargetValue (s.bypass || hostBypass ? 1.f : 0.f);
+    deltaSoloBlend.setTargetValue (s.deltaSolo ? 1.f : 0.f);
     for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
         std::array<float, 2> in {}, out {}, bypassed {};
@@ -600,11 +602,13 @@ void PhaseEngine::process (juce::AudioBuffer<float>& buffer, const Settings& s, 
         rightAnalysisRing[static_cast<size_t> (ringPosition)] = channels == 1 ? in[0] : in[1];
         ringPosition = (ringPosition+1)%static_cast<int> (analysisRing.size());
         const auto bypass = bypassBlend.getNextValue();
+        const auto deltaSolo = deltaSoloBlend.getNextValue();
         meterBypass = hostBypass ? 1.f : bypass;
         for (int ch = 0; ch < channels; ++ch)
         {
             const auto c = static_cast<size_t> (ch); const auto wet = out[c];
-            buffer.setSample (ch, i, hostBypass || bypass >= 1 ? bypassed[c] : wet+bypass*(bypassed[c]-wet));
+            const auto audition = wet-deltaSolo*bypassed[c];
+            buffer.setSample (ch, i, hostBypass || bypass >= 1 ? bypassed[c] : audition+bypass*(bypassed[c]-audition));
         }
         if (pending >= 0 && ++fadePosition >= fadeLength)
         {
