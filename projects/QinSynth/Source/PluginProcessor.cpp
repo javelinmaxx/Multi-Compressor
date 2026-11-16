@@ -16,6 +16,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id,1},name,
             juce::NormalisableRange<float>{lo,hi,step},initial,juce::AudioParameterFloatAttributes().withLabel(unit)));
     };
+    const auto addEnvelopeTime=[&result](const juce::String& id,const juce::String& name,bool milliseconds,float initial)
+    {
+        const auto low=milliseconds ? 1.f : .001f;
+        const auto high=milliseconds ? 5000.f : 5.f;
+        juce::NormalisableRange<float> range {low,high,
+            [](float lo,float hi,float position) { return lo*std::pow(hi/lo,position); },
+            [](float lo,float hi,float value) { return std::log(value/lo)/std::log(hi/lo); },
+            [](float lo,float,float value) { return std::round(value/lo)*lo; }};
+        result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id,1},name,
+            range,initial,juce::AudioParameterFloatAttributes().withLabel(milliseconds ? "ms" : "s")));
+    };
     for(int osc=0;osc<oscillatorCount;++osc)
     {
         const juce::String prefix(prefixes[size_t(osc)]), title="Oscillator "+juce::String(osc+1);
@@ -28,9 +39,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         add(prefix+"Spread",title+" spread",0,100,.1f,35,"%");
         add(prefix+"Pan",title+" pan",-100,100,.1f,0,"%");
     }
-    add("attack","Attack",.001f,2,.001f,.01f,"s");
-    add("release","Release",.01f,5,.001f,.3f,"s");
-    add("ampDecay","Amp decay",.01f,5,.001f,.2f,"s");
+    addEnvelopeTime("attack","Attack",false,.01f);
+    addEnvelopeTime("release","Release",false,.3f);
+    addEnvelopeTime("ampDecay","Amp decay",false,.2f);
     add("ampSustain","Amp sustain",0,100,.1f,100,"%");
     add("ampCurve","Amp curve",-100,100,.1f,0,"%");
     for(const char* prefix:{"flt","mod"})
@@ -38,30 +49,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         const juce::String id(prefix);
         if(id=="flt")
         {
-            const auto addTime=[&result,&id](const char* suffix,float initial)
-            {
-                juce::NormalisableRange<float> range {1.f,5000.f,
-                    [](float low,float high,float position) { return low*std::pow(high/low,position); },
-                    [](float low,float high,float value) { return std::log(value/low)/std::log(high/low); },
-                    [](float,float,float value) { return std::round(value); }};
-                result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id+suffix,1},
-                    id+" "+suffix,range,initial,juce::AudioParameterFloatAttributes().withLabel("ms")));
-            };
-            addTime("Attack",10.f); addTime("Decay",200.f);
+            addEnvelopeTime(id+"Attack",id+" attack",true,10.f);
+            addEnvelopeTime(id+"Decay",id+" decay",true,200.f);
             juce::NormalisableRange<float> sustainRange {0.f,100.f,
                 [](float,float,float position) { return std::expm1(position*std::log(101.f)); },
                 [](float,float,float value) { return std::log1p(value)/std::log(101.f); },
                 [](float,float,float value) { return std::round(value*10.f)*.1f; }};
             result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"fltSustain",1},
                 "flt sustain",sustainRange,0.f,juce::AudioParameterFloatAttributes().withLabel("%")));
-            addTime("Release",300.f);
+            addEnvelopeTime(id+"Release",id+" release",true,300.f);
         }
         else
         {
-            add(id+"Attack",id+" attack",.001f,2,.001f,.01f,"s");
-            add(id+"Decay",id+" decay",.01f,5,.001f,.2f,"s");
+            addEnvelopeTime(id+"Attack",id+" attack",false,.01f);
+            addEnvelopeTime(id+"Decay",id+" decay",false,.2f);
             add(id+"Sustain",id+" sustain",0,100,.1f,0,"%");
-            add(id+"Release",id+" release",.01f,5,.001f,.3f,"s");
+            addEnvelopeTime(id+"Release",id+" release",false,.3f);
         }
         add(id+"Curve",id+" curve",-100,100,.1f,0,"%");
     }
@@ -95,6 +98,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     add("tapMotion","Onset tap",0,100,.1f,50,"%");
     add("phaseMotion","Onset phase",0,100,.1f,50,"%");
     add("output","Output",-24,12,.1f,0,"dB");
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"envTimesFive",1},
+        "Envelope times x5",false));
+    add("noiseLevel","Noise level",0,100,.1f,30,"%");
+    add("noiseTune","Noise tune",-24,24,.1f,0,"st");
+    juce::NormalisableRange<float> noiseHighPassRange {20.f,12000.f,
+        [](float low,float high,float position) { return low*std::pow(high/low,position); },
+        [](float low,float high,float value) { return std::log(value/low)/std::log(high/low); },
+        [](float,float,float value) { return std::round(value); }};
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"noiseHpf",1},
+        "Noise high pass",noiseHighPassRange,20.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
+    add("noisePan","Noise pan",-100,100,.1f,0,"%");
+    result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"noiseStyle",1},
+        "Noise style",juce::StringArray{"White","Pink","Velvet"},0));
     return result;
 }
 QinSynthProcessor::QinSynthProcessor()
@@ -158,16 +174,17 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
         target.spread=std::clamp(get(prefix+"Spread")*.01f,0.f,1.f);
         target.pan=std::clamp(get(prefix+"Pan")*.01f,-1.f,1.f);
     }
-    settings.env[0]={std::clamp(get("attack"),.001f,2.f),std::clamp(get("ampDecay"),.01f,5.f),
-        std::clamp(get("ampSustain")*.01f,0.f,1.f),std::clamp(get("release"),.01f,5.f),
+    const auto timeMultiplier=get("envTimesFive")>=.5f ? 5.f : 1.f;
+    settings.env[0]={std::clamp(get("attack")*timeMultiplier,.001f,25.f),std::clamp(get("ampDecay")*timeMultiplier,.001f,25.f),
+        std::clamp(get("ampSustain")*.01f,0.f,1.f),std::clamp(get("release")*timeMultiplier,.001f,25.f),
         std::clamp(get("ampCurve")*.01f,-1.f,1.f)};
     for(int index=1;index<3;++index)
     {
         const juce::String prefix(index==1 ? "flt" : "mod");
-        const auto scale=index==1 ? .001f : 1.f;
-        settings.env[size_t(index)]={std::clamp(get(prefix+"Attack")*scale,.001f,5.f),
-            std::clamp(get(prefix+"Decay")*scale,.001f,5.f),std::clamp(get(prefix+"Sustain")*.01f,0.f,1.f),
-            std::clamp(get(prefix+"Release")*scale,.001f,5.f),std::clamp(get(prefix+"Curve")*.01f,-1.f,1.f)};
+        const auto scale=index==1 ? .001f*timeMultiplier : timeMultiplier;
+        settings.env[size_t(index)]={std::clamp(get(prefix+"Attack")*scale,.001f,25.f),
+            std::clamp(get(prefix+"Decay")*scale,.001f,25.f),std::clamp(get(prefix+"Sustain")*.01f,0.f,1.f),
+            std::clamp(get(prefix+"Release")*scale,.001f,25.f),std::clamp(get(prefix+"Curve")*.01f,-1.f,1.f)};
     }
     settings.modDepth=std::clamp(get("modDepth")*.01f,0.f,1.f);
     settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,1);
@@ -178,6 +195,11 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.filterMerge=std::clamp(get("filterMerge")*.01f,0.f,1.f);
     settings.filterType=std::clamp(juce::roundToInt(get("filterType")),0,4);
     settings.noise=get("noise")>=.5f;
+    settings.noiseOscillator.level=std::clamp(get("noiseLevel")*.01f,0.f,1.f);
+    settings.noiseOscillator.tune=std::clamp(get("noiseTune"),-24.f,24.f);
+    settings.noiseOscillator.highPass=std::clamp(get("noiseHpf"),20.f,12000.f);
+    settings.noiseOscillator.pan=std::clamp(get("noisePan")*.01f,-1.f,1.f);
+    settings.noiseOscillator.style=std::clamp(juce::roundToInt(get("noiseStyle")),0,2);
     settings.pan=std::clamp(get("keyPan")*.01f,0.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
     settings.verbTime=std::clamp(get("time"),25.f,1000.f);
@@ -330,6 +352,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
     std::array<std::array<std::array<double,maxUnison>,oscillatorCount>,maxVoices> steps {};
+    struct NoiseCoefficients { float a1=1, a2=0, a3=0, highPass=0; };
+    std::array<NoiseCoefficients,maxVoices> noiseCoefficients {};
     for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
     {
         const auto& voice=voices[voiceIndex];
@@ -345,6 +369,16 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 const auto offset=control.unison==1 ? 0.0 : 2.0*u/(control.unison-1)-1.0;
                 steps[voiceIndex][size_t(osc)][size_t(u)]=std::min(.49,center*std::pow(2.0,offset*control.detune/1200.0)/sampleRate);
             }
+        }
+        if(settings.noise && settings.noiseOscillator.level>0)
+        {
+            const auto center=std::clamp(base*std::exp2(settings.noiseOscillator.tune/12.f),
+                                         30.0,sampleRate*.4);
+            const auto g=std::tan(juce::MathConstants<double>::pi*center/sampleRate);
+            constexpr double damping=1.5;
+            const auto a1=1/(1+g*(g+damping));
+            noiseCoefficients[voiceIndex]={float(a1),float(g*a1),float(g*g*a1),
+                float(1-std::exp(-twoPi*std::min(double(settings.noiseOscillator.highPass),sampleRate*.44)/sampleRate))};
         }
     }
     for(int i=start;i<start+count;++i)
@@ -378,13 +412,30 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                     voiceRight+=value*std::sqrt((1+pan)*.5);
                 }
             }
-            if(settings.noise)
+            if(settings.noise && settings.noiseOscillator.level>0)
             {
                 auto& random=voice.noiseState;
                 random^=random<<13; random^=random>>17; random^=random<<5;
-                const auto noise=(float(random>>8)*(1.f/8388607.5f)-1.f)*.3f;
-                voiceLeft+=noise*std::sqrt((1.f-voice.pan)*.5f);
-                voiceRight+=noise*std::sqrt((1.f+voice.pan)*.5f);
+                const auto white=float(random>>8)*(1.f/8388607.5f)-1.f;
+                auto& pink=voice.pink;
+                pink[0]=.99765f*pink[0]+.099046f*white;
+                pink[1]=.963f*pink[1]+.2965164f*white;
+                pink[2]=.57f*pink[2]+1.0526913f*white;
+                const auto pinkSample=.08f*(pink[0]+pink[1]+pink[2]+.1848f*white);
+                const auto velvet=(random&1023u)<64u ? white*4.f : 0.f;
+                const auto source=settings.noiseOscillator.style==1 ? pinkSample
+                    : settings.noiseOscillator.style==2 ? velvet : white;
+                const auto& noiseFilter=noiseCoefficients[voiceIndex];
+                const auto v3=source-voice.noiseLowState;
+                const auto band=noiseFilter.a1*voice.noiseBandState+noiseFilter.a2*v3;
+                const auto low=voice.noiseLowState+noiseFilter.a2*voice.noiseBandState+noiseFilter.a3*v3;
+                voice.noiseBandState=2*band-voice.noiseBandState;
+                voice.noiseLowState=2*low-voice.noiseLowState;
+                voice.noiseHighPassState+=noiseFilter.highPass*(band-voice.noiseHighPassState);
+                const auto noise=(band-voice.noiseHighPassState)*settings.noiseOscillator.level;
+                const auto pan=std::clamp(voice.pan+settings.noiseOscillator.pan,-.98f,.98f);
+                voiceLeft+=noise*std::sqrt((1.f-pan)*.5f);
+                voiceRight+=noise*std::sqrt((1.f+pan)*.5f);
             }
             if(settings.modTarget==0 && settings.modDepth>0)
             {

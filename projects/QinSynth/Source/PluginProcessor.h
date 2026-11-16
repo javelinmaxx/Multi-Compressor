@@ -30,7 +30,8 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 40.0; }
+    double getTailLengthSeconds() const override
+    { return parameters.getRawParameterValue("envTimesFive")->load()>=.5f ? 150.0 : 40.0; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}
@@ -56,13 +57,17 @@ private:
         uint64_t age=0;
         float velocity=0, pan=0, cutoff=0;
         uint32_t noiseState=1;
+        std::array<float,3> pink {};
+        float noiseBandState=0, noiseLowState=0, noiseHighPassState=0;
         bool keyDown=false, sustained=false, active=false;
     };
     struct OscillatorSettings { int wave=0, octave=0, unison=1; float level=0, detune=0, spread=.12f, pan=0; };
+    struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
     struct Settings
     {
         std::array<OscillatorSettings,oscillatorCount> oscillator;
+        NoiseSettings noiseOscillator;
         std::array<EnvelopeSettings,3> env;
         float pan=0, drive=0, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
         int filterType=0, modTarget=0;

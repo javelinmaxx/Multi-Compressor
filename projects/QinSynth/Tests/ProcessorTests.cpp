@@ -12,6 +12,8 @@ struct QinSynthTestAccess
     static float tap(const QinSynthProcessor& p) { return p.onsetTap; }
     static float phase(const QinSynthProcessor& p) { return p.onsetPhase; }
     static uint32_t analysisJobs(const QinSynthProcessor& p) { return p.reverb.analysisJobs(); }
+    static std::array<float,3> envelopeTimes(const QinSynthProcessor& p,int index)
+    { const auto settings=p.readSettings(); const auto& e=settings.env[size_t(index)]; return {e.attack,e.decay,e.release}; }
     static bool stableFilters(const QinSynthProcessor& p)
     {
         for(const auto& filter:p.masterFilter)
@@ -47,13 +49,21 @@ struct QinSynthEditorTestAccess
     static bool modVisible(const QinSynthEditor& editor)
     { return editor.sliders[30].isVisible() && editor.modTarget.isVisible(); }
     static bool noiseVisible(const QinSynthEditor& editor) { return editor.noiseButton.isVisible(); }
+    static void enableNoise(QinSynthEditor& editor)
+    { editor.noiseButton.setToggleState(true,juce::sendNotificationSync); }
+    static bool noisePanelVisible(const QinSynthEditor& editor)
+    { return editor.noiseStyle.isVisible() && editor.noiseSliders[0].isVisible() && !editor.waves[0].isVisible(); }
+    static int noiseStyleCount(const QinSynthEditor& editor) { return editor.noiseStyle.getNumItems(); }
+    static void selectNoiseStyle(QinSynthEditor& editor,int style)
+    { editor.noiseStyle.setSelectedId(style,juce::sendNotificationSync); }
     static bool curveVisible(const QinSynthEditor& editor,int index)
     { return editor.curveSliders[size_t(index)].isVisible(); }
     static bool mergeVisible(const QinSynthEditor& editor)
     { return editor.filterMergeSlider.isVisible(); }
     static bool timesFiveVisible(const QinSynthEditor& editor)
-    { return editor.filterTimesFive.isVisible(); }
-    static void timesFive(QinSynthEditor& editor) { editor.filterTimesFive.onClick(); }
+    { return editor.timesFiveButton.isVisible(); }
+    static void timesFive(QinSynthEditor& editor)
+    { editor.timesFiveButton.setToggleState(!editor.timesFiveButton.getToggleState(),juce::sendNotificationSync); }
     static void tick(QinSynthEditor& editor) { editor.timerCallback(); }
     static bool liveScope(const QinSynthEditor& editor) { return editor.liveScopeValid; }
     static float liveCutoff(const QinSynthEditor& editor) { return editor.liveCutoff; }
@@ -65,6 +75,8 @@ struct QinSynthEditorTestAccess
     }
     static void previewValue(QinSynthEditor& editor,int index,double value)
     { editor.sliders[size_t(index)].setValue(value,juce::sendNotificationSync); }
+    static double sliderMidpoint(QinSynthEditor& editor,int index)
+    { return editor.sliders[size_t(index)].proportionOfLengthToValue(.5); }
     static void previewFilter(QinSynthEditor& editor,int item)
     { editor.filterType.setSelectedId(item,juce::sendNotificationSync); }
     static void previewCurve(QinSynthEditor& editor,int index,double value)
@@ -103,6 +115,9 @@ int main(int argc,char** argv)
         for(const auto* id:{"fltAttack","fltDecay","fltRelease"})
             if(std::abs(synth.parameters.getParameter(id)->convertFrom0to1(.5f)-std::sqrt(5000.f))>1.f)
                 throw std::runtime_error("Filter envelope time sliders must use logarithmic 1–5000 ms positions");
+        for(const auto* id:{"attack","ampDecay","release","modAttack","modDecay","modRelease"})
+            if(std::abs(synth.parameters.getParameter(id)->convertFrom0to1(.5f)*1000.f-std::sqrt(5000.f))>1.f)
+                throw std::runtime_error("AMP and MOD envelope time sliders must use logarithmic 1–5000 ms positions");
         if(std::abs(synth.parameters.getParameter("fltSustain")->convertFrom0to1(.5f)
                     -(std::sqrt(101.f)-1.f))>.2f)
             throw std::runtime_error("Filter sustain slider must have finer resolution near zero");
@@ -261,6 +276,51 @@ int main(int argc,char** argv)
                 throw std::runtime_error("N must generate noise independently of the tonal oscillators");
         }
         {
+            const auto renderNoise=[](int style,float tune,float hpf,float level,float pan)
+            {
+                QinSynthProcessor instrument;
+                for(const auto* id:{"osc1Level","osc2Level","osc3Level","verbMix","keyPan"}) set(instrument,id,0);
+                set(instrument,"noise",1); set(instrument,"noiseStyle",float(style));
+                set(instrument,"noiseTune",tune); set(instrument,"noiseHpf",hpf);
+                set(instrument,"noiseLevel",level); set(instrument,"noisePan",pan);
+                instrument.prepareToPlay(48000,256);
+                std::array<std::vector<float>,2> output;
+                juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer note;
+                note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+                for(int blockIndex=0;blockIndex<32;++blockIndex)
+                {
+                    instrument.processBlock(audio,note); note.clear();
+                    power(audio,0); power(audio,1);
+                    for(int channel=0;channel<2;++channel)
+                        for(int i=0;i<256;++i) output[size_t(channel)].push_back(audio.getSample(channel,i));
+                }
+                return output;
+            };
+            const auto white=renderNoise(0,0,20,100,0);
+            const auto pink=renderNoise(1,0,20,100,0);
+            const auto velvet=renderNoise(2,0,20,100,0);
+            const auto lowTune=renderNoise(0,-24,20,100,0);
+            const auto highTune=renderNoise(0,24,20,100,0);
+            const auto highPassed=renderNoise(0,0,1000,100,0);
+            const auto muted=renderNoise(0,0,20,0,0);
+            const auto right=renderNoise(0,0,20,100,100);
+            const auto energy=[](const std::vector<float>& data)
+            { double result=0; for(size_t i=1024;i<data.size();++i) result+=double(data[i])*data[i]; return result; };
+            const auto roughness=[](const std::vector<float>& data)
+            { double result=0; for(size_t i=1025;i<data.size();++i) result+=std::pow(double(data[i])-data[i-1],2); return result; };
+            double pinkDifference=0, velvetDifference=0;
+            for(size_t i=1024;i<white[0].size();++i)
+            { pinkDifference+=std::abs(white[0][i]-pink[0][i]); velvetDifference+=std::abs(white[0][i]-velvet[0][i]); }
+            if(energy(white[0])<.001 || pinkDifference<.1 || velvetDifference<.1)
+                throw std::runtime_error("White, Pink, and Velvet must produce distinct audible noise textures");
+            if(roughness(highTune[0])/energy(highTune[0]) < 2*roughness(lowTune[0])/energy(lowTune[0]))
+                throw std::runtime_error("Noise Tune must raise the frequency of its note-tracked resonance");
+            if(energy(highPassed[0]) > .4*energy(white[0]))
+                throw std::runtime_error("Noise HPF must remove low-frequency output energy");
+            if(energy(muted[0])>1.e-12 || energy(right[0])>.02*energy(right[1]))
+                throw std::runtime_error("Noise Level and Pan must control their independent signal path");
+        }
+        {
             QinSynthProcessor early,late;
             for(auto* p:{&early,&late})
             { set(*p,"verbMix",0); set(*p,"attack",.03f); p->prepareToPlay(48000,256); }
@@ -388,6 +448,12 @@ int main(int argc,char** argv)
                 throw std::runtime_error("OSC, ENV, FLT, and FX panels must be present together");
             if(!QinSynthEditorTestAccess::shapeControlsAreSliders(editor))
                 throw std::runtime_error("Envelope and filter controls must use sliders");
+            for(const auto index:{18,19,21,22,23,25,26,27,29})
+            {
+                const auto milliseconds=QinSynthEditorTestAccess::sliderMidpoint(editor,index)*(index>=22 && index<=25 ? 1. : 1000.);
+                if(std::abs(milliseconds-std::sqrt(5000.))>1.)
+                    throw std::runtime_error("Every envelope time slider must use exponential millisecond positioning");
+            }
             if(!QinSynthEditorTestAccess::mergeVisible(editor))
                 throw std::runtime_error("Filter panel must show the Merge slider");
             const auto changes=[&editor](juce::Rectangle<int> area,auto change)
@@ -421,6 +487,15 @@ int main(int argc,char** argv)
                || QinSynthEditorTestAccess::oscillatorVisible(editor,0))
                 throw std::runtime_error("Oscillator tabs must change the visible Sound controls");
             QinSynthEditorTestAccess::oscillator(editor,0);
+            QinSynthEditorTestAccess::enableNoise(editor);
+            if(!QinSynthEditorTestAccess::noisePanelVisible(editor)
+               || QinSynthEditorTestAccess::noiseStyleCount(editor)!=3
+               || preview.parameters.getRawParameterValue("noise")->load()<.5f)
+                throw std::runtime_error("N must open a matching oscillator panel with White, Pink, and Velvet styles");
+            QinSynthEditorTestAccess::selectNoiseStyle(editor,3);
+            if(preview.parameters.getRawParameterValue("noiseStyle")->load()<1.5f)
+                throw std::runtime_error("Noise Style must update its host parameter");
+            QinSynthEditorTestAccess::oscillator(editor,0);
             QinSynthEditorTestAccess::envelope(editor,1);
             if(!QinSynthEditorTestAccess::envelopeVisible(editor,1)
                || QinSynthEditorTestAccess::envelopeVisible(editor,0)
@@ -429,6 +504,8 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::timesFiveVisible(editor))
                 throw std::runtime_error("Envelope tabs must select their four ADSR controls");
             QinSynthEditorTestAccess::envelope(editor,0);
+            if(!QinSynthEditorTestAccess::timesFiveVisible(editor))
+                throw std::runtime_error("The time multiplier must remain available on the AMP envelope");
             QinSynthEditorTestAccess::previewValue(editor,37,65);
             const auto save=[&editor](const char* name)
             {
@@ -445,7 +522,9 @@ int main(int argc,char** argv)
                || QinSynthEditorTestAccess::delayFxVisible(editor))
                 throw std::runtime_error("FX panel must open on drive controls");
             QinSynthEditorTestAccess::envelope(editor,1);
+            QinSynthEditorTestAccess::timesFive(editor);
             if(argc>2) save(argv[2]);
+            QinSynthEditorTestAccess::timesFive(editor);
             QinSynthEditorTestAccess::envelope(editor,0);
             QinSynthEditorTestAccess::fxSection(editor,1);
             if(!QinSynthEditorTestAccess::delayFxVisible(editor)
@@ -453,22 +532,47 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Delay-verb tab must show only the reverb controls");
             if(argc>3) save(argv[3]);
             QinSynthEditorTestAccess::envelope(editor,2);
-            if(!QinSynthEditorTestAccess::modVisible(editor))
+            if(!QinSynthEditorTestAccess::modVisible(editor) || !QinSynthEditorTestAccess::timesFiveVisible(editor))
                 throw std::runtime_error("MOD tab must show destination and depth controls");
             if(argc>4) save(argv[4]);
+            QinSynthEditorTestAccess::oscillator(editor,3);
+            if(argc>5) save(argv[5]);
         }
         {
             QinSynthProcessor scaled;
             QinSynthEditor editor(scaled);
-            QinSynthEditorTestAccess::envelope(editor,1);
+            const std::array<std::array<float,3>,3> original {
+                QinSynthTestAccess::envelopeTimes(scaled,0),
+                QinSynthTestAccess::envelopeTimes(scaled,1),
+                QinSynthTestAccess::envelopeTimes(scaled,2) };
             QinSynthEditorTestAccess::timesFive(editor);
-            for(const auto& pair:{std::pair{"fltAttack",50.f},
-                                  std::pair{"fltDecay",1000.f},
-                                  std::pair{"fltRelease",1500.f}})
-                if(std::abs(scaled.parameters.getRawParameterValue(pair.first)->load()-pair.second)>.1f)
-                    throw std::runtime_error("Filter time multiplier must scale attack, decay, and release");
+            if(scaled.parameters.getRawParameterValue("envTimesFive")->load()<.5f)
+                throw std::runtime_error("The time multiplier button must update its host parameter");
+            for(int env=0;env<3;++env)
+            {
+                const auto expanded=QinSynthTestAccess::envelopeTimes(scaled,env);
+                for(int stage=0;stage<3;++stage)
+                    if(std::abs(expanded[size_t(stage)]-5.f*original[size_t(env)][size_t(stage)])>.001f)
+                        throw std::runtime_error("The time multiplier must affect all three ADSR time controls in every envelope");
+            }
+            set(scaled,"fltRelease",5000.f);
+            if(std::abs(QinSynthTestAccess::envelopeTimes(scaled,1)[2]-25.f)>.001f
+               || scaled.getTailLengthSeconds()<125.)
+                throw std::runtime_error("The time multiplier must extend a 5000 ms release to 25 seconds and report its tail");
+            set(scaled,"fltRelease",300.f);
+            if(std::abs(scaled.parameters.getRawParameterValue("fltAttack")->load()-10.f)>.1f
+               || std::abs(scaled.parameters.getRawParameterValue("attack")->load()-.01f)>.0001f)
+                throw std::runtime_error("The time multiplier must preserve the underlying envelope values");
+            QinSynthEditorTestAccess::timesFive(editor);
+            for(int env=0;env<3;++env)
+            {
+                const auto restored=QinSynthTestAccess::envelopeTimes(scaled,env);
+                for(int stage=0;stage<3;++stage)
+                    if(std::abs(restored[size_t(stage)]-original[size_t(env)][size_t(stage)])>.001f)
+                        throw std::runtime_error("Turning off the time multiplier must restore all envelope times");
+            }
             if(std::abs(scaled.parameters.getRawParameterValue("fltSustain")->load())>1.e-6f)
-                throw std::runtime_error("Filter time multiplier must leave sustain unchanged");
+                throw std::runtime_error("The time multiplier must leave Sustain unchanged");
         }
         std::cout<<"Qin Synth processor checks passed\n";
         return 0;

@@ -28,9 +28,10 @@ private:
     void updateVisibility();
     void timerCallback() override;
     void updateDrivePreview();
-    void multiplyFilterTimes();
+    void updateEnvelopeTimePresentation();
     QinSynthProcessor& processor;
     int currentOscillator=0, currentEnvelope=0, currentFxSection=0;
+    bool lastTimesFive=false;
     float liveCutoff=0;
     uint32_t lastScopeEpoch=0;
     bool liveScopeValid=false;
@@ -43,7 +44,11 @@ private:
     std::array<juce::TextButton,3> oscillatorTabs, envelopeTabs;
     std::array<juce::TextButton,2> fxTabs;
     juce::TextButton noiseButton {"N"};
-    juce::TextButton filterTimesFive {"*5"};
+    std::array<juce::Slider,4> noiseSliders;
+    std::array<juce::Label,4> noiseLabels;
+    juce::ComboBox noiseStyle;
+    juce::Label noiseStyleLabel;
+    juce::TextButton timesFiveButton {"*5"};
     juce::Slider filterMergeSlider;
     juce::Label filterMergeLabel;
     std::array<juce::Slider,44> sliders;
@@ -59,7 +64,9 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>,3> curveAttachments;
     std::array<std::unique_ptr<State::ComboBoxAttachment>,3> waveAttachments;
     std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
-    std::unique_ptr<State::ButtonAttachment> noiseAttachment;
+    std::unique_ptr<State::ButtonAttachment> noiseAttachment, timesFiveAttachment;
+    std::array<std::unique_ptr<State::SliderAttachment>,4> noiseSliderAttachments;
+    std::unique_ptr<State::ComboBoxAttachment> noiseStyleAttachment;
     std::unique_ptr<State::SliderAttachment> filterMergeAttachment;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(QinSynthEditor)
 };

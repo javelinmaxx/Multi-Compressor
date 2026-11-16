@@ -4,7 +4,12 @@
 | --- | --- |
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
 | OSC 1/2/3 tabs | Opens the selected oscillator in the OSC panel. |
-| N | Adds a noise oscillator to each active MIDI voice. |
+| N | Enables the noise oscillator and opens its tuning, filter, and style controls. |
+| Noise Style | Selects white, pink, or sparse velvet noise before the tuned filter. |
+| Noise Level | Sets the noise oscillator level independently of the three tonal oscillators. |
+| Noise Tune | Shifts the note-tracked noise resonance by up to two octaves in semitones. |
+| Noise HPF | Removes noise below the selected high-pass frequency. |
+| Noise Pan | Positions the noise oscillator independently in stereo. |
 | AMP tab | Opens the amplitude envelope. |
 | FLT tab | Opens the filter envelope. |
 | MOD tab | Opens the effect modulation envelope. |
@@ -17,21 +22,21 @@
 | Osc Detune | Offsets the selected oscillator's unison copies in cents. |
 | Osc Spread | Sets how far the selected oscillator's detuned copies spread across stereo. |
 | Osc Pan | Positions the selected oscillator as a whole in stereo. |
-| AMP Attack | Sets how quickly the amplitude envelope rises. |
-| AMP Decay | Sets how quickly amplitude falls from its peak to sustain. |
+| AMP Attack | Sets the amplitude envelope rise from 1 to 5000 ms on a logarithmic scale. |
+| AMP Decay | Sets the amplitude envelope decay from 1 to 5000 ms on a logarithmic scale. |
 | AMP Sustain | Sets amplitude while the key remains held. |
-| AMP Release | Sets how quickly amplitude fades after note-off. |
+| AMP Release | Sets the amplitude envelope release from 1 to 5000 ms on a logarithmic scale. |
 | AMP Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
 | FLT Attack | Sets the filter envelope rise from 1 to 5000 ms with logarithmic control. |
 | FLT Decay | Sets the filter envelope decay from 1 to 5000 ms with logarithmic control. |
 | FLT Sustain | Sets the held filter-envelope level with finer control near zero. |
 | FLT Release | Sets the filter envelope release from 1 to 5000 ms with logarithmic control. |
-| FLT *5 | Multiplies the filter envelope's attack, decay, and release times by five, up to 5000 ms. |
+| *5 | Multiplies Attack, Decay, and Release of all three envelopes by five while enabled, up to 25000 ms. |
 | FLT Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
-| MOD Attack | Sets how quickly the modulation envelope rises. |
-| MOD Decay | Sets how quickly the modulation envelope falls to sustain. |
+| MOD Attack | Sets the modulation envelope rise from 1 to 5000 ms on a logarithmic scale. |
+| MOD Decay | Sets the modulation envelope decay from 1 to 5000 ms on a logarithmic scale. |
 | MOD Sustain | Sets the held level of effect modulation. |
-| MOD Release | Sets how quickly effect modulation fades after note-off. |
+| MOD Release | Sets the modulation envelope release from 1 to 5000 ms on a logarithmic scale. |
 | MOD Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
 | MOD Depth | Sets how strongly the modulation envelope affects its destination. |
 | MOD Target | Routes the modulation envelope to drive or unison spread. |

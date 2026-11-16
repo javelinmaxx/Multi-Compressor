@@ -194,6 +194,8 @@ input, generated delta, and resulting spectra.
 ![Qin Synth Sound page with horizontal oscillator tabs, a waveform display, and unison controls](projects/QinSynth/Previews/qin-synth.png)
 
 Play up to 16 notes with three virtual-analog oscillators per note. The **Sound** page places horizontal oscillator tabs over a large waveform panel, with eightfold-unison controls beside it. The **FX** page switches between Voice + Drive and Delay-Verb modules. **Key Pan** spreads notes by pitch; MIDI note-ons steer Lan's tap and phase motion without running its resonance tamer.
+AMP, FLT, and MOD envelope times use logarithmic 1–5000 ms sliders, with a shared `*5` toggle beside the ENV tabs.
+The **N** oscillator has its own level, tuning, high-pass filter, pan, and White/Pink/Velvet noise styles.
 
 [Controls and signal path](projects/QinSynth/README.md).
 

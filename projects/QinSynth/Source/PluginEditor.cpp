@@ -27,18 +27,18 @@ constexpr std::array<Control,44> controls {{
     {"osc3Detune","DETUNE","Offsets oscillator three's unison copies in cents."},
     {"osc3Spread","SPREAD","Sets how far oscillator three's detuned copies spread across stereo."},
     {"osc3Pan","PAN","Positions oscillator three as a whole in stereo."},
-    {"attack","ATTACK","Sets how quickly the amplitude envelope rises."},
-    {"ampDecay","DECAY","Sets how quickly amplitude falls from its peak to sustain."},
+    {"attack","ATTACK","Sets the amplitude envelope rise from 1 to 5000 ms on a logarithmic scale."},
+    {"ampDecay","DECAY","Sets the amplitude envelope decay from 1 to 5000 ms on a logarithmic scale."},
     {"ampSustain","SUSTAIN","Sets amplitude while the key remains held."},
-    {"release","RELEASE","Sets how quickly amplitude fades after note-off."},
+    {"release","RELEASE","Sets the amplitude envelope release from 1 to 5000 ms on a logarithmic scale."},
     {"fltAttack","ATTACK","Sets the filter envelope rise from 1 to 5000 ms with logarithmic control."},
     {"fltDecay","DECAY","Sets the filter envelope decay from 1 to 5000 ms with logarithmic control."},
     {"fltSustain","SUSTAIN","Sets the held filter-envelope level with finer control near zero."},
     {"fltRelease","RELEASE","Sets the filter envelope release from 1 to 5000 ms with logarithmic control."},
-    {"modAttack","ATTACK","Sets how quickly the modulation envelope rises."},
-    {"modDecay","DECAY","Sets how quickly the modulation envelope falls to sustain."},
+    {"modAttack","ATTACK","Sets the modulation envelope rise from 1 to 5000 ms on a logarithmic scale."},
+    {"modDecay","DECAY","Sets the modulation envelope decay from 1 to 5000 ms on a logarithmic scale."},
     {"modSustain","SUSTAIN","Sets the held level of effect modulation."},
-    {"modRelease","RELEASE","Sets how quickly effect modulation fades after note-off."},
+    {"modRelease","RELEASE","Sets the modulation envelope release from 1 to 5000 ms on a logarithmic scale."},
     {"modDepth","MOD DEPTH","Sets how strongly the modulation envelope affects its destination."},
     {"filterCutoff","FREQ","Sets the filter's base cutoff on a logarithmic frequency scale."},
     {"filterResonance","RESONANCE","Emphasizes the filter cutoff with logarithmic control resolution."},
@@ -53,6 +53,12 @@ constexpr std::array<Control,44> controls {{
     {"verbMix","MIX","Blends the Lan effect with the synth."},
     {"tapMotion","TAP MOTION","Sets how far note onsets move Lan's feedback taps."},
     {"phaseMotion","PHASE MOTION","Sets how strongly note onsets change Lan's phase scatter."}
+}};
+constexpr std::array<Control,4> noiseControls {{
+    {"noiseLevel","LEVEL","Sets the noise oscillator level independently of the three tonal oscillators."},
+    {"noiseTune","TUNE","Shifts the note-tracked noise resonance by up to two octaves in semitones."},
+    {"noiseHpf","HPF","Removes noise below the selected high-pass frequency."},
+    {"noisePan","PAN","Positions the noise oscillator independently in stereo."}
 }};
 void styleTab(juce::TextButton& button,const juce::String& title,int group)
 {
@@ -111,16 +117,53 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         tab.onClick=[this,i]{showOscillator(int(i));}; addAndMakeVisible(tab);
     }
     noiseButton.setClickingTogglesState(true);
-    noiseButton.setTooltip("Adds a noise oscillator to each active MIDI voice.");
+    noiseButton.setTooltip("Enables the noise oscillator and opens its tuning, filter, and style controls.");
     noiseButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
     noiseButton.setColour(juce::TextButton::buttonOnColourId,accent);
     addAndMakeVisible(noiseButton);
     noiseAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"noise",noiseButton);
-    filterTimesFive.setTooltip("Multiplies the filter envelope's attack, decay, and release times by five, up to 5000 ms.");
-    filterTimesFive.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-    filterTimesFive.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-    filterTimesFive.onClick=[this] { multiplyFilterTimes(); };
-    addAndMakeVisible(filterTimesFive);
+    noiseButton.onClick=[this] { showOscillator(3); };
+    noiseStyle.addItem("White",1); noiseStyle.addItem("Pink",2); noiseStyle.addItem("Velvet",3);
+    noiseStyle.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a));
+    noiseStyle.setColour(juce::ComboBox::textColourId,stageStyle::foreground);
+    noiseStyle.setTooltip("Selects white, pink, or sparse velvet noise before the tuned filter.");
+    noiseStyleLabel.setText("NOISE STYLE",juce::dontSendNotification);
+    noiseStyleLabel.setFont(juce::FontOptions(9.f));
+    noiseStyleLabel.setJustificationType(juce::Justification::centred);
+    noiseStyleLabel.setColour(juce::Label::textColourId,stageStyle::secondary);
+    noiseStyleLabel.setTooltip("Selects white, pink, or sparse velvet noise before the tuned filter.");
+    addAndMakeVisible(noiseStyle); addAndMakeVisible(noiseStyleLabel);
+    noiseStyleAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"noiseStyle",noiseStyle);
+    noiseStyle.onChange=[this] { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{34,276,384,166})); };
+    for(size_t i=0;i<noiseSliders.size();++i)
+    {
+        auto& slider=noiseSliders[i]; auto& label=noiseLabels[i];
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,17);
+        slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        slider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+        slider.setName(noiseControls[i].name); slider.setTitle(noiseControls[i].name);
+        label.setText(noiseControls[i].name,juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setFont(juce::FontOptions(9.f));
+        label.setColour(juce::Label::textColourId,stageStyle::secondary);
+        addAndMakeVisible(slider); addAndMakeVisible(label);
+        noiseSliderAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,noiseControls[i].id,slider);
+        editorTooltips::setHint(slider,label,noiseControls[i].hint);
+    }
+    noiseSliders[1].textFromValueFunction=[](double value)
+    { return (value>0 ? "+" : "")+juce::String(value,1)+" st"; };
+    noiseSliders[2].textFromValueFunction=[](double value)
+    { return juce::String(juce::roundToInt(value))+" Hz"; };
+    noiseSliders[1].updateText(); noiseSliders[2].updateText();
+    timesFiveButton.setClickingTogglesState(true);
+    timesFiveButton.setTooltip("Multiplies Attack, Decay, and Release of all three envelopes by five while enabled, up to 25000 ms.");
+    timesFiveButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
+    timesFiveButton.setColour(juce::TextButton::buttonOnColourId,accent);
+    timesFiveButton.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
+    timesFiveButton.setColour(juce::TextButton::textColourOnId,stageStyle::background);
+    addAndMakeVisible(timesFiveButton);
+    timesFiveAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"envTimesFive",timesFiveButton);
     filterMergeLabel.setText("MERGE",juce::dontSendNotification);
     filterMergeLabel.setJustificationType(juce::Justification::centred);
     filterMergeLabel.setFont(juce::FontOptions(9.f));
@@ -204,12 +247,18 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     { return juce::String(juce::roundToInt(value)); };
     sliders[32].textFromValueFunction=[](double value)
     { return juce::String(value,1); };
-    for(const auto index:{22,23,25})
+    for(const auto index:{18,19,21,22,23,25,26,27,29})
     {
-        sliders[size_t(index)].textFromValueFunction=[](double value)
-        { return juce::String(juce::roundToInt(value))+"ms"; };
+        const auto filter=index>=22 && index<=25;
+        sliders[size_t(index)].setTextBoxStyle(juce::Slider::TextBoxRight,false,58,18);
+        sliders[size_t(index)].textFromValueFunction=[this,filter](double value)
+        {
+            const auto multiplier=processor.parameters.getRawParameterValue("envTimesFive")->load()>=.5f ? 5. : 1.;
+            return juce::String(juce::roundToInt(value*(filter ? 1. : 1000.)*multiplier))+"ms";
+        };
         sliders[size_t(index)].updateText();
     }
+    timesFiveButton.onClick=[this] { updateEnvelopeTimePresentation(); };
     sliders[24].textFromValueFunction=[](double value)
     { return juce::String(value,1); };
     sliders[24].updateText();
@@ -252,16 +301,11 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     updateVisibility(); editorScaling::enable(*this,designWidth,designHeight);
     updateDrivePreview(); gpu.attach(*this); startTimerHz(40);
 }
-void QinSynthEditor::multiplyFilterTimes()
+void QinSynthEditor::updateEnvelopeTimePresentation()
 {
-    for(const auto* id:{"fltAttack","fltDecay","fltRelease"})
-    {
-        auto* parameter=processor.parameters.getParameter(id);
-        const auto current=parameter->convertFrom0to1(parameter->getValue());
-        parameter->beginChangeGesture();
-        parameter->setValueNotifyingHost(parameter->convertTo0to1(std::min(5000.f,current*5.f)));
-        parameter->endChangeGesture();
-    }
+    lastTimesFive=processor.parameters.getRawParameterValue("envTimesFive")->load()>=.5f;
+    for(const auto index:{18,19,21,22,23,25,26,27,29}) sliders[size_t(index)].updateText();
+    repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,433,240,312}));
 }
 void QinSynthEditor::updateDrivePreview()
 {
@@ -283,6 +327,8 @@ void QinSynthEditor::updateDrivePreview()
 }
 void QinSynthEditor::timerCallback()
 {
+    if(const auto enabled=processor.parameters.getRawParameterValue("envTimesFive")->load()>=.5f;
+       enabled!=lastTimesFive) updateEnvelopeTimePresentation();
     const auto cutoff=processor.getLiveFilterCutoff();
     if((cutoff<=0)!=(liveCutoff<=0) || (cutoff>0 && std::abs(std::log(cutoff/std::max(1.f,liveCutoff)))>.002f))
     {
@@ -305,7 +351,7 @@ void QinSynthEditor::timerCallback()
     }
 }
 void QinSynthEditor::showOscillator(int index)
-{ currentOscillator=juce::jlimit(0,2,index); for(size_t i=0;i<3;++i) oscillatorTabs[i].setToggleState(int(i)==currentOscillator,juce::dontSendNotification); updateVisibility(); repaint(); }
+{ currentOscillator=juce::jlimit(0,3,index); for(size_t i=0;i<3;++i) oscillatorTabs[i].setToggleState(int(i)==currentOscillator,juce::dontSendNotification); updateVisibility(); repaint(); }
 void QinSynthEditor::showEnvelope(int index)
 { currentEnvelope=juce::jlimit(0,2,index); for(size_t i=0;i<3;++i) envelopeTabs[i].setToggleState(int(i)==currentEnvelope,juce::dontSendNotification); updateVisibility(); repaint(); }
 void QinSynthEditor::showFxSection(int index)
@@ -317,10 +363,13 @@ void QinSynthEditor::updateVisibility()
         const auto selected=osc==currentOscillator; waves[size_t(osc)].setVisible(selected); waveLabels[size_t(osc)].setVisible(selected);
         for(int control=0;control<6;++control) { const auto i=size_t(osc*6+control); sliders[i].setVisible(selected); labels[i].setVisible(selected); }
     }
+    noiseStyle.setVisible(currentOscillator==3); noiseStyleLabel.setVisible(currentOscillator==3);
+    for(size_t i=0;i<noiseSliders.size();++i)
+    { noiseSliders[i].setVisible(currentOscillator==3); noiseLabels[i].setVisible(currentOscillator==3); }
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control) { const auto i=size_t(18+env*4+control); sliders[i].setVisible(env==currentEnvelope); labels[i].setVisible(env==currentEnvelope); }
     for(int env=0;env<3;++env) curveSliders[size_t(env)].setVisible(env==currentEnvelope);
-    filterTimesFive.setVisible(currentEnvelope==1);
+    timesFiveButton.setVisible(true);
     sliders[30].setVisible(currentEnvelope==2); labels[30].setVisible(currentEnvelope==2);
     modTarget.setVisible(currentEnvelope==2); modTargetLabel.setVisible(currentEnvelope==2);
     for(size_t i=36;i<sliders.size();++i)
@@ -341,7 +390,13 @@ void QinSynthEditor::resized()
         }
     }
     noiseButton.setBounds(363,125,55,27);
-    filterTimesFive.setBounds(618,438,51,24);
+    noiseStyleLabel.setBounds(34,170,118,15); noiseStyle.setBounds(34,186,154,27);
+    for(size_t i=0;i<noiseSliders.size();++i)
+    {
+        const auto x=35+int(i%3)*132, y=463+int(i/3)*102;
+        noiseLabels[i].setBounds(x,y,103,15); noiseSliders[i].setBounds(x,y+16,103,82);
+    }
+    timesFiveButton.setBounds(618,438,51,24);
     labels[35].setBounds(302,160,112,15); sliders[35].setBounds(302,176,112,82);
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control)
@@ -373,7 +428,10 @@ void QinSynthEditor::resized()
     titleHint.setTransform(scale);
     for(auto& tab:oscillatorTabs) tab.setTransform(scale);
     noiseButton.setTransform(scale);
-    filterTimesFive.setTransform(scale);
+    noiseStyle.setTransform(scale); noiseStyleLabel.setTransform(scale);
+    for(auto& slider:noiseSliders) slider.setTransform(scale);
+    for(auto& label:noiseLabels) label.setTransform(scale);
+    timesFiveButton.setTransform(scale);
     filterMergeSlider.setTransform(scale); filterMergeLabel.setTransform(scale);
     for(auto& tab:envelopeTabs) tab.setTransform(scale);
     for(auto& tab:fxTabs) tab.setTransform(scale);
@@ -404,7 +462,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
     stageStyle::drawPanel(g,{444,433,240,312},panel);
     stageStyle::drawPanel(g,{692,90,212,655},panel);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
-    g.drawText("OSC",30,99,120,20,juce::Justification::centredLeft);
+    g.drawText(currentOscillator==3 ? "NOISE" : "OSC",30,99,120,20,juce::Justification::centredLeft);
     g.drawText("FLT",455,99,120,20,juce::Justification::centredLeft);
     g.drawText("ENV",455,442,120,20,juce::Justification::centredLeft);
     g.drawText("FX",703,99,120,20,juce::Justification::centredLeft);
@@ -416,11 +474,12 @@ void QinSynthEditor::paint(juce::Graphics& g)
         g.drawHorizontalLine(juce::roundToInt(plot.getCentreY()),plot.getX(),plot.getRight());
     }
     const auto envIndex=size_t(18+currentEnvelope*4);
-    const auto timeScale=currentEnvelope==1 ? .001f : 1.f;
-    const auto attack=float(sliders[envIndex].getValue())*timeScale;
-    const auto decay=float(sliders[envIndex+1].getValue())*timeScale;
+    const auto timeScale=(currentEnvelope==1 ? .001f : 1.f)
+        *(processor.parameters.getRawParameterValue("envTimesFive")->load()>=.5f ? 5.f : 1.f);
+    const auto attack=std::min(25.f,float(sliders[envIndex].getValue())*timeScale);
+    const auto decay=std::min(25.f,float(sliders[envIndex+1].getValue())*timeScale);
     const auto sustain=std::clamp(float(sliders[envIndex+2].getValue())*.01f,0.f,1.f);
-    const auto release=float(sliders[envIndex+3].getValue())*timeScale;
+    const auto release=std::min(25.f,float(sliders[envIndex+3].getValue())*timeScale);
     const auto envelopeTimeScale=currentEnvelope==1 ? 1.f : 5.f;
     const std::array<float,4> spans {attack*(currentEnvelope==1 ? 1.f : 6.9f),
                                       decay*envelopeTimeScale,.3f,release*envelopeTimeScale};
@@ -508,15 +567,27 @@ void QinSynthEditor::paint(juce::Graphics& g)
                    juce::roundToInt(x)-15,262,30,11,juce::Justification::centred);
     }
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(9.f));
-    g.drawText("OSCILLATOR "+juce::String(currentOscillator+1)+" / WAVEFORM",34,276,322,16,juce::Justification::centredLeft);
+    g.drawText(currentOscillator==3 ? "NOISE OSCILLATOR / TEXTURE"
+        : "OSCILLATOR "+juce::String(currentOscillator+1)+" / WAVEFORM",34,276,322,16,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(34,295,384,147),6);
     for(int line=1;line<4;++line) { g.setColour(stageStyle::grid); g.drawHorizontalLine(295+line*36,34,418); }
-    const auto wave=waves[size_t(currentOscillator)].getSelectedId();
+    const auto wave=currentOscillator==3 ? 0 : waves[size_t(currentOscillator)].getSelectedId();
     juce::Path waveform;
+    uint32_t noisePreviewState=0x87a3d21fu;
+    float pinkPreview=0;
     for(int point=0;point<=380;++point)
     {
         const auto cycle=std::fmod(point/125.f,1.f);
-        const auto shape=wave==2 ? (cycle<.5f ? 1.f : -1.f)
+        noisePreviewState^=noisePreviewState<<13;
+        noisePreviewState^=noisePreviewState>>17;
+        noisePreviewState^=noisePreviewState<<5;
+        const auto white=float(noisePreviewState>>8)*(1.f/8388607.5f)-1.f;
+        pinkPreview=.9f*pinkPreview+.1f*white;
+        const auto style=noiseStyle.getSelectedId();
+        const auto noiseShape=style==2 ? pinkPreview*2.5f
+            : style==3 ? ((noisePreviewState&31u)==0 ? white*2.f : 0.f) : white;
+        const auto shape=currentOscillator==3 ? std::clamp(noiseShape,-1.f,1.f)
+            : wave==2 ? (cycle<.5f ? 1.f : -1.f)
             : wave==3 ? (1.f-4.f*std::abs(cycle-.5f)) : 2.f*cycle-1.f;
         const auto x=36.f+point,y=368.f-50.f*shape;
         if(point==0) waveform.startNewSubPath(x,y); else waveform.lineTo(x,y);
