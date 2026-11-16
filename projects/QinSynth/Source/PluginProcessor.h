@@ -61,7 +61,7 @@ private:
         float noiseBandState=0, noiseLowState=0, noiseHighPassState=0;
         bool keyDown=false, sustained=false, active=false;
     };
-    struct OscillatorSettings { int wave=0, octave=0, unison=1; float level=0, detune=0, spread=.12f, pan=0; };
+    struct OscillatorSettings { int wave=0, octave=0, unison=1; bool retrig=false; float level=0, detune=0, spread=.12f, pan=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
     struct Settings
@@ -70,7 +70,7 @@ private:
         NoiseSettings noiseOscillator;
         std::array<EnvelopeSettings,3> env;
         float pan=0, drive=0, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
-        int filterType=0, modTarget=0;
+        int filterType=0, modTarget=0, voiceCount=maxVoices;
         bool noise=false;
         float verbTime=180, verbDecay=3, verbScatter=.7f, verbMix=.2f;
         float tapMotion=.5f, phaseMotion=.5f;

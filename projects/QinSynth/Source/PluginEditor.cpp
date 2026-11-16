@@ -91,6 +91,69 @@ float filterMagnitude(int type,float frequency,float cutoff,float resonance)
     return second;
 }
 }
+QinVoiceSlider::QinVoiceSlider()
+{
+    setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    setRange(1,16,1);
+    setMouseDragSensitivity(140);
+    setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+    setTooltip("Drag up or down to set the maximum number of simultaneous notes from one to sixteen.");
+}
+void QinVoiceSlider::paint(juce::Graphics& g)
+{
+    const auto area=getLocalBounds().toFloat().reduced(1);
+    g.setColour(stageStyle::grid);
+    g.drawRoundedRectangle(area,4,1);
+    g.setColour(cyan); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
+    g.drawText(juce::String(juce::roundToInt(getValue()))+" VOICES",getLocalBounds(),juce::Justification::centred);
+}
+QinWaveSwitch::QinWaveSwitch()
+{
+    setSliderStyle(juce::Slider::LinearHorizontal);
+    setRange(0,2,1);
+    setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+    setName("WAVE"); setTitle("Waveform");
+}
+void QinWaveSwitch::paint(juce::Graphics& g)
+{
+    const auto w=float(getWidth());
+    const auto selected=std::clamp(juce::roundToInt(getValue()),0,2);
+    const auto left=14.f,right=w-14.f,y=15.f;
+    g.setColour(stageStyle::grid); g.fillRoundedRectangle(left,y-3,right-left,6,3);
+    g.setColour(stageStyle::foreground.withAlpha(.55f)); g.drawRoundedRectangle(left,y-3,right-left,6,3,1);
+    constexpr std::array<const char*,3> names {"SAW","PULSE","TRI"};
+    for(int i=0;i<3;++i)
+    {
+        const auto x=left+(right-left)*float(i)/2.f;
+        g.setColour(i==selected ? accent : stageStyle::secondary.withAlpha(.55f));
+        g.fillEllipse(x-2,y-2,4,4);
+        g.setFont(juce::FontOptions(9.f).withStyle(i==selected ? "bold" : "plain"));
+        g.drawText(names[size_t(i)],juce::roundToInt(x)-25,27,50,12,juce::Justification::centred);
+    }
+    const auto x=left+(right-left)*float(selected)/2.f;
+    g.setColour(juce::Colours::black.withAlpha(.35f)); g.fillEllipse(x-7,y-6,15,15);
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xfff4f0e6),x,y-7,
+        juce::Colour(0xff8a8c88),x,y+7,false)); g.fillEllipse(x-7,y-7,14,14);
+    g.setColour(accent.withAlpha(.7f)); g.drawEllipse(x-7,y-7,14,14,1);
+}
+QinRetrigSwitch::QinRetrigSwitch() : ToggleButton("RETRIG")
+{
+    setTooltip("Restarts this oscillator's waveform phase at each note onset when enabled.");
+}
+void QinRetrigSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
+{
+    g.setColour(highlighted ? stageStyle::foreground : stageStyle::secondary);
+    g.setFont(juce::FontOptions(10.f).withStyle("bold"));
+    g.drawText("RETRIG",0,0,getWidth()-37,getHeight(),juce::Justification::centredRight);
+    const auto track=juce::Rectangle<float>(float(getWidth()-34),float(getHeight())*.5f-9,32,18);
+    g.setColour(stageStyle::inset); g.fillRoundedRectangle(track,9);
+    g.setColour(accent.withAlpha(.6f)); g.drawRoundedRectangle(track,9,1);
+    const auto thumb=juce::Rectangle<float>(track.getX()+2+(getToggleState()?13.f:0.f),track.getY()+2,14,14);
+    g.setColour(juce::Colours::black.withAlpha(.34f)); g.fillEllipse(thumb.translated(0,1));
+    g.setGradientFill(juce::ColourGradient(down ? juce::Colours::white : juce::Colour(0xfff4f0e6),
+        thumb.getTopLeft(),juce::Colour(0xff8a8c88),thumb.getBottomLeft(),false)); g.fillEllipse(thumb);
+    g.setColour(getToggleState()?accent:stageStyle::secondary.withAlpha(.7f)); g.drawEllipse(thumb,.8f);
+}
 void QinLookAndFeel::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
     float sliderPos,float minSliderPos,float maxSliderPos,const juce::Slider::SliderStyle style,juce::Slider& slider)
 {
@@ -110,6 +173,8 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     setOpaque(true); look.accentColour=accent; look.dialTopColour=juce::Colour(0xff645a45);
     look.dialBottomColour=juce::Colour(0xff2a2925); setLookAndFeel(&look);
     addAndMakeVisible(titleHint);
+    addAndMakeVisible(voiceCount);
+    voiceCountAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"voiceCount",voiceCount);
     for(size_t i=0;i<oscillatorTabs.size();++i)
     {
         auto& tab=oscillatorTabs[i]; styleTab(tab,"OSC "+juce::String(int(i)+1),2);
@@ -270,15 +335,13 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     for(size_t i=0;i<waves.size();++i)
     {
         auto& wave=waves[i]; auto& label=waveLabels[i];
-        wave.addItem("Saw",1); wave.addItem("Pulse",2); wave.addItem("Triangle",3);
-        wave.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a));
-        wave.setColour(juce::ComboBox::textColourId,stageStyle::foreground);
         wave.setTooltip("Chooses oscillator "+juce::String(int(i)+1)+"'s virtual-analog waveform.");
         label.setText("WAVE",juce::dontSendNotification); label.setFont(juce::FontOptions(9.f));
         label.setJustificationType(juce::Justification::centred); label.setColour(juce::Label::textColourId,stageStyle::secondary);
-        addAndMakeVisible(wave); addAndMakeVisible(label);
-        waveAttachments[i]=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"osc"+juce::String(int(i)+1)+"Wave",wave);
-        wave.onChange=[this]{repaint();};
+        addAndMakeVisible(wave); addAndMakeVisible(label); addAndMakeVisible(retrig[i]);
+        waveAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,"osc"+juce::String(int(i)+1)+"Wave",wave);
+        retrigAttachments[i]=std::make_unique<State::ButtonAttachment>(synth.parameters,"osc"+juce::String(int(i)+1)+"Retrig",retrig[i]);
+        wave.onValueChange=[this]{repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{34,276,384,166}));};
     }
     for(const auto* option:{"Bypass","TB-303 ladder","Sallen-Key 18 dB","Digital 12 dB","Digital 24 dB"})
         filterType.addItem(option,filterType.getNumItems()+1);
@@ -360,7 +423,7 @@ void QinSynthEditor::updateVisibility()
 {
     for(int osc=0;osc<3;++osc)
     {
-        const auto selected=osc==currentOscillator; waves[size_t(osc)].setVisible(selected); waveLabels[size_t(osc)].setVisible(selected);
+        const auto selected=osc==currentOscillator; waves[size_t(osc)].setVisible(selected); waveLabels[size_t(osc)].setVisible(selected); retrig[size_t(osc)].setVisible(selected);
         for(int control=0;control<6;++control) { const auto i=size_t(osc*6+control); sliders[i].setVisible(selected); labels[i].setVisible(selected); }
     }
     noiseStyle.setVisible(currentOscillator==3); noiseStyleLabel.setVisible(currentOscillator==3);
@@ -378,11 +441,13 @@ void QinSynthEditor::updateVisibility()
 void QinSynthEditor::resized()
 {
     titleHint.setBounds(18,29,360,38);
+    voiceCount.setBounds(660,34,94,27);
     for(int i=0;i<3;++i)
     {
         oscillatorTabs[size_t(i)].setBounds(31+i*109,125,103,27);
         envelopeTabs[size_t(i)].setBounds(455+i*73,466,68,27);
-        waveLabels[size_t(i)].setBounds(34,170,118,15); waves[size_t(i)].setBounds(34,186,154,27);
+        waveLabels[size_t(i)].setBounds(34,170,154,15); waves[size_t(i)].setBounds(34,183,154,55);
+        retrig[size_t(i)].setBounds(198,187,100,34);
         for(int control=0;control<6;++control)
         {
             const auto index=size_t(i*6+control); const auto x=35+(control%3)*132, y=463+(control/3)*102;
@@ -440,6 +505,8 @@ void QinSynthEditor::resized()
     curveLabel.setTransform(scale);
     for(auto& label:labels) label.setTransform(scale);
     for(auto& wave:waves) wave.setTransform(scale);
+    for(auto& button:retrig) button.setTransform(scale);
+    voiceCount.setTransform(scale);
     for(auto& label:waveLabels) label.setTransform(scale);
     for(auto* box:{&filterType,&modTarget}) box->setTransform(scale);
     for(auto* label:{&filterTypeLabel,&modTargetLabel}) label->setTransform(scale);
@@ -455,7 +522,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.drawText("QIN SYNTH",18,30,360,38,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(650,30,252,35),5);
     g.setColour(cyan); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
-    g.drawText("16 VOICES  /  3 OSC  /  8x UNI",661,36,231,23,juce::Justification::centred);
+    g.drawText("/  3 OSC  /  8x UNI",760,36,132,23,juce::Justification::centred);
     const auto panel=juce::Colour(0xff27272c);
     stageStyle::drawPanel(g,{16,90,420,655},panel);
     stageStyle::drawPanel(g,{444,90,240,335},panel);
@@ -571,7 +638,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
         : "OSCILLATOR "+juce::String(currentOscillator+1)+" / WAVEFORM",34,276,322,16,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(34,295,384,147),6);
     for(int line=1;line<4;++line) { g.setColour(stageStyle::grid); g.drawHorizontalLine(295+line*36,34,418); }
-    const auto wave=currentOscillator==3 ? 0 : waves[size_t(currentOscillator)].getSelectedId();
+    const auto wave=currentOscillator==3 ? 0 : juce::roundToInt(waves[size_t(currentOscillator)].getValue())+1;
     juce::Path waveform;
     uint32_t noisePreviewState=0x87a3d21fu;
     float pinkPreview=0;

@@ -31,7 +31,7 @@ fallback. See [GPU rendering and validation](projects/GPU_RENDERING.md).
 | [Xuan Phase](projects/XuanPhase/README.md) | `XuanPhase` | Phase rotation | Independent low/high rotation, 25 ms lookahead, spectral transient alignment, and click-to-audition delta |
 | [Lan Reverb](projects/LanReverb/README.md) | `LanReverb` | Reverb / delay | Long stereo tails, live feedback-tap scattering, automatic resonance EQ and phase dispersion |
 | [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | 4× twelve-band transient enhancement with 5 ms lookahead or dynamically softened tube-style drive, Mix, and crossover spectrum display |
-| [Qin Synth](projects/QinSynth/README.md) | `QinSynth` | MIDI instrument | Sixteen-voice virtual-analog synthesis, three eightfold-unison oscillators, key panning, Zao drive, MIDI-steered Lan delay-reverb |
+| [Qin Synth](projects/QinSynth/README.md) | `QinSynth` | MIDI instrument | Adjustable 1–16-voice virtual-analog synthesis, three eightfold-unison oscillators, key panning, Zao drive, MIDI-steered Lan delay-reverb |
 
 ### Yinyang Compressor
 
@@ -193,7 +193,7 @@ input, generated delta, and resulting spectra.
 
 ![Qin Synth Sound page with horizontal oscillator tabs, a waveform display, and unison controls](projects/QinSynth/Previews/qin-synth.png)
 
-Play up to 16 notes with three virtual-analog oscillators per note. The **Sound** page places horizontal oscillator tabs over a large waveform panel, with eightfold-unison controls beside it. The **FX** page switches between Voice + Drive and Delay-Verb modules. **Key Pan** spreads notes by pitch; MIDI note-ons steer Lan's tap and phase motion without running its resonance tamer.
+Set one to sixteen voices by dragging the header readout. Three OSC tabs each provide a three-position waveform switch, a Retrig switch, and up to eight unison copies. The **FX** tabs switch between Drive and Delay-Verb. **Key Pan** spreads notes by pitch; MIDI note-ons steer Lan's tap and phase motion without running its resonance tamer.
 AMP, FLT, and MOD envelope times use logarithmic 1–5000 ms sliders, with a shared `*5` toggle beside the ENV tabs.
 The **N** oscillator has its own level, tuning, high-pass filter, pan, and White/Pink/Velvet noise styles.
 

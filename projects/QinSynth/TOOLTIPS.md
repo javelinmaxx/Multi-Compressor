@@ -4,6 +4,8 @@
 | --- | --- |
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
 | OSC 1/2/3 tabs | Opens the selected oscillator in the OSC panel. |
+| Voices | Drag up or down to set the maximum number of simultaneous notes from one to sixteen. |
+| Retrig | Restarts this oscillator's waveform phase at each note onset when enabled. |
 | N | Enables the noise oscillator and opens its tuning, filter, and style controls. |
 | Noise Style | Selects white, pink, or sparse velvet noise before the tuned filter. |
 | Noise Level | Sets the noise oscillator level independently of the three tonal oscillators. |

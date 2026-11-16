@@ -14,7 +14,7 @@ juce_add_plugin(QinSynth
     PLUGIN_CODE QnS1
     FORMATS ${plugin_formats}
     PRODUCT_NAME "Qin Synth"
-    DESCRIPTION "Sixteen-voice virtual-analog instrument with Zao drive and MIDI-steered Lan delay-reverb"
+    DESCRIPTION "Adjustable-polyphony virtual-analog instrument with Zao drive and MIDI-steered Lan delay-reverb"
     IS_SYNTH TRUE NEEDS_MIDI_INPUT TRUE NEEDS_MIDI_OUTPUT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE NEEDS_WEB_BROWSER FALSE NEEDS_CURL FALSE
     VST3_CATEGORIES Instrument Synth)

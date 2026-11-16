@@ -111,6 +111,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     add("noisePan","Noise pan",-100,100,.1f,0,"%");
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"noiseStyle",1},
         "Noise style",juce::StringArray{"White","Pink","Velvet"},0));
+    add("voiceCount","Voice count",1,maxVoices,1,maxVoices,"voices");
+    for(int osc=0;osc<oscillatorCount;++osc)
+        result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{juce::String(prefixes[size_t(osc)])+"Retrig",1},
+            "Oscillator "+juce::String(osc+1)+" retrig",false));
     return result;
 }
 QinSynthProcessor::QinSynthProcessor()
@@ -167,6 +171,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
         const juce::String prefix(prefixes[size_t(osc)]);
         auto& target=settings.oscillator[size_t(osc)];
         target.wave=std::clamp(juce::roundToInt(get(prefix+"Wave")),0,2);
+        target.retrig=get(prefix+"Retrig")>=.5f;
         target.octave=std::clamp(juce::roundToInt(get(prefix+"Octave")),-2,2);
         target.unison=std::clamp(juce::roundToInt(get(prefix+"Unison")),1,maxUnison);
         target.level=std::clamp(get(prefix+"Level")*.01f,0.f,1.f);
@@ -200,6 +205,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.noiseOscillator.highPass=std::clamp(get("noiseHpf"),20.f,12000.f);
     settings.noiseOscillator.pan=std::clamp(get("noisePan")*.01f,-1.f,1.f);
     settings.noiseOscillator.style=std::clamp(juce::roundToInt(get("noiseStyle")),0,2);
+    settings.voiceCount=std::clamp(juce::roundToInt(get("voiceCount")),1,maxVoices);
     settings.pan=std::clamp(get("keyPan")*.01f,0.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
     settings.verbTime=std::clamp(get("time"),25.f,1000.f);
@@ -293,13 +299,16 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
         const auto note=message.getNoteNumber();
         const auto velocity=message.getFloatVelocity();
         Voice* selected=nullptr;
-        for(auto& voice:voices) if(!voice.active) { selected=&voice; break; }
+        const auto end=voices.begin()+settings.voiceCount;
+        for(auto it=voices.begin();it!=end;++it) if(!it->active) { selected=&*it; break; }
         if(selected==nullptr)
-            selected=&*std::min_element(voices.begin(),voices.end(),[](const Voice& a,const Voice& b)
+            selected=&*std::min_element(voices.begin(),end,[](const Voice& a,const Voice& b)
             {
                 if(a.keyDown!=b.keyDown) return !a.keyDown;
                 return a.age<b.age;
             });
+        const auto previousOscillators=selected->oscillators;
+        const auto hadPreviousNote=selected->age!=0;
         *selected={}; selected->active=selected->keyDown=true;
         selected->note=note; selected->channel=message.getChannel(); selected->velocity=velocity;
         selected->age=++voiceAge; selected->pan=notePan(note,settings.pan);
@@ -307,8 +316,14 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
         if(selected->noiseState==0) selected->noiseState=1;
         for(int osc=0;osc<oscillatorCount;++osc)
             for(int u=0;u<maxUnison;++u)
-                selected->oscillators[size_t(osc)][size_t(u)].phase=
-                    std::fmod(.179*double(u)+.137*double(osc)+.073*double(selected->age),1.0);
+            {
+                auto& subvoice=selected->oscillators[size_t(osc)][size_t(u)];
+                if(!settings.oscillator[size_t(osc)].retrig && hadPreviousNote)
+                    subvoice=previousOscillators[size_t(osc)][size_t(u)];
+                else
+                    subvoice.phase=std::fmod(.179*double(u)+.137*double(osc)
+                        +(settings.oscillator[size_t(osc)].retrig ? 0.0 : .073*double(selected->age)),1.0);
+            }
         // Change only on MIDI note-ons. Alternating direction prevents the
         // feedback tap from repeatedly reinforcing the same frequencies.
         onsetTap=std::clamp((onsetCount++%2==0 ? 1.f : -1.f)

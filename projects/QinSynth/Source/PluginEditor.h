@@ -12,6 +12,27 @@ public:
                           const juce::Slider::SliderStyle,juce::Slider&) override;
 };
 
+class QinVoiceSlider final : public juce::Slider
+{
+public:
+    QinVoiceSlider();
+    void paint(juce::Graphics&) override;
+};
+
+class QinWaveSwitch final : public juce::Slider
+{
+public:
+    QinWaveSwitch();
+    void paint(juce::Graphics&) override;
+};
+
+class QinRetrigSwitch final : public juce::ToggleButton
+{
+public:
+    QinRetrigSwitch();
+    void paintButton(juce::Graphics&,bool,bool) override;
+};
+
 class QinSynthEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -44,6 +65,7 @@ private:
     std::array<juce::TextButton,3> oscillatorTabs, envelopeTabs;
     std::array<juce::TextButton,2> fxTabs;
     juce::TextButton noiseButton {"N"};
+    QinVoiceSlider voiceCount;
     std::array<juce::Slider,4> noiseSliders;
     std::array<juce::Label,4> noiseLabels;
     juce::ComboBox noiseStyle;
@@ -55,14 +77,17 @@ private:
     std::array<juce::Label,44> labels;
     std::array<juce::Slider,3> curveSliders;
     juce::Label curveLabel;
-    std::array<juce::ComboBox,3> waves;
+    std::array<QinWaveSwitch,3> waves;
+    std::array<QinRetrigSwitch,3> retrig;
     std::array<juce::Label,3> waveLabels;
     juce::ComboBox filterType, modTarget;
     juce::Label filterTypeLabel, modTargetLabel;
     using State=juce::AudioProcessorValueTreeState;
     std::array<std::unique_ptr<State::SliderAttachment>,44> sliderAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> curveAttachments;
-    std::array<std::unique_ptr<State::ComboBoxAttachment>,3> waveAttachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,3> waveAttachments;
+    std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
+    std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
     std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
     std::unique_ptr<State::ButtonAttachment> noiseAttachment, timesFiveAttachment;
     std::array<std::unique_ptr<State::SliderAttachment>,4> noiseSliderAttachments;

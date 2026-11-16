@@ -12,6 +12,12 @@ struct QinSynthTestAccess
     static float tap(const QinSynthProcessor& p) { return p.onsetTap; }
     static float phase(const QinSynthProcessor& p) { return p.onsetPhase; }
     static uint32_t analysisJobs(const QinSynthProcessor& p) { return p.reverb.analysisJobs(); }
+    static double firstPhase(const QinSynthProcessor& p,int osc)
+    { return p.voices[0].oscillators[size_t(osc)][0].phase; }
+    static double secondPhase(const QinSynthProcessor& p,int osc)
+    { return p.voices[1].oscillators[size_t(osc)][0].phase; }
+    static void noteOn(QinSynthProcessor& p,int note)
+    { p.handleMidi(juce::MidiMessage::noteOn(1,note,.7f),p.readSettings()); }
     static std::array<float,3> envelopeTimes(const QinSynthProcessor& p,int index)
     { const auto settings=p.readSettings(); const auto& e=settings.env[size_t(index)]; return {e.attack,e.decay,e.release}; }
     static bool stableFilters(const QinSynthProcessor& p)
@@ -36,7 +42,23 @@ struct QinSynthEditorTestAccess
     static void envelope(QinSynthEditor& editor,int index) { editor.showEnvelope(index); }
     static void fxSection(QinSynthEditor& editor,int index) { editor.showFxSection(index); }
     static bool oscillatorVisible(const QinSynthEditor& editor,int index)
-    { return editor.waves[size_t(index)].isVisible() && editor.sliders[size_t(index*6)].isVisible(); }
+    { return editor.waves[size_t(index)].isVisible() && editor.retrig[size_t(index)].isVisible()
+        && editor.sliders[size_t(index*6)].isVisible(); }
+    static bool voiceDragEnabled(const QinSynthEditor& editor)
+    { return editor.voiceCount.isVisible()
+        && editor.voiceCount.getSliderStyle()==juce::Slider::RotaryVerticalDrag
+        && std::abs(editor.voiceCount.getMinimum()-1)<1.e-6
+        && std::abs(editor.voiceCount.getMaximum()-16)<1.e-6; }
+    static bool waveSwitchEnabled(const QinSynthEditor& editor,int index)
+    { return editor.waves[size_t(index)].getSliderStyle()==juce::Slider::LinearHorizontal
+        && std::abs(editor.waves[size_t(index)].getMinimum())<1.e-6
+        && std::abs(editor.waves[size_t(index)].getMaximum()-2)<1.e-6; }
+    static void setVoiceCount(QinSynthEditor& editor,int count)
+    { editor.voiceCount.setValue(count,juce::sendNotificationSync); }
+    static void setWave(QinSynthEditor& editor,int index,int wave)
+    { editor.waves[size_t(index)].setValue(wave,juce::sendNotificationSync); }
+    static void setRetrig(QinSynthEditor& editor,int index,bool enabled)
+    { editor.retrig[size_t(index)].setToggleState(enabled,juce::sendNotificationSync); }
     static bool voiceFxVisible(const QinSynthEditor& editor)
     { return editor.sliders[37].isVisible() && editor.sliders[36].isVisible(); }
     static bool delayFxVisible(const QinSynthEditor& editor)
@@ -142,6 +164,22 @@ int main(int argc,char** argv)
         if(QinSynthTestAccess::active(synth)!=0) throw std::runtime_error("Released notes must free their voices");
         if(QinSynthTestAccess::analysisJobs(synth)!=0)
             throw std::runtime_error("MIDI-steered reverb must not run Lan's resonance analyser");
+        QinSynthProcessor limited;
+        set(limited,"verbMix",0); set(limited,"voiceCount",2);
+        set(limited,"osc1Retrig",1); limited.prepareToPlay(48000,256);
+        midi.clear();
+        for(int note=60;note<64;++note) midi.addEvent(juce::MidiMessage::noteOn(1,note,.7f),0);
+        limited.processBlock(block,midi);
+        if(QinSynthTestAccess::active(limited)!=2)
+            throw std::runtime_error("Voice count must limit simultaneous notes");
+        QinSynthTestAccess::noteOn(limited,68);
+        if(QinSynthTestAccess::active(limited)!=2 || std::abs(QinSynthTestAccess::firstPhase(limited,0))>1.e-6)
+            throw std::runtime_error("Retrig must restart the oscillator waveform at note onset");
+        set(limited,"osc1Retrig",0);
+        const auto freePhase=QinSynthTestAccess::secondPhase(limited,0);
+        QinSynthTestAccess::noteOn(limited,70);
+        if(std::abs(QinSynthTestAccess::secondPhase(limited,0)-freePhase)>1.e-6)
+            throw std::runtime_error("Free-running oscillator must preserve phase across stolen voices");
         QinSynthProcessor dense;
         set(dense,"osc1Unison",8); set(dense,"osc2Level",75); set(dense,"osc2Unison",8);
         set(dense,"osc3Level",75); set(dense,"osc3Unison",8);
@@ -438,6 +476,18 @@ int main(int argc,char** argv)
         {
             QinSynthProcessor preview;
             QinSynthEditor editor(preview);
+            if(!QinSynthEditorTestAccess::voiceDragEnabled(editor)
+               || !QinSynthEditorTestAccess::waveSwitchEnabled(editor,0)
+               || !QinSynthEditorTestAccess::waveSwitchEnabled(editor,1)
+               || !QinSynthEditorTestAccess::waveSwitchEnabled(editor,2))
+                throw std::runtime_error("Polyphony readout and oscillator waves must use draggable switches");
+            QinSynthEditorTestAccess::setVoiceCount(editor,4);
+            QinSynthEditorTestAccess::setWave(editor,1,2);
+            QinSynthEditorTestAccess::setRetrig(editor,2,true);
+            if(std::abs(preview.parameters.getRawParameterValue("voiceCount")->load()-4)>1.e-6
+               || std::abs(preview.parameters.getRawParameterValue("osc2Wave")->load()-2)>1.e-6
+               || preview.parameters.getRawParameterValue("osc3Retrig")->load()<.5f)
+                throw std::runtime_error("Polyphony, waveform, and Retrig UI must update their host parameters");
             if(!QinSynthEditorTestAccess::oscillatorVisible(editor,0)
                || QinSynthEditorTestAccess::oscillatorVisible(editor,1)
                || !QinSynthEditorTestAccess::voiceFxVisible(editor)
