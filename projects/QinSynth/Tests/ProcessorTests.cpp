@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../../ParameterRetentionTests.h"
 #include "../Source/PluginEditor.h"
 #include <cmath>
 #include <iostream>
@@ -90,6 +91,7 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        verifyParameterRetention<QinSynthProcessor>();
         QinSynthProcessor synth;
         set(synth,"verbMix",0); synth.prepareToPlay(48000,256);
         if(!synth.acceptsMidi() || !synth.isBusesLayoutSupported(synth.getBusesLayout()))

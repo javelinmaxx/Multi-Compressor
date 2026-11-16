@@ -20,7 +20,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
     bypass.panelColour = nianPanel;
     addAndMakeVisible (titleHint);
     addAndMakeVisible (signalDisplay);
-    signalDisplay.setTooltip ("Stacks the generated-delta spectrum above the input spectrum and shows the actual output around the crossover.");
+    signalDisplay.setTooltip ("Click to audition only the generated delta, or drag the gold crossover line to change the split frequency.");
     setOpaque (true); setLookAndFeel (&look);
     look.setColour (juce::TooltipWindow::backgroundColourId, nianPanel);
     look.setColour (juce::TooltipWindow::textColourId, foreground);
@@ -32,7 +32,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
     constexpr std::array<const char*, 5> names { "CROSSOVER", "LOW", "HIGH", "MIX", "OUTPUT" };
     constexpr std::array<const char*, 5> units { " Hz", " %", " %", " %", " dB" };
     constexpr std::array<const char*, 5> hints {
-        "Sets the frequency where the low and high bands meet.",
+        "Sets the low/high split on a logarithmic frequency scale.",
         "Sets the low-band peak enhancement or drive.",
         "Sets the high-band peak enhancement or drive.",
         "Blends the processed sound with the latency-aligned original.",
@@ -55,6 +55,8 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
         attachments[i] = std::make_unique<State::SliderAttachment> (p.parameters, ids[i], slider);
         editorTooltips::setHint (slider, labels[i], hints[i]);
     }
+    sliders[0].textFromValueFunction=[](double value) { return juce::String(juce::roundToInt(value)); };
+    sliders[0].updateText();
     mode.setColour (juce::ComboBox::backgroundColourId, nianPanel);
     mode.setColour (juce::ComboBox::textColourId, foreground);
     mode.setColour (juce::ComboBox::outlineColourId, nianGrid);
@@ -111,6 +113,50 @@ NianSaturatorEditor::SignalDisplay::SignalDisplay (NianSaturatorProcessor& p) : 
         window[i]=.5f-.5f*std::cos(juce::MathConstants<float>::twoPi*float(i)/float(window.size()-1));
     startTimerHz (30);
 }
+void NianSaturatorEditor::SignalDisplay::setCrossoverAt(float x)
+{
+    const auto maxHz=std::min(20000.f,processor.getDisplaySampleRate()*.48f);
+    const auto proportion=std::clamp((x-20.f)/float(getWidth()-40),0.f,1.f);
+    const auto frequency=std::clamp(40.f*std::pow(maxHz/40.f,proportion),80.f,8000.f);
+    if(auto* parameter=processor.parameters.getParameter("crossover"))
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(frequency));
+    refresh();
+}
+void NianSaturatorEditor::SignalDisplay::toggleDeltaSolo()
+{
+    if(auto* parameter=processor.parameters.getParameter("deltaSolo"))
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->getValue()>.5f ? 0.f : 1.f);
+        parameter->endChangeGesture();
+        refresh();
+    }
+}
+void NianSaturatorEditor::SignalDisplay::mouseDown(const juce::MouseEvent& event)
+{
+    const auto x=float(event.getPosition().x),y=float(event.getPosition().y);
+    if(x<20.f || x>float(getWidth()-20) || y<45.f || y>148.f) return;
+    const auto crossover=std::clamp(processor.parameters.getRawParameterValue("crossover")->load(),80.f,8000.f);
+    const auto maxHz=std::min(20000.f,processor.getDisplaySampleRate()*.48f);
+    const auto marker=20.f+float(getWidth()-40)*std::log(crossover/40.f)/std::log(maxHz/40.f);
+    if(std::abs(x-marker)<=12.f)
+    {
+        draggingCrossover=true;
+        if(auto* parameter=processor.parameters.getParameter("crossover")) parameter->beginChangeGesture();
+        setCrossoverAt(x);
+    }
+    else toggleDeltaSolo();
+}
+void NianSaturatorEditor::SignalDisplay::mouseDrag(const juce::MouseEvent& event)
+{ if(draggingCrossover) setCrossoverAt(float(event.getPosition().x)); }
+void NianSaturatorEditor::SignalDisplay::mouseUp(const juce::MouseEvent&)
+{
+    if(draggingCrossover)
+    {
+        draggingCrossover=false;
+        if(auto* parameter=processor.parameters.getParameter("crossover")) parameter->endChangeGesture();
+    }
+}
 void NianSaturatorEditor::SignalDisplay::refresh()
 {
     std::array<NianSaturatorProcessor::DisplaySample, 2048> incoming {};
@@ -135,7 +181,7 @@ void NianSaturatorEditor::SignalDisplay::refresh()
             for(size_t i=0;i<history.size();++i)
             {
                 const auto& point=history[size_t((position+int(i))%int(history.size()))];
-                const auto value=trace==0 ? point.input : trace==1 ? point.delta : point.input+point.delta;
+                const auto value=trace==0 ? point.input : trace==1 ? point.delta : point.output;
                 transform[i]=value*window[i];
             }
             fft.performFrequencyOnlyForwardTransform(transform.data());
@@ -149,9 +195,10 @@ void NianSaturatorEditor::SignalDisplay::refresh()
         }
         received=std::min(received+count,int(history.size()));
     }
-    if(count>0 || std::abs(frequency-lastCrossover)>.5f)
+    const auto deltaSolo=processor.parameters.getRawParameterValue("deltaSolo")->load()>.5f;
+    if(count>0 || std::abs(frequency-lastCrossover)>.5f || deltaSolo!=lastDeltaSolo)
     {
-        lastCrossover=frequency;
+        lastCrossover=frequency; lastDeltaSolo=deltaSolo;
         repaint();
     }
 }
@@ -160,6 +207,9 @@ void NianSaturatorEditor::SignalDisplay::paint (juce::Graphics& g)
     drawPanel (g, getLocalBounds().toFloat(), nianPanel);
     g.setColour (foreground); g.setFont (juce::FontOptions (13.f).withStyle ("bold"));
     g.drawText ("SPECTRUM",12,8,150,19,juce::Justification::centredLeft);
+    if(processor.parameters.getRawParameterValue("deltaSolo")->load()>.5f)
+    { g.setColour(amber); g.setFont(juce::FontOptions(9.f).withStyle("bold"));
+      g.drawText("DELTA SOLO",108,11,103,15,juce::Justification::centredLeft); }
     g.setFont (juce::FontOptions (9.f));
     g.setColour (nianAccent); g.drawText ("IN",235,12,25,13,juce::Justification::centredLeft);
     g.setColour (amber); g.drawText ("DELTA",268,12,45,13,juce::Justification::centredLeft);

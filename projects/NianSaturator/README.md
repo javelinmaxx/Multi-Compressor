@@ -5,7 +5,11 @@ settings. F mode tracks twelve spectrally prominent peaks in separate frequency
 cells and adds short bandpass pulses to detected onsets; T mode applies gentle tube-style drive
 independently to the two bands.
 Low and High set their respective amounts, Mix blends the dry and processed
-signals, and Output sets the final level.
+signals, and Output sets the final level. The Crossover knob uses a logarithmic
+80–8000 Hz scale. Drag its gold line in the spectrum to change the frequency;
+click elsewhere in the plot to toggle Delta Solo and hear only the added signal.
+Delta Solo is saved with the other host parameters, fades over 20 ms when
+switched, and yields to Bypass.
 
 The editor follows the shared J-Sonic style and supports 50%–120% scaling.
 The bottom display shows the left-channel input, generated-delta, and output
@@ -13,7 +17,8 @@ spectra on a logarithmic 40 Hz–20 kHz axis. It smooths neighboring FFT bins
 and stacks the delta magnitude in gold above the input magnitude; the white
 trace is the measured output spectrum. The gold stack is a visual comparison,
 because spectral magnitudes do not add exactly when phases differ. A gold
-marker separates the Low and High regions at the shared crossover.
+marker separates the Low and High regions at the shared crossover. The white
+trace follows the actual output, including Delta Solo.
 
 The split is complementary: the high-band signal is the input minus a
 one-pole low-pass. Its bands therefore overlap around the single crossover,

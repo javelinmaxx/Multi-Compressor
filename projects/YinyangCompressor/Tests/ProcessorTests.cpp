@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../../ParameterRetentionTests.h"
 #include "../Source/PluginEditor.h"
 #include "../Source/HistoryDisplayScale.h"
 #include <cstdlib>
@@ -132,6 +133,7 @@ void externalSidechainTests()
 int runTests (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juce;
+    verifyParameterRetention<YinyangCompressorProcessor>();
     waveformTests();
     externalSidechainTests();
     YinyangCompressorProcessor p;

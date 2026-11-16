@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../../ParameterRetentionTests.h"
 #include <cmath>
 #include <cstring>
 #include <complex>
@@ -884,6 +885,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        verifyParameterRetention<ShunDeEsserProcessor>();
         inactivePathTests();
         if (argc > 2 && juce::String (argv[1]) == "--response-previews")
         {

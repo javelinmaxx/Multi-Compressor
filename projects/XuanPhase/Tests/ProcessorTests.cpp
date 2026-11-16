@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../../ParameterRetentionTests.h"
 #include "../../StagePluginTests.h"
 #include <complex>
 #include <random>
@@ -991,6 +992,7 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI gui;
     try
     {
+        verifyParameterRetention<XuanPhaseProcessor>();
         {
             xuan::Settings s;
             xuan::PhaseEngine engine; engine.prepare (48000, [&s] { return s; }, false);

@@ -1,4 +1,6 @@
 #include "../Source/PluginProcessor.h"
+#include "../Source/PluginEditor.h"
+#include "../../ParameterRetentionTests.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -24,6 +26,7 @@ struct NianSaturatorTestAccess
     }
     static float recovery(const NianSaturatorProcessor& p) { return p.recoveryMix; }
     static float tubeGain(const NianSaturatorProcessor& p,int channel,int band) { return p.tubeGainState[size_t(channel)][size_t(band)]; }
+    static float crossoverTarget(const NianSaturatorProcessor& p) { return p.crossoverAlpha.getTargetValue(); }
     static int lookahead(const NianSaturatorProcessor& p) { return p.lookaheadSamples; }
     static std::pair<float,float> firstBandForTone(NianSaturatorProcessor& p,float hz,float rate)
     {
@@ -69,6 +72,13 @@ struct NianSaturatorTestAccess
         p.onsetRefractory=1000000;
     }
 };
+struct NianSaturatorEditorTestAccess
+{
+    static void dragCrossover(NianSaturatorEditor& editor,float x)
+    { editor.signalDisplay.setCrossoverAt(x); }
+    static void toggleSolo(NianSaturatorEditor& editor)
+    { editor.signalDisplay.toggleDeltaSolo(); }
+};
 static void set (NianSaturatorProcessor& p, const char* id, float value)
 { auto* parameter=p.parameters.getParameter(id); parameter->setValueNotifyingHost(parameter->convertTo0to1(value)); }
 int main(int argc,char** argv)
@@ -76,6 +86,30 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        verifyParameterRetention<NianSaturatorProcessor>();
+        const auto midpoint=NianSaturatorProcessor().parameters.getParameter("crossover")->convertFrom0to1(.5f);
+        if(std::abs(midpoint-800.f)>1.f)
+            throw std::runtime_error("Crossover knob must place the geometric midpoint at 800 Hz");
+        {
+            NianSaturatorProcessor saved,restored;
+            set(saved,"crossover",3200); set(saved,"deltaSolo",1);
+            juce::MemoryBlock state; saved.getStateInformation(state);
+            restored.prepareToPlay(48000,128);
+            restored.setStateInformation(state.getData(),int(state.getSize()));
+            std::unique_ptr<juce::AudioProcessorEditor> reopened(restored.createEditor());
+            juce::Slider* cutoffKnob=nullptr;
+            for(auto* child:reopened->getChildren())
+                if(auto* slider=dynamic_cast<juce::Slider*>(child))
+                    if(slider->getName()=="CROSSOVER") cutoffKnob=slider;
+            if(cutoffKnob==nullptr || std::abs(cutoffKnob->getValue()-3200)>1.f
+               || restored.parameters.getRawParameterValue("deltaSolo")->load()<.5f)
+                throw std::runtime_error("Crossover and Delta Solo must survive a live host restore and editor reopen");
+            juce::AudioBuffer<float> silence(2,128); silence.clear(); juce::MidiBuffer noMidi;
+            restored.processBlock(silence,noMidi);
+            const auto expectedAlpha=1.f-std::exp(-juce::MathConstants<float>::twoPi*3200.f/(4.f*48000.f));
+            if(std::abs(NianSaturatorTestAccess::crossoverTarget(restored)-expectedAlpha)>1.e-5f)
+                throw std::runtime_error("Restored crossover must reach the audio filter after host movement");
+        }
         NianSaturatorProcessor p; set(p,"lowDrive",0); set(p,"highDrive",0); p.prepareToPlay(48000,128);
         if(NianSaturatorTestAccess::lookahead(p)!=240 || p.getLatencySamples()!=304)
             throw std::runtime_error("48 kHz latency must include 5 ms lookahead and 64 samples of converter delay");
@@ -535,6 +569,57 @@ int main(int argc,char** argv)
                 || std::any_of(notePower.begin(),notePower.end(),[](double power){return power<1;}))
                 throw std::runtime_error("F mode must keep the first 5 ms of a piano attack clean without spikes or silence");
         }
+        {
+            NianSaturatorProcessor dry,full,solo;
+            for(auto* processor:{&dry,&full,&solo})
+            {
+                set(*processor,"mode",1); set(*processor,"crossover",1000);
+                set(*processor,"lowDrive",100); set(*processor,"highDrive",100);
+            }
+            set(dry,"mix",0); set(solo,"deltaSolo",1);
+            for(auto* processor:{&dry,&full,&solo}) processor->prepareToPlay(48000,128);
+            juce::AudioBuffer<float> dryAudio(2,128),fullAudio(2,128),soloAudio(2,128);
+            juce::MidiBuffer noMidi;
+            double soloPower=0,maximumError=0;
+            for(int block=0;block<50;++block)
+            {
+                for(int sample=0;sample<128;++sample)
+                {
+                    const auto time=double(block*128+sample)/48000.0;
+                    const auto input=float(.22*std::sin(juce::MathConstants<double>::twoPi*300*time)
+                                           +.14*std::sin(juce::MathConstants<double>::twoPi*1500*time));
+                    for(auto* buffer:{&dryAudio,&fullAudio,&soloAudio})
+                        for(int channel=0;channel<2;++channel) buffer->setSample(channel,sample,input);
+                }
+                dry.processBlock(dryAudio,noMidi); full.processBlock(fullAudio,noMidi);
+                solo.processBlock(soloAudio,noMidi);
+                if(block>=40)
+                    for(int sample=0;sample<128;++sample)
+                    {
+                        const auto delta=soloAudio.getSample(0,sample);
+                        soloPower+=double(delta)*delta;
+                        maximumError=std::max(maximumError,double(std::abs(
+                            fullAudio.getSample(0,sample)-dryAudio.getSample(0,sample)-delta)));
+                    }
+            }
+            if(soloPower<1.e-5 || maximumError>1.e-3)
+                throw std::runtime_error("Delta solo must output the processed difference without dry signal");
+            set(solo,"bypass",1);
+            for(int block=0;block<20;++block)
+            {
+                for(int sample=0;sample<128;++sample)
+                {
+                    const auto time=double((block+50)*128+sample)/48000.0;
+                    const auto input=float(.2*std::sin(juce::MathConstants<double>::twoPi*300*time));
+                    for(auto* buffer:{&dryAudio,&soloAudio})
+                        for(int channel=0;channel<2;++channel) buffer->setSample(channel,sample,input);
+                }
+                dry.processBlock(dryAudio,noMidi); solo.processBlock(soloAudio,noMidi);
+            }
+            for(int sample=0;sample<128;++sample)
+                if(std::abs(dryAudio.getSample(0,sample)-soloAudio.getSample(0,sample))>1.e-3f)
+                    throw std::runtime_error("Bypass must restore the dry signal while delta solo is selected");
+        }
         set(p,"mode",1); set(p,"crossover",1000); set(p,"lowDrive",85); set(p,"highDrive",85);
         for(int block=0;block<80;++block)
         {
@@ -548,6 +633,18 @@ int main(int argc,char** argv)
             p.processBlock(audio,midi);
         }
         std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor()); editor->addToDesktop(0); editor->setVisible(true);
+        auto* nianEditor=dynamic_cast<NianSaturatorEditor*>(editor.get());
+        if(nianEditor==nullptr) throw std::runtime_error("Nian editor type is incorrect");
+        NianSaturatorEditorTestAccess::dragCrossover(*nianEditor,300.f);
+        const auto dragged=p.parameters.getRawParameterValue("crossover")->load();
+        if(dragged<2000.f || dragged>8000.f) throw std::runtime_error("Spectrum drag must move crossover on the logarithmic axis");
+        NianSaturatorEditorTestAccess::toggleSolo(*nianEditor);
+        if(p.parameters.getRawParameterValue("deltaSolo")->load()<.5f)
+            throw std::runtime_error("Spectrum click must enable delta-only audition");
+        NianSaturatorEditorTestAccess::toggleSolo(*nianEditor);
+        if(p.parameters.getRawParameterValue("deltaSolo")->load()>.5f)
+            throw std::runtime_error("Second spectrum click must restore full output");
+        set(p,"crossover",1000);
         auto image=editor->createComponentSnapshot(editor->getLocalBounds());
         if(!image.isValid()) throw std::runtime_error("editor must render");
         if(argc>1) { juce::File file(argv[1]); file.getParentDirectory().createDirectory(); auto out=file.createOutputStream(); if(!out || !out->setPosition(0) || out->truncate().failed() || !juce::PNGImageFormat().writeImageToStream(image,*out)) throw std::runtime_error("preview write failed"); }

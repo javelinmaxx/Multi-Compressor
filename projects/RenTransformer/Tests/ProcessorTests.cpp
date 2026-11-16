@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../../ParameterRetentionTests.h"
 #include "../../StagePluginTests.h"
 using namespace stageTests;
 namespace
@@ -78,6 +79,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        verifyParameterRetention<RenTransformerProcessor>();
         stateTests<RenTransformerProcessor> (6); transformerTests();
         blockSizeTests<RenTransformerProcessor>();
         if (argc > 2 && juce::String (argv[1]) == "--editor")

@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../../ParameterRetentionTests.h"
 #include "../../MonoStereoRoutingTests.h"
 #include "../../StagePluginTests.h"
 using namespace stageTests;
@@ -198,6 +199,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        verifyParameterRetention<KuoVelvetProcessor>();
         monoStereoTests::run<KuoVelvetProcessor> (nullptr,true);
         stateTests<KuoVelvetProcessor> (5); referenceTests(); velvetTests(); legacyStateTests();
         blockSizeTests<KuoVelvetProcessor>();

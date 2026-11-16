@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../../ParameterRetentionTests.h"
 #include "../../MonoStereoRoutingTests.h"
 #include "../../StagePluginTests.h"
 #include <filesystem>
@@ -1262,6 +1263,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        verifyParameterRetention<LanReverbProcessor>();
         spectrumDisplayTests();
         monoStereoTests::run<LanReverbProcessor> ("automatic",true);
         const auto directory = argc > 2 && (juce::String(argv[1]) == "--report" || juce::String(argv[1]) == "--shimmer")

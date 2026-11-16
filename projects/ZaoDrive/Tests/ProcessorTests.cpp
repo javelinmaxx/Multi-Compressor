@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../../ParameterRetentionTests.h"
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -1447,6 +1448,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        verifyParameterRetention<ZaoDriveProcessor>();
         circuitTests(); shapeTests(); processorTests(); smartTests(); clearTests(); greyNoiseTests(); optimizationTests(); inactiveCircuitTests(); autoCompensatorTests();
         if (argc > 2 && juce::String (argv[1]) == "--editor")
         {

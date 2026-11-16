@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../../ParameterRetentionTests.h"
 #include "../../MonoStereoRoutingTests.h"
 #include "../Measurements/SynthPad.h"
 #include <cmath>
@@ -400,6 +401,7 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        verifyParameterRetention<KuoStereoProcessor>();
         monoStereoTests::run<KuoStereoProcessor> ("haasRange",true);
         KuoStereoProcessor processor;
         check (processor.getName() == "Kuo Stereo", "plug-in identity is Kuo Stereo");

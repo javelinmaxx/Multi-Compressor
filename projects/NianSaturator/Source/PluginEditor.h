@@ -18,8 +18,14 @@ private:
         explicit SignalDisplay (NianSaturatorProcessor&);
         void paint (juce::Graphics&) override;
         void refresh();
+        void mouseDown(const juce::MouseEvent&) override;
+        void mouseDrag(const juce::MouseEvent&) override;
+        void mouseUp(const juce::MouseEvent&) override;
     private:
+        friend struct NianSaturatorEditorTestAccess;
         void timerCallback() override { refresh(); }
+        void setCrossoverAt(float x);
+        void toggleDeltaSolo();
         NianSaturatorProcessor& processor;
         juce::dsp::FFT fft { 11 };
         std::array<NianSaturatorProcessor::DisplaySample, 2048> history {};
@@ -27,7 +33,9 @@ private:
         std::array<float, 2048> window {};
         int position = 0, received = 0;
         float lastCrossover = 0;
+        bool lastDeltaSolo=false, draggingCrossover=false;
     };
+    friend struct NianSaturatorEditorTestAccess;
     static constexpr int designWidth = 444, designHeight = 432;
     SignalDisplay signalDisplay;
     StageLookAndFeel look;

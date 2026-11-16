@@ -37,7 +37,7 @@ public:
     void getStateInformation (juce::MemoryBlock&) override;
     void setStateInformation (const void*, int) override;
     juce::AudioProcessorValueTreeState parameters;
-    struct DisplaySample { float input = 0, delta = 0; };
+    struct DisplaySample { float input = 0, delta = 0, output = 0; };
     int readDisplay (DisplaySample* destination, int capacity) noexcept;
     float getDisplaySampleRate() const noexcept { return displaySampleRate.load (std::memory_order_relaxed); }
 private:
@@ -73,7 +73,7 @@ private:
     std::array<FDeltaHighPass,2> fDeltaHighPass {};
     std::array<std::array<float,2>,2> tubeDcState {};
     std::array<std::array<float,2>,2> tubeRmsState {}, tubeGainState {};
-    juce::SmoothedValue<float> crossoverAlpha, modeBlend, bypassBlend, mixBlend;
+    juce::SmoothedValue<float> crossoverAlpha, modeBlend, bypassBlend, mixBlend, deltaSoloBlend;
     std::array<character::Oversampling4x, 2> converters;
     static constexpr int latency = character::Oversampling4x::latencySamples;
     std::array<std::array<float, latency>, 2> dryHistory {};

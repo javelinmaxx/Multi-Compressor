@@ -20,11 +20,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout NianSaturatorProcessor::crea
     juce::AudioProcessorValueTreeState::ParameterLayout result;
     auto add = [&] (const char* id, const char* name, float lo, float hi, float def, const char* unit)
     { result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id,1},name,juce::NormalisableRange<float>{lo,hi,.1f},def,juce::AudioParameterFloatAttributes().withLabel(unit))); };
-    add("crossover","Crossover",80,8000,1000,"Hz"); add("lowDrive","Low",0,100,30,"%");
+    juce::NormalisableRange<float> crossoverRange {80.f,8000.f,
+        [](float low,float high,float position) { return low*std::pow(high/low,position); },
+        [](float low,float high,float value) { return std::log(value/low)/std::log(high/low); },
+        [](float,float,float value) { return std::round(value); }};
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"crossover",1},
+        "Crossover",crossoverRange,1000.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
+    add("lowDrive","Low",0,100,30,"%");
     add("highDrive","High",0,100,30,"%"); add("mix","Mix",0,100,100,"%");
     add("output","Output",-12,12,0,"dB");
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"mode",1},"Mode",juce::StringArray{"F / Peak","T / Drive"},0));
-    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"bypass",1},"Bypass",false)); return result;
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"bypass",1},"Bypass",false));
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"deltaSolo",1},"Delta solo",false)); return result;
 }
 NianSaturatorProcessor::NianSaturatorProcessor() : AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true).withOutput("Output",juce::AudioChannelSet::stereo(),true)), parameters(*this,nullptr,"NianSaturatorState",createParameterLayout()) {}
 NianSaturatorProcessor::~NianSaturatorProcessor() { stopAnalysisWorker(); }
@@ -45,7 +52,8 @@ void NianSaturatorProcessor::prepareToPlay(double rate,int) { stopAnalysisWorker
     displayFifo.reset(); setLatencySamples(latency+lookaheadSamples);
     for(size_t i=0;i<window.size();++i)
         window[i]=.5f-.5f*std::cos(juce::MathConstants<float>::twoPi*float(i)/float(window.size()-1));
-    crossoverAlpha.reset(sampleRate,.02); modeBlend.reset(sampleRate,.02); bypassBlend.reset(sampleRate/4.f,.02); mixBlend.reset(sampleRate/4.f,.02);
+    crossoverAlpha.reset(sampleRate,.02); modeBlend.reset(sampleRate,.02); bypassBlend.reset(sampleRate/4.f,.02);
+    mixBlend.reset(sampleRate/4.f,.02); deltaSoloBlend.reset(sampleRate/4.f,.02);
     const auto frequency=std::clamp(parameters.getRawParameterValue("crossover")->load(),80.f,std::min(8000.f,sampleRate*.1f));
     const auto maxFrequency=std::min(20000.f,sampleRate*.1125f);
     for(int slot=0;slot<fBandCount;++slot)
@@ -58,6 +66,7 @@ void NianSaturatorProcessor::prepareToPlay(double rate,int) { stopAnalysisWorker
     modeBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("mode")->load()>.5f ? 1.f : 0.f);
     bypassBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("bypass")->load()>.5f ? 1.f : 0.f);
     mixBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("mix")->load()*.01f);
+    deltaSoloBlend.setCurrentAndTargetValue(parameters.getRawParameterValue("deltaSolo")->load()>.5f ? 1.f : 0.f);
     startAnalysisWorker(); }
 bool NianSaturatorProcessor::isBusesLayoutSupported(const BusesLayout& layout) const { return layout.getMainInputChannelSet()==layout.getMainOutputChannelSet() && (layout.getMainInputChannelSet()==juce::AudioChannelSet::mono() || layout.getMainInputChannelSet()==juce::AudioChannelSet::stereo()); }
 void NianSaturatorProcessor::startAnalysisWorker()
@@ -240,6 +249,7 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
     crossoverAlpha.setTargetValue(1-std::exp(-juce::MathConstants<float>::twoPi*crossover/sampleRate));
     modeBlend.setTargetValue(peakMode ? 0.f : 1.f); bypassBlend.setTargetValue(bypass ? 1.f : 0.f);
     mixBlend.setTargetValue(std::clamp(get("mix")*.01f,0.f,1.f));
+    deltaSoloBlend.setTargetValue(get("deltaSolo")>.5f ? 1.f : 0.f);
     int writeStart1,writeSize1,writeStart2,writeSize2;
     displayFifo.prepareToWrite(b.getNumSamples(),writeStart1,writeSize1,writeStart2,writeSize2);
     const auto coefficientStep=1-std::exp(-1.0/(.005*double(sampleRate)));
@@ -435,6 +445,7 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
         }
         const auto bypassAmount=bypassBlend.getNextValue();
         const auto mix=mixBlend.getNextValue();
+        const auto deltaSolo=deltaSoloBlend.getNextValue();
         std::array<float,2> wet {};
         bool fault=false;
         const auto wetLimit=std::max(8.f,8.f*recentInputPeak);
@@ -474,11 +485,13 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
             const auto index=size_t(ch);
             const auto mixed=(dry[index]+mix*(wet[index]-dry[index]))*gain;
             const auto delta=fault ? 0.f : recoveryMix*(1-bypassAmount)*(mixed-dry[index]);
-            b.setSample(ch,i,dry[index]+delta);
+            const auto soloAmount=fault ? 0.f : deltaSolo*(1.f-bypassAmount);
+            const auto output=dry[index]*(1.f-soloAmount)+delta;
+            b.setSample(ch,i,output);
             if(ch==0 && i<writeSize1+writeSize2)
             {
                 const auto position=i<writeSize1 ? writeStart1+i : writeStart2+i-writeSize1;
-                displayQueue[size_t(position)]={dry[index],delta};
+                displayQueue[size_t(position)]={dry[index],delta,output};
             }
         }
         dryPosition=(dryPosition+1)%latency;
