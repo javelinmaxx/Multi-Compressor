@@ -12,7 +12,7 @@ Qin Synth is a stereo MIDI instrument with adjustable 1–16-note polyphony, thr
 
 ![Qin Synth with the tunable Noise oscillator and Velvet style](Previews/qin-synth-noise.png)
 
-Drag the voice count in the header up or down to set maximum polyphony. Each OSC panel has a three-position analog waveform switch and a **Retrig** switch. Retrig restarts waveform phase at each note onset; when off, a reused voice continues from its previous phase.
+Drag the voice count in the header up or down to set maximum polyphony. Each OSC panel has a three-position analog waveform switch and a **Retrig** switch. Retrig restarts every enabled oscillator and unison copy at phase zero on each note onset; when off, a reused voice continues from its previous phase.
 
 Qin follows the section hierarchy of Spire: a tabbed **OSC** sound module on the left, **FLT** above **ENV** in the center, and tabbed **FX** on the right. OSC, FLT, and ENV stay visible while FX switches between Drive and Delay. Every control remains available to host automation.
 

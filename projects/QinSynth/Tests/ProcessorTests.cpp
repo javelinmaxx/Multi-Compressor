@@ -12,10 +12,15 @@ struct QinSynthTestAccess
     static float tap(const QinSynthProcessor& p) { return p.onsetTap; }
     static float phase(const QinSynthProcessor& p) { return p.onsetPhase; }
     static uint32_t analysisJobs(const QinSynthProcessor& p) { return p.reverb.analysisJobs(); }
-    static double firstPhase(const QinSynthProcessor& p,int osc)
-    { return p.voices[0].oscillators[size_t(osc)][0].phase; }
     static double secondPhase(const QinSynthProcessor& p,int osc)
     { return p.voices[1].oscillators[size_t(osc)][0].phase; }
+    static bool allRetriggeredPhasesMatch(const QinSynthProcessor& p)
+    {
+        for(const auto& oscillator:p.voices[0].oscillators)
+            for(const auto& subvoice:oscillator)
+                if(std::abs(subvoice.phase)>1.e-12 || std::abs(subvoice.triangle)>1.e-12) return false;
+        return true;
+    }
     static void noteOn(QinSynthProcessor& p,int note)
     { p.handleMidi(juce::MidiMessage::noteOn(1,note,.7f),p.readSettings()); }
     static std::array<float,3> envelopeTimes(const QinSynthProcessor& p,int index)
@@ -166,15 +171,16 @@ int main(int argc,char** argv)
             throw std::runtime_error("MIDI-steered reverb must not run Lan's resonance analyser");
         QinSynthProcessor limited;
         set(limited,"verbMix",0); set(limited,"voiceCount",2);
-        set(limited,"osc1Retrig",1); limited.prepareToPlay(48000,256);
+        for(const auto* id:{"osc1Retrig","osc2Retrig","osc3Retrig"}) set(limited,id,1);
+        limited.prepareToPlay(48000,256);
         midi.clear();
         for(int note=60;note<64;++note) midi.addEvent(juce::MidiMessage::noteOn(1,note,.7f),0);
         limited.processBlock(block,midi);
         if(QinSynthTestAccess::active(limited)!=2)
             throw std::runtime_error("Voice count must limit simultaneous notes");
         QinSynthTestAccess::noteOn(limited,68);
-        if(QinSynthTestAccess::active(limited)!=2 || std::abs(QinSynthTestAccess::firstPhase(limited,0))>1.e-6)
-            throw std::runtime_error("Retrig must restart the oscillator waveform at note onset");
+        if(QinSynthTestAccess::active(limited)!=2 || !QinSynthTestAccess::allRetriggeredPhasesMatch(limited))
+            throw std::runtime_error("Retrig must start every oscillator and unison copy at the same phase");
         set(limited,"osc1Retrig",0);
         const auto freePhase=QinSynthTestAccess::secondPhase(limited,0);
         QinSynthTestAccess::noteOn(limited,70);

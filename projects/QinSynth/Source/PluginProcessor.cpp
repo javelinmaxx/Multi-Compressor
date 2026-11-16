@@ -318,11 +318,13 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
             for(int u=0;u<maxUnison;++u)
             {
                 auto& subvoice=selected->oscillators[size_t(osc)][size_t(u)];
-                if(!settings.oscillator[size_t(osc)].retrig && hadPreviousNote)
+                if(settings.oscillator[size_t(osc)].retrig)
+                    subvoice={};
+                else if(hadPreviousNote)
                     subvoice=previousOscillators[size_t(osc)][size_t(u)];
                 else
                     subvoice.phase=std::fmod(.179*double(u)+.137*double(osc)
-                        +(settings.oscillator[size_t(osc)].retrig ? 0.0 : .073*double(selected->age)),1.0);
+                        +.073*double(selected->age),1.0);
             }
         // Change only on MIDI note-ons. Alternating direction prevents the
         // feedback tap from repeatedly reinforcing the same frequencies.
