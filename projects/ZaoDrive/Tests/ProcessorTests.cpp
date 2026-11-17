@@ -142,6 +142,27 @@ void inactiveCircuitTests()
 
 void optimizationTests()
 {
+    // Compare the cached value and its Newton derivative against the analytic
+    // exponential, including the solver's clipped tails and continuation.
+    for (int i = 0; i <= 2400; ++i)
+    {
+        const auto x = -80.0+0.05*i;
+        const auto clipped = std::exp (std::clamp (x, -80.0, 40.0));
+        const auto expected = x > 40.0 ? clipped*(1.0+x-40.0) : clipped;
+        const auto actual = zao::exponentialLookup.evaluate (x);
+        check (std::abs (actual.value/expected-1.0) < 3.e-7
+              && std::abs (actual.derivative/clipped-1.0) < 3.e-7,
+              "precomputed exponential matches its analytic value and derivative");
+    }
+    for (const auto x : {-120.0, -80.0, -39.25, 0.0, 11.25, 40.0, 52.0, 80.0})
+    {
+        const auto clipped = std::exp (std::clamp (x, -80.0, 40.0));
+        const auto expected = x > 40.0 ? clipped*(1.0+x-40.0) : clipped;
+        const auto actual = zao::exponentialLookup.evaluate (x);
+        check (std::abs (actual.value/expected-1.0) < 3.e-7
+              && std::abs (actual.derivative/clipped-1.0) < 3.e-7,
+              "precomputed exponential preserves the circuit continuation limits");
+    }
     // Check the reduced solver against the general pivoted system rather than
     // assuming that transistor sparsity is safe at every operating point.
     std::mt19937 random (772);
@@ -165,14 +186,30 @@ void optimizationTests()
     check (matrixError < 1e-12, "reduced BJT solve matches the general pivoted reference");
     for (double v : { -12., -1.5, -.7, -.1, 0., .1, .7, 1.5, 12. })
     {
-        const auto positive = zao::junctionExponential (v, zao::SchottkyPair::thermal);
-        const auto negative = zao::junctionExponential (-v, zao::SchottkyPair::thermal);
-        const auto expected = zao::SchottkyPair::saturation*(positive.value-negative.value);
-        const auto derivative = zao::SchottkyPair::saturation*(positive.derivative+negative.derivative);
+        const auto x = std::abs (v)/zao::SchottkyPair::thermal;
+        const auto e = std::exp (std::min (x, 40.0));
+        const auto forward = x > 40.0 ? e*(1.0+x-40.0) : e;
+        const auto reverse = x <= 40.0 ? 1.0/e : std::exp (-std::min (x, 80.0));
+        const auto expected = std::copysign (zao::SchottkyPair::saturation*(forward-reverse), v);
+        const auto derivative = zao::SchottkyPair::saturation*(e+reverse)/zao::SchottkyPair::thermal;
         const auto actual = zao::SchottkyPair::current (v);
-        check (std::abs (actual.value-expected) <= 1e-14*std::max (1.0, std::abs (expected))
-               && std::abs (actual.derivative-derivative) <= 1e-14*std::max (1.0, derivative),
-               "shared Schottky exponential preserves current, derivative and overload continuation");
+        check (std::abs (actual.value-expected) <= 3e-7*std::max (1.0, std::abs (expected))
+               && std::abs (actual.derivative-derivative) <= 3e-7*std::max (1.0, derivative),
+               "precomputed Schottky curve preserves current, derivative and overload continuation");
+    }
+    for (int i = 0; i <= 400; ++i)
+    {
+        const auto v = -1.3 + 2.6*i/400.0;
+        const auto x = std::abs (v)/zao::SchottkyPair::thermal;
+        const auto e = std::exp (std::min (x, 40.0));
+        const auto forward = x > 40.0 ? e*(1.0+x-40.0) : e;
+        const auto reverse = x <= 40.0 ? 1.0/e : std::exp (-std::min (x, 80.0));
+        const auto expected = std::copysign (zao::SchottkyPair::saturation*(forward-reverse), v);
+        const auto derivative = zao::SchottkyPair::saturation*(e+reverse)/zao::SchottkyPair::thermal;
+        const auto actual = zao::SchottkyPair::current (v);
+        check (std::abs (actual.value-expected) < 3.e-7*std::max (1.e-9, std::abs (expected))
+               && std::abs (actual.derivative-derivative) < 3.e-7*std::max (1.e-9, derivative),
+               "precomputed Schottky current and slope match the analytic diode curve");
     }
 
     zao::PreviewAnimation animation;

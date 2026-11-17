@@ -4,6 +4,9 @@ Zao Drive is the fourth J-SONIC plugin in this repository, with a common-emitter
 BJT overdrive, an op-amp feedback diode clipper, a diode shunt clipper, and
 series-diode crossover distortion. It shares Yinyang, Shun,
 and Kuo's ebony panels, amber controls, flip switch, and 50%–120% scalable UI.
+The circuit solvers share a precomputed BJT junction curve and Schottky current
+curve with Qin Synth's Drive FX; interpolation retains the slopes used by their
+Newton solvers, while circuit state and control response remain live.
 
 ![Zao Drive](Previews/zao-drive.png)
 

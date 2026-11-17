@@ -12,11 +12,44 @@ constexpr std::array<const char*, circuitCount> circuitNames { "BJT CE", "OPAMP 
 // Linear continuation keeps the exponential and its derivative finite during
 // Newton iterations without introducing a flat, nonphysical current clamp.
 struct Exponential { double value, derivative; };
+// Precompute the junction curve once for both Zao and Qin. Cubic Hermite
+// interpolation uses the exact endpoint slopes, keeping the value and the
+// derivative used by Newton's method consistent between table entries.
+struct ExponentialLookup
+{
+    static constexpr int intervals = 4096;
+    static constexpr double minimum = -80.0, maximum = 40.0, step = (maximum-minimum)/intervals;
+    std::array<double, intervals+1> values {};
+    double quadratic {}, cubic {};
+
+    ExponentialLookup () noexcept
+    {
+        for (int i = 0; i <= intervals; ++i)
+            values[static_cast<size_t> (i)] = std::exp (minimum+step*i);
+        const auto end = std::exp (step);
+        quadratic = 3.0*(end-1.0)-step*(2.0+end);
+        cubic = 2.0*(1.0-end)+step*(1.0+end);
+    }
+
+    Exponential evaluate (double x) const noexcept
+    {
+        if (std::isnan (x)) return { x, x };
+        if (x <= minimum) return { values.front(), values.front() };
+        if (x >= maximum) return { values.back()*(1.0+x-maximum), values.back() };
+        const auto position = (x-minimum)/step;
+        const auto index = static_cast<size_t> (position);
+        const auto t = position-static_cast<double> (index);
+        const auto first = values[index];
+        return {first*(1.0+t*(step+t*(quadratic+t*cubic))),
+                first*(1.0+t*(2.0*quadratic+t*3.0*cubic)/step)};
+    }
+};
+inline const ExponentialLookup exponentialLookup {};
 inline Exponential junctionExponential (double voltage, double thermalVoltage) noexcept
 {
     const auto x = voltage / thermalVoltage;
-    const auto e = std::exp (std::clamp (x, -80.0, 40.0));
-    return { x > 40.0 ? e * (1.0 + x - 40.0) : e, e / thermalVoltage };
+    const auto curve = exponentialLookup.evaluate (x);
+    return { curve.value, curve.derivative/thermalVoltage };
 }
 
 inline bool solve4 (std::array<std::array<double, 4>, 4> a,
@@ -281,16 +314,53 @@ struct SchottkyPair
 {
     static constexpr double saturation = 200.0e-9, thermal = 1.2 * 0.02585;
     static constexpr double seriesResistance = 220.0;
+    // Cache the full antiparallel current and slope, avoiding a reciprocal and
+    // two exponentials for every Newton step in the diode circuits.
+    struct Segment { double a0, a1, a2, a3; };
+    struct CurrentLookup
+    {
+        static constexpr int intervals = 2048;
+        static constexpr double step = 40.0 / intervals;
+        std::array<Segment, intervals> segments {};
+
+        CurrentLookup () noexcept
+        {
+            const auto value = [] (double x) { return saturation*(std::exp (x)-std::exp (-x)); };
+            const auto slope = [] (double x) { return saturation*(std::exp (x)+std::exp (-x)); };
+            for (int i = 0; i < intervals; ++i)
+            {
+                const auto x = i*step;
+                const auto first = value (x), last = value (x+step);
+                const auto startSlope = slope (x), endSlope = slope (x+step);
+                segments[static_cast<size_t> (i)] = {first, step*startSlope,
+                    3.0*(last-first)-step*(2.0*startSlope+endSlope),
+                    2.0*(first-last)+step*(startSlope+endSlope)};
+            }
+        }
+
+        DiodeCurrent evaluate (double junctionVoltage) const noexcept
+        {
+            if (std::isnan (junctionVoltage)) return { junctionVoltage, junctionVoltage };
+            const auto x = std::abs (junctionVoltage)/thermal;
+            if (x >= 40.0)
+            {
+                const auto forward = std::exp (40.0);
+                const auto reverse = std::exp (-std::min (x, 80.0));
+                return {std::copysign (saturation*(forward*(1.0+x-40.0)-reverse), junctionVoltage),
+                        saturation*(forward+reverse)/thermal};
+            }
+            const auto position = x/step;
+            const auto index = static_cast<size_t> (position);
+            const auto t = position-static_cast<double> (index);
+            const auto& a = segments[index];
+            return {std::copysign (((a.a3*t+a.a2)*t+a.a1)*t+a.a0, junctionVoltage),
+                    ((3.0*a.a3*t+2.0*a.a2)*t+a.a1)/(step*thermal)};
+        }
+    };
+    inline static const CurrentLookup currentLookup {};
     static DiodeCurrent current (double junctionVoltage) noexcept
     {
-        // Antiparallel junctions share an exponential: exp(-x) = 1/exp(x).
-        // Preserve the original continuation and reverse limit at overload.
-        const auto x = std::abs (junctionVoltage) / thermal;
-        const auto e = std::exp (std::min (x, 40.0));
-        const auto reverse = x <= 40.0 ? 1.0/e : std::exp (-std::min (x, 80.0));
-        const auto forward = x > 40.0 ? e*(1.0+x-40.0) : e;
-        return { std::copysign (saturation*(forward-reverse), junctionVoltage),
-                 saturation*(e+reverse)/thermal };
+        return currentLookup.evaluate (junctionVoltage);
     }
 };
 
