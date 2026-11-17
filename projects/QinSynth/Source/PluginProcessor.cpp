@@ -32,8 +32,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     for(int osc=0;osc<oscillatorCount;++osc)
     {
         const juce::String prefix(prefixes[size_t(osc)]), title="Oscillator "+juce::String(osc+1);
-        result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{prefix+"Wave",1},title+" wave",
-            juce::StringArray{"Saw","Pulse","Triangle"},osc));
+        add(prefix+"WaveX",title+" waveform horizontal",0,100,.1f,osc==1 ? 100.f : osc==2 ? 50.f : 0.f,"%");
+        add(prefix+"WaveY",title+" waveform triangle",0,100,.1f,osc==2 ? 100.f : 0.f,"%");
         add(prefix+"Level",title+" level",0,100,.1f,osc==0 ? 80.f : 0.f,"%");
         add(prefix+"Octave",title+" octave",-2,2,1,0,"oct");
         add(prefix+"Unison",title+" unison",1,8,1,1,"voices");
@@ -152,7 +152,15 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
 {
     sampleRate=std::isfinite(rate) && rate>=8000 ? rate : 48000;
     glideShapeSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.01)));
+    waveSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.005)));
     voices={}; heldNotes={}; heldNoteCount=0;
+    for(int osc=0;osc<oscillatorCount;++osc)
+    {
+        const juce::String prefix(prefixes[size_t(osc)]);
+        smoothedWaves[size_t(osc)]=qin::clampWavePosition(
+            parameters.getRawParameterValue(prefix+"WaveX")->load()*.01f,
+            parameters.getRawParameterValue(prefix+"WaveY")->load()*.01f);
+    }
     masterFilter={}; masterCutoff=smoothedFilterMerge=0;
     voiceAge=onsetCount=0; onsetTap=onsetPhase=0; sustain=false;
     activeVoiceCount.store(0,std::memory_order_relaxed);
@@ -199,7 +207,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     {
         const juce::String prefix(prefixes[size_t(osc)]);
         auto& target=settings.oscillator[size_t(osc)];
-        target.wave=std::clamp(juce::roundToInt(get(prefix+"Wave")),0,2);
+        target.wave=qin::clampWavePosition(get(prefix+"WaveX")*.01f,get(prefix+"WaveY")*.01f);
         target.retrig=get(prefix+"Retrig")>=.5f;
         target.octave=std::clamp(juce::roundToInt(get(prefix+"Octave")),-2,2);
         target.unison=std::clamp(juce::roundToInt(get(prefix+"Unison")),1,maxUnison);
@@ -311,18 +319,14 @@ double QinSynthProcessor::polyBlep(double phase,double step) noexcept
     if(phase>1-step) { const auto t=(phase-1)/step; return t*t+t+t+1; }
     return 0;
 }
-double QinSynthProcessor::oscillatorSample(Subvoice& state,int wave,double step) noexcept
+double QinSynthProcessor::oscillatorSample(Subvoice& state,const std::array<float,3>& weights,double step) noexcept
 {
     const auto phase=state.phase;
-    double value=0;
-    if(wave==0) value=2*phase-1-polyBlep(phase,step);
-    else
-    {
-        const auto pulse=(phase<.5 ? 1.0 : -1.0)+polyBlep(phase,step)
-                         -polyBlep(std::fmod(phase+.5,1.0),step);
-        if(wave==1) value=pulse;
-        else { state.triangle=.9998*state.triangle+4*step*pulse; value=state.triangle; }
-    }
+    const auto edge=polyBlep(phase,step);
+    const auto saw=2*phase-1-edge;
+    const auto pulse=(phase<.5 ? 1.0 : -1.0)+edge-polyBlep(std::fmod(phase+.5,1.0),step);
+    state.triangle=.9998*state.triangle+4*step*pulse;
+    const auto value=weights[0]*saw+weights[1]*pulse+weights[2]*state.triangle;
     state.phase+=step;
     if(state.phase>=1) state.phase-=1;
     return std::clamp(value,-1.5,1.5);
@@ -567,6 +571,15 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     for(int i=start;i<start+count;++i)
     {
+        std::array<std::array<float,3>,oscillatorCount> waveMixes {};
+        for(int osc=0;osc<oscillatorCount;++osc)
+        {
+            auto& current=smoothedWaves[size_t(osc)];
+            const auto target=settings.oscillator[size_t(osc)].wave;
+            current.x+=waveSmoothing*(target.x-current.x);
+            current.y+=waveSmoothing*(target.y-current.y);
+            waveMixes[size_t(osc)]=qin::waveWeights(current);
+        }
         double left=0,right=0,masterInputLeft=0,masterInputRight=0;
         double cutoffSum=0,cutoffWeight=0;
         for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
@@ -592,7 +605,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 for(int u=0;u<control.unison;++u)
                 {
                     const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
-                    const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],control.wave,
+                    const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],waveMixes[size_t(osc)],
                         std::min(.49,steps[voiceIndex][size_t(osc)][size_t(u)]*pitchFactor))
                         *control.level/control.unison;
                     const auto pan=std::clamp(double(voice.pan)+control.pan

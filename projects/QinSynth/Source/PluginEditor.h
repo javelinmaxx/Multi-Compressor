@@ -4,6 +4,7 @@
 #include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
 #include <array>
+#include <functional>
 
 class QinLookAndFeel final : public StageLookAndFeel
 {
@@ -19,11 +20,21 @@ public:
     void paint(juce::Graphics&) override;
 };
 
-class QinWaveSwitch final : public juce::Slider
+class QinWavePad final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    QinWaveSwitch();
+    QinWavePad();
     void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    bool setPosition(qin::WavePosition);
+    qin::WavePosition getPosition() const noexcept { return position; }
+    std::function<void()> onDragStart, onDragEnd;
+    std::function<void(qin::WavePosition)> onPositionChange;
+private:
+    qin::WavePosition position;
+    bool dragging=false;
 };
 
 class QinRetrigSwitch final : public juce::ToggleButton
@@ -86,7 +97,8 @@ private:
     std::array<juce::Label,44> labels;
     std::array<juce::Slider,3> curveSliders;
     juce::Label curveLabel;
-    std::array<QinWaveSwitch,3> waves;
+    std::array<QinWavePad,3> waves;
+    std::array<juce::RangedAudioParameter*,3> waveXParameters {}, waveYParameters {};
     std::array<QinRetrigSwitch,3> retrig;
     std::array<juce::Label,3> waveLabels;
     juce::ComboBox filterType, modTarget;
@@ -94,7 +106,6 @@ private:
     using State=juce::AudioProcessorValueTreeState;
     std::array<std::unique_ptr<State::SliderAttachment>,44> sliderAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> curveAttachments;
-    std::array<std::unique_ptr<State::SliderAttachment>,3> waveAttachments;
     std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
     std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
     std::unique_ptr<State::ButtonAttachment> polyLegatoAttachment;

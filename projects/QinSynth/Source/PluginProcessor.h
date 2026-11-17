@@ -3,6 +3,7 @@
 #include "../../LanReverb/Source/ReverbEngine.h"
 #include "../../RenTransformer/Source/TransformerStage.h"
 #include "DriveCircuitBank.h"
+#include "WaveBlend.h"
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
@@ -67,7 +68,7 @@ private:
         bool keyDown=false, sustained=false, active=false;
     };
     struct HeldNote { int note=-1, channel=1, voiceIndex=-1; };
-    struct OscillatorSettings { int wave=0, octave=0, unison=1; bool retrig=false; float level=0, detune=0, spread=.12f, pan=0; };
+    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1; bool retrig=false; float level=0, detune=0, spread=.12f, pan=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
     struct Settings
@@ -88,12 +89,13 @@ private:
     void handleMidi(const juce::MidiMessage&,const Settings&);
     void renderSegment(juce::AudioBuffer<float>&,int,int,const Settings&,bool);
     void process(juce::AudioBuffer<float>&,juce::MidiBuffer&,bool);
-    static double oscillatorSample(Subvoice&,int,double) noexcept;
+    static double oscillatorSample(Subvoice&,const std::array<float,3>&,double) noexcept;
     static double polyBlep(double,double) noexcept;
     static float notePan(int,float) noexcept;
     float advanceEnvelope(Envelope&,const EnvelopeSettings&,bool,const std::array<float,3>&) const noexcept;
     float filterSample(FilterState&,float,float,float,float,int) const noexcept;
     std::array<Voice,maxVoices> voices {};
+    std::array<qin::WavePosition,oscillatorCount> smoothedWaves {};
     std::array<HeldNote,128> heldNotes {};
     int heldNoteCount=0;
     qin::DriveCircuitBank driveCircuit;
@@ -111,6 +113,7 @@ private:
     uint64_t voiceAge=0, onsetCount=0;
     double sampleRate=48000;
     float glideShapeSmoothing=.002f;
+    float waveSmoothing=.002f;
     float onsetTap=0, onsetPhase=0;
     bool sustain=false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(QinSynthProcessor)

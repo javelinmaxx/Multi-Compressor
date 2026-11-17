@@ -67,14 +67,14 @@ struct QinSynthEditorTestAccess
         && editor.voiceCount.getSliderStyle()==juce::Slider::RotaryVerticalDrag
         && std::abs(editor.voiceCount.getMinimum()-1)<1.e-6
         && std::abs(editor.voiceCount.getMaximum()-16)<1.e-6; }
-    static bool waveSwitchEnabled(const QinSynthEditor& editor,int index)
-    { return editor.waves[size_t(index)].getSliderStyle()==juce::Slider::LinearHorizontal
-        && std::abs(editor.waves[size_t(index)].getMinimum())<1.e-6
-        && std::abs(editor.waves[size_t(index)].getMaximum()-2)<1.e-6; }
+    static bool wavePadEnabled(const QinSynthEditor& editor,int index)
+    { return editor.waves[size_t(index)].getWidth()==154 && editor.waves[size_t(index)].getHeight()==83; }
     static void setVoiceCount(QinSynthEditor& editor,int count)
     { editor.voiceCount.setValue(count,juce::sendNotificationSync); }
-    static void setWave(QinSynthEditor& editor,int index,int wave)
-    { editor.waves[size_t(index)].setValue(wave,juce::sendNotificationSync); }
+    static void setWave(QinSynthEditor& editor,int index,qin::WavePosition position)
+    { auto& pad=editor.waves[size_t(index)]; pad.setPosition(position); pad.onPositionChange(pad.getPosition()); }
+    static qin::WavePosition wavePosition(const QinSynthEditor& editor,int index)
+    { return editor.waves[size_t(index)].getPosition(); }
     static void setRetrig(QinSynthEditor& editor,int index,bool enabled)
     { editor.retrig[size_t(index)].setToggleState(enabled,juce::sendNotificationSync); }
     static bool voiceFxVisible(const QinSynthEditor& editor)
@@ -167,6 +167,17 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        for(const auto& [position,expected]:{
+                std::pair{qin::WavePosition{0.f,0.f},std::array<float,3>{1.f,0.f,0.f}},
+                std::pair{qin::WavePosition{1.f,0.f},std::array<float,3>{0.f,1.f,0.f}},
+                std::pair{qin::WavePosition{.5f,1.f},std::array<float,3>{0.f,0.f,1.f}},
+                std::pair{qin::WavePosition{.5f,1.f/3.f},std::array<float,3>{1.f/3.f,1.f/3.f,1.f/3.f}}})
+        {
+            const auto actual=qin::waveWeights(position);
+            for(size_t index=0;index<actual.size();++index)
+                if(std::abs(actual[index]-expected[index])>1.e-5f)
+                    throw std::runtime_error("Triangle pad must use barycentric waveform blends");
+        }
         for(const auto period:{27.3f,32.f,64.f,184.f,368.5f})
         {
             std::array<float,QinSynthProcessor::driveScopeCapturePoints> samples {};
@@ -275,6 +286,41 @@ int main(int argc,char** argv)
         if(QinSynthTestAccess::active(dense)!=16)
             throw std::runtime_error("Seventeenth note must steal one of sixteen voices");
         if(power(block,0)+power(block,1)<1.e-6) throw std::runtime_error("Three oscillators with eightfold unison must sound");
+        {
+            QinSynthProcessor saw,pulse,triangle,mixed;
+            std::array<QinSynthProcessor*,4> instruments {&saw,&pulse,&triangle,&mixed};
+            constexpr std::array<qin::WavePosition,4> positions {{{0,0},{1,0},{.5f,1},{.5f,1.f/3.f}}};
+            for(size_t index=0;index<instruments.size();++index)
+            {
+                auto& instrument=*instruments[index];
+                set(instrument,"osc1WaveX",positions[index].x*100.f);
+                set(instrument,"osc1WaveY",positions[index].y*100.f);
+                set(instrument,"verbMix",0); set(instrument,"filterType",0);
+                instrument.prepareToPlay(48000,256);
+            }
+            juce::AudioBuffer<float> a(2,256),b(2,256),c(2,256),d(2,256);
+            std::array<juce::AudioBuffer<float>*,4> outputs {&a,&b,&c,&d};
+            juce::MidiBuffer events;
+            events.addEvent(juce::MidiMessage::noteOn(1,60,.7f),0);
+            for(int blockIndex=0;blockIndex<16;++blockIndex)
+            {
+                for(size_t index=0;index<instruments.size();++index)
+                    instruments[index]->processBlock(*outputs[index],events);
+                events.clear();
+            }
+            const auto actual=qin::waveWeights({mixed.parameters.getRawParameterValue("osc1WaveX")->load()*.01f,
+                                                mixed.parameters.getRawParameterValue("osc1WaveY")->load()*.01f});
+            double error=0,difference=0;
+            for(int sample=0;sample<256;++sample)
+            {
+                const auto expected=actual[0]*a.getSample(0,sample)+actual[1]*b.getSample(0,sample)
+                    +actual[2]*c.getSample(0,sample);
+                error+=std::abs(d.getSample(0,sample)-expected);
+                difference+=std::abs(d.getSample(0,sample)-a.getSample(0,sample));
+            }
+            if(error>.01 || difference<.05)
+                throw std::runtime_error("OSC pad must blend the three audible waveform signals");
+        }
         QinSynthProcessor low,high;
         for(auto* p:{&low,&high}) {set(*p,"keyPan",100); set(*p,"verbMix",0); p->prepareToPlay(48000,256);}
         juce::AudioBuffer<float> lowAudio(2,256),highAudio(2,256);
@@ -735,17 +781,23 @@ int main(int argc,char** argv)
             QinSynthProcessor preview;
             QinSynthEditor editor(preview);
             if(!QinSynthEditorTestAccess::voiceDragEnabled(editor)
-               || !QinSynthEditorTestAccess::waveSwitchEnabled(editor,0)
-               || !QinSynthEditorTestAccess::waveSwitchEnabled(editor,1)
-               || !QinSynthEditorTestAccess::waveSwitchEnabled(editor,2))
-                throw std::runtime_error("Polyphony readout and oscillator waves must use draggable switches");
+               || !QinSynthEditorTestAccess::wavePadEnabled(editor,0)
+               || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
+               || !QinSynthEditorTestAccess::wavePadEnabled(editor,2))
+                throw std::runtime_error("Polyphony readout and oscillator pads must be available");
             QinSynthEditorTestAccess::setVoiceCount(editor,4);
-            QinSynthEditorTestAccess::setWave(editor,1,2);
+            QinSynthEditorTestAccess::setWave(editor,1,{.75f,.5f});
             QinSynthEditorTestAccess::setRetrig(editor,2,true);
             if(std::abs(preview.parameters.getRawParameterValue("voiceCount")->load()-4)>1.e-6
-               || std::abs(preview.parameters.getRawParameterValue("osc2Wave")->load()-2)>1.e-6
+               || std::abs(preview.parameters.getRawParameterValue("osc2WaveX")->load()-75)>1.e-3
+               || std::abs(preview.parameters.getRawParameterValue("osc2WaveY")->load()-50)>1.e-3
                || preview.parameters.getRawParameterValue("osc3Retrig")->load()<.5f)
-                throw std::runtime_error("Polyphony, waveform, and Retrig UI must update their host parameters");
+                throw std::runtime_error("Polyphony, waveform pad, and Retrig UI must update their host parameters");
+            set(preview,"osc2WaveX",50); set(preview,"osc2WaveY",100);
+            QinSynthEditorTestAccess::tick(editor);
+            const auto automated=QinSynthEditorTestAccess::wavePosition(editor,1);
+            if(std::abs(automated.x-.5f)>.001f || std::abs(automated.y-1.f)>.001f)
+                throw std::runtime_error("Waveform pad must follow host automation");
             if(!QinSynthEditorTestAccess::playVisible(editor)
                || QinSynthEditorTestAccess::legatoRules(editor)!=4
                || QinSynthEditorTestAccess::ruleEnabled(editor)
@@ -793,6 +845,9 @@ int main(int argc,char** argv)
                         different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
                 return different;
             };
+            if(changes({34,282,384,122},[&]{QinSynthEditorTestAccess::setWave(editor,0,{.5f,1.f});})<30)
+                throw std::runtime_error("OSC waveform plot must follow the triangular pad");
+            QinSynthEditorTestAccess::setWave(editor,0,{0.f,0.f});
             QinSynthEditorTestAccess::setSlide(editor,80,0);
             if(changes({342,670,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
                || changes({342,670,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)

@@ -24,7 +24,7 @@
 | Drive Circuit | Selects BJT, op-amp, diode shunt, or series crossover drive from Zao. |
 | Transformer | Adds Ren's transformer to the output and saves CPU when off. |
 | DELAY tab | Opens Lan's delay and reverb controls. |
-| Osc Wave | Chooses the selected oscillator's virtual-analog waveform. |
+| Osc Wave | Drag within the triangle to blend the selected oscillator between saw, pulse, and triangle waves. |
 | Osc Level | Sets the selected oscillator's contribution to the mix. |
 | Osc Octave | Transposes the selected oscillator by whole octaves. |
 | Osc Unison | Sets the number of copies of the selected oscillator. |
