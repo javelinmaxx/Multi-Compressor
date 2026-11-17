@@ -359,6 +359,23 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     noiseSliders[2].textFromValueFunction=[](double value)
     { return juce::String(juce::roundToInt(value))+" Hz"; };
     noiseSliders[1].updateText(); noiseSliders[2].updateText();
+    for(size_t i=0;i<detuneShapeSliders.size();++i)
+    {
+        auto& slider=detuneShapeSliders[i]; auto& label=detuneShapeLabels[i];
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,17);
+        slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        slider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+        label.setText("DETUNE SHAPE",juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setFont(juce::FontOptions(9.f));
+        label.setColour(juce::Label::textColourId,stageStyle::secondary);
+        addAndMakeVisible(slider); addAndMakeVisible(label);
+        detuneShapeAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,
+            "osc"+juce::String(int(i)+1)+"DetuneShape",slider);
+        editorTooltips::setHint(slider,label,
+            "Moves inner unison pitches toward center at -100% or toward the outer voices at +100%.");
+    }
     timesFiveButton.setClickingTogglesState(true);
     timesFiveButton.setTooltip("Multiplies Attack, Decay, and Release of all three envelopes by five while enabled, up to 25000 ms.");
     addAndMakeVisible(timesFiveButton);
@@ -663,6 +680,7 @@ void QinSynthEditor::updateVisibility()
     for(int osc=0;osc<3;++osc)
     {
         const auto selected=osc==currentOscillator; waves[size_t(osc)].setVisible(selected); waveLabels[size_t(osc)].setVisible(selected); retrig[size_t(osc)].setVisible(selected);
+        detuneShapeSliders[size_t(osc)].setVisible(selected); detuneShapeLabels[size_t(osc)].setVisible(selected);
         for(int control=0;control<6;++control) { const auto i=size_t(osc*6+control); sliders[i].setVisible(selected); labels[i].setVisible(selected); }
     }
     noiseStyle.setVisible(currentOscillator==3); noiseStyleLabel.setVisible(currentOscillator==3);
@@ -693,12 +711,17 @@ void QinSynthEditor::resized()
         oscillatorTabs[size_t(i)].setBounds(31+i*109,101,103,27);
         envelopeTabs[size_t(i)].setBounds(455+i*55,442,52,27);
         waveLabels[size_t(i)].setBounds(34,129,96,11); waves[size_t(i)].setBounds(34,140,96,96);
-        retrig[size_t(i)].setBounds(198,139,100,78);
+        retrig[size_t(i)].setBounds(330,139,84,78);
         for(int control=0;control<6;++control)
         {
-            const auto index=size_t(i*6+control); const auto x=35+(control%3)*132, y=314+(control/3)*80;
-            labels[index].setBounds(x,y,103,15); sliders[index].setBounds(x,y+15,103,65);
+            const auto index=size_t(i*6+control);
+            const auto x=control<2 ? 138+control*97 : 35+((control-2)%2)*132;
+            const auto y=control<2 ? 139 : 314+((control-2)/2)*80;
+            const auto width=control<2 ? 86 : 103;
+            labels[index].setBounds(x,y,width,15); sliders[index].setBounds(x,y+15,width,65);
         }
+        detuneShapeLabels[size_t(i)].setBounds(299,314,103,15);
+        detuneShapeSliders[size_t(i)].setBounds(299,329,103,65);
     }
     noiseButton.setBounds(363,101,55,27);
     noiseStyleLabel.setBounds(34,146,118,15); noiseStyle.setBounds(34,162,154,27);
@@ -708,7 +731,7 @@ void QinSynthEditor::resized()
         noiseLabels[i].setBounds(x,y,103,15); noiseSliders[i].setBounds(x,y+15,103,65);
     }
     timesFiveButton.setBounds(622,414,50,49);
-    labels[35].setBounds(302,136,112,15); sliders[35].setBounds(302,152,112,82);
+    labels[35].setBounds(299,394,103,15); sliders[35].setBounds(299,409,103,65);
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control)
         {
@@ -746,6 +769,8 @@ void QinSynthEditor::resized()
     noiseStyle.setTransform(scale); noiseStyleLabel.setTransform(scale);
     for(auto& slider:noiseSliders) slider.setTransform(scale);
     for(auto& label:noiseLabels) label.setTransform(scale);
+    for(auto& slider:detuneShapeSliders) slider.setTransform(scale);
+    for(auto& label:detuneShapeLabels) label.setTransform(scale);
     timesFiveButton.setTransform(scale);
     filterMergeSlider.setTransform(scale); filterMergeLabel.setTransform(scale);
     for(auto& tab:envelopeTabs) tab.setTransform(scale);

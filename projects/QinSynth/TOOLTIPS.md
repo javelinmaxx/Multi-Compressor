@@ -29,6 +29,7 @@
 | Osc Octave | Transposes the selected oscillator by whole octaves. |
 | Osc Unison | Sets the number of copies of the selected oscillator. |
 | Osc Detune | Offsets the selected oscillator's unison copies in cents. |
+| Osc Detune Shape | Moves inner unison pitches toward center at -100% or toward the outer voices at +100%. |
 | Osc Spread | Sets how far the selected oscillator's detuned copies spread across stereo. |
 | Osc Pan | Positions the selected oscillator as a whole in stereo. |
 | AMP Attack | Sets the amplitude envelope rise from 1 to 5000 ms on a logarithmic scale. |

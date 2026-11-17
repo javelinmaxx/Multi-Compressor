@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "UnisonDetune.h"
 #include "PluginEditor.h"
 #include "LegatoCurve.h"
 #include <algorithm>
@@ -38,6 +39,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         add(prefix+"Octave",title+" octave",-2,2,1,0,"oct");
         add(prefix+"Unison",title+" unison",1,8,1,1,"voices");
         add(prefix+"Detune",title+" detune",0,30,.1f,10,"cents");
+        add(prefix+"DetuneShape",title+" detune shape",-100,100,.1f,0,"%");
         add(prefix+"Spread",title+" spread",0,100,.1f,35,"%");
         add(prefix+"Pan",title+" pan",-100,100,.1f,0,"%");
     }
@@ -214,6 +216,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
         target.unison=std::clamp(juce::roundToInt(get(prefix+"Unison")),1,maxUnison);
         target.level=std::clamp(get(prefix+"Level")*.01f,0.f,1.f);
         target.detune=std::clamp(get(prefix+"Detune"),0.f,30.f);
+        target.detuneShape=std::clamp(get(prefix+"DetuneShape")*.01f,-1.f,1.f);
         target.spread=std::clamp(get(prefix+"Spread")*.01f,0.f,1.f);
         target.pan=std::clamp(get(prefix+"Pan")*.01f,-1.f,1.f);
     }
@@ -543,6 +546,14 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
     std::array<std::array<std::array<double,maxUnison>,oscillatorCount>,maxVoices> steps {};
+    std::array<std::array<double,maxUnison>,oscillatorCount> detuneOffsets {};
+    for(int osc=0;osc<oscillatorCount;++osc)
+    {
+        const auto& control=settings.oscillator[size_t(osc)];
+        if(control.level<=0) continue;
+        for(int u=0;u<control.unison;++u)
+            detuneOffsets[size_t(osc)][size_t(u)]=qin::detunePosition(u,control.unison,control.detuneShape);
+    }
     struct NoiseCoefficients { float a1=1, a2=0, a3=0, highPass=0; };
     std::array<NoiseCoefficients,maxVoices> noiseCoefficients {};
     for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
@@ -557,7 +568,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             const auto center=base*std::ldexp(1.0,control.octave);
             for(int u=0;u<control.unison;++u)
             {
-                const auto offset=control.unison==1 ? 0.0 : 2.0*u/(control.unison-1)-1.0;
+                const auto offset=detuneOffsets[size_t(osc)][size_t(u)];
                 steps[voiceIndex][size_t(osc)][size_t(u)]=std::min(.49,center*std::pow(2.0,offset*control.detune/1200.0)/sampleRate);
             }
         }

@@ -2,6 +2,7 @@
 #include "../../ParameterRetentionTests.h"
 #include "../Source/PluginEditor.h"
 #include "../Source/WaveformSync.h"
+#include "../Source/UnisonDetune.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -38,6 +39,8 @@ struct QinSynthTestAccess
     { p.handleMidi(juce::MidiMessage::noteOff(1,note),p.readSettings()); }
     static std::array<float,3> envelopeTimes(const QinSynthProcessor& p,int index)
     { const auto settings=p.readSettings(); const auto& e=settings.env[size_t(index)]; return {e.attack,e.decay,e.release}; }
+    static float detuneShape(const QinSynthProcessor& p,int oscillator)
+    { return p.readSettings().oscillator[size_t(oscillator)].detuneShape; }
     static bool stableFilters(const QinSynthProcessor& p)
     {
         for(const auto& filter:p.masterFilter)
@@ -77,6 +80,13 @@ struct QinSynthEditorTestAccess
     { return editor.waves[size_t(index)].getPosition(); }
     static void setRetrig(QinSynthEditor& editor,int index,bool enabled)
     { editor.retrig[size_t(index)].setToggleState(enabled,juce::sendNotificationSync); }
+    static void setDetuneShape(QinSynthEditor& editor,int index,float shape)
+    { editor.detuneShapeSliders[size_t(index)].setValue(shape,juce::sendNotificationSync); }
+    static bool oscillatorLayout(const QinSynthEditor& editor)
+    { return editor.sliders[0].getY()<editor.sliders[2].getY()
+        && editor.sliders[1].getY()<editor.sliders[2].getY()
+        && editor.sliders[35].getY()>editor.sliders[2].getY()
+        && editor.detuneShapeSliders[0].isVisible(); }
     static bool voiceFxVisible(const QinSynthEditor& editor)
     { return editor.sliders[37].isVisible() && editor.sliders[36].isVisible(); }
     static bool delayFxVisible(const QinSynthEditor& editor)
@@ -196,6 +206,19 @@ int main(int argc,char** argv)
                 if(std::abs(actual[index]-expected[index])>1.e-5f)
                     throw std::runtime_error("Square pad must use bilinear waveform blends");
         }
+        for(int voice=0;voice<8;++voice)
+        {
+            const auto linear=qin::detunePosition(voice,8,0.f);
+            const auto middle=qin::detunePosition(voice,8,-1.f);
+            const auto edges=qin::detunePosition(voice,8,1.f);
+            if(std::abs(linear-(2.0*voice/7.0-1.0))>1.e-10
+               || std::abs(middle)>std::abs(linear)+1.e-10
+               || std::abs(edges)+1.e-10<std::abs(linear)
+               || std::abs(middle+qin::detunePosition(7-voice,8,-1.f))>1.e-10)
+                throw std::runtime_error("Detune Shape must preserve symmetric endpoints and redistribute inner voices");
+        }
+        if(std::abs(qin::detunePosition(0,1,1.f))>1.e-10)
+            throw std::runtime_error("One unison voice must stay centered");
         for(const auto period:{27.3f,32.f,64.f,184.f,368.5f})
         {
             std::array<float,QinSynthProcessor::driveScopeCapturePoints> samples {};
@@ -223,6 +246,16 @@ int main(int argc,char** argv)
             throw std::runtime_error("Noise scope must not invent a waveform period");
         verifyParameterRetention<QinSynthProcessor>();
         QinSynthProcessor synth;
+        set(synth,"osc1DetuneShape",-100.f);
+        if(std::abs(QinSynthTestAccess::detuneShape(synth,0)+1.f)>1.e-6f)
+            throw std::runtime_error("Detune Shape parameter must reach the oscillator settings");
+        juce::MemoryBlock detuneState;
+        synth.getStateInformation(detuneState);
+        auto restoredDetune=std::make_unique<QinSynthProcessor>();
+        restoredDetune->setStateInformation(detuneState.getData(),int(detuneState.getSize()));
+        if(std::abs(QinSynthTestAccess::detuneShape(*restoredDetune,0)+1.f)>1.e-6f)
+            throw std::runtime_error("Detune Shape must survive session recall");
+        set(synth,"osc1DetuneShape",0.f);
         set(synth,"verbMix",0); synth.prepareToPlay(48000,256);
         if(!synth.acceptsMidi() || !synth.isBusesLayoutSupported(synth.getBusesLayout()))
             throw std::runtime_error("Qin must expose a stereo MIDI instrument bus");
@@ -825,8 +858,13 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::compactFxKnobs(editor)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,0)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
-               || !QinSynthEditorTestAccess::wavePadEnabled(editor,2))
+               || !QinSynthEditorTestAccess::wavePadEnabled(editor,2)
+               || !QinSynthEditorTestAccess::oscillatorLayout(editor))
                 throw std::runtime_error("Polyphony readout and oscillator pads must be available");
+            QinSynthEditorTestAccess::setDetuneShape(editor,0,75.f);
+            if(std::abs(preview.parameters.getRawParameterValue("osc1DetuneShape")->load()-75.f)>.1f)
+                throw std::runtime_error("Detune Shape knob must update the host parameter");
+            QinSynthEditorTestAccess::setDetuneShape(editor,0,0.f);
             QinSynthEditorTestAccess::setVoiceCount(editor,4);
             QinSynthEditorTestAccess::setWave(editor,1,{.75f,.5f});
             QinSynthEditorTestAccess::setRetrig(editor,2,true);
