@@ -37,11 +37,15 @@ private:
     bool dragging=false;
 };
 
-class QinRetrigSwitch final : public juce::ToggleButton
+class QinAnalogSwitch final : public juce::ToggleButton
 {
 public:
-    explicit QinRetrigSwitch(const juce::String& caption="RETRIG");
+    explicit QinAnalogSwitch(const juce::String& caption="RETRIG");
+    void advance(float seconds);
+    void snapToState() noexcept { position=getToggleState() ? 1.f : 0.f; }
     void paintButton(juce::Graphics&,bool,bool) override;
+private:
+    float position=0;
 };
 
 class QinSynthEditor final : public juce::AudioProcessorEditor, private juce::Timer
@@ -77,12 +81,12 @@ private:
     std::array<juce::TextButton,3> oscillatorTabs, envelopeTabs;
     std::array<juce::TextButton,2> fxTabs;
     juce::TextButton noiseButton {"N"};
-    QinRetrigSwitch transformerButton {"TRANSFORMER"};
+    QinAnalogSwitch transformerButton {"TRANSFORMER"};
     juce::Slider driveMode, driveMix;
     juce::Label driveModeLabel, driveMixLabel;
     QinVoiceSlider voiceCount;
     juce::Label activeVoicesLabel;
-    QinRetrigSwitch polyLegatoButton {"POLY LEGATO"};
+    QinAnalogSwitch polyLegatoButton {"POLY LEGATO"};
     juce::ComboBox legatoRule;
     juce::Label legatoRuleLabel, slideTimeLabel, slideShapeLabel;
     juce::Slider slideTime, slideShape;
@@ -90,7 +94,7 @@ private:
     std::array<juce::Label,4> noiseLabels;
     juce::ComboBox noiseStyle;
     juce::Label noiseStyleLabel;
-    juce::TextButton timesFiveButton {"*5"};
+    QinAnalogSwitch timesFiveButton {"*5"};
     juce::Slider filterMergeSlider;
     juce::Label filterMergeLabel;
     std::array<juce::Slider,44> sliders;
@@ -99,7 +103,7 @@ private:
     juce::Label curveLabel;
     std::array<QinWavePad,3> waves;
     std::array<juce::RangedAudioParameter*,3> waveXParameters {}, waveYParameters {};
-    std::array<QinRetrigSwitch,3> retrig;
+    std::array<QinAnalogSwitch,3> retrig;
     std::array<juce::Label,3> waveLabels;
     juce::ComboBox filterType, modTarget;
     juce::Label modTargetLabel;

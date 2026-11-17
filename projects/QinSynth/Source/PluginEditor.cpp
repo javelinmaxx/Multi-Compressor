@@ -163,26 +163,69 @@ void QinWavePad::paint(juce::Graphics& g)
     g.drawText("SAW",0,juce::roundToInt(bottom)+2,37,13,juce::Justification::centredLeft);
     g.drawText("PULSE",getWidth()-47,juce::roundToInt(bottom)+2,47,13,juce::Justification::centredRight);
 }
-QinRetrigSwitch::QinRetrigSwitch(const juce::String& caption) : ToggleButton(caption)
+QinAnalogSwitch::QinAnalogSwitch(const juce::String& caption) : ToggleButton(caption)
 {
     setTooltip(caption=="RETRIG"
         ? "Restarts this oscillator's waveform phase at each note onset when enabled."
         : caption=="TRANSFORMER" ? "Adds Ren's transformer to the output and saves CPU when off."
+        : caption=="*5" ? "Multiplies Attack, Decay, and Release of all three envelopes by five while enabled, up to 25000 ms."
         : "Enables voice matching and pitch slides when polyphony exceeds one voice.");
 }
-void QinRetrigSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
+void QinAnalogSwitch::advance(float seconds)
 {
-    g.setColour(highlighted ? stageStyle::foreground : stageStyle::secondary);
-    g.setFont(juce::FontOptions(10.f).withStyle("bold"));
-    g.drawText(getButtonText(),0,0,getWidth()-37,getHeight(),juce::Justification::centredRight);
-    const auto track=juce::Rectangle<float>(float(getWidth()-34),float(getHeight())*.5f-9,32,18);
-    g.setColour(stageStyle::inset); g.fillRoundedRectangle(track,9);
-    g.setColour(accent.withAlpha(.6f)); g.drawRoundedRectangle(track,9,1);
-    const auto thumb=juce::Rectangle<float>(track.getX()+2+(getToggleState()?13.f:0.f),track.getY()+2,14,14);
-    g.setColour(juce::Colours::black.withAlpha(.34f)); g.fillEllipse(thumb.translated(0,1));
-    g.setGradientFill(juce::ColourGradient(down ? juce::Colours::white : juce::Colour(0xfff4f0e6),
-        thumb.getTopLeft(),juce::Colour(0xff8a8c88),thumb.getBottomLeft(),false)); g.fillEllipse(thumb);
-    g.setColour(getToggleState()?accent:stageStyle::secondary.withAlpha(.7f)); g.drawEllipse(thumb,.8f);
+    const auto target=getToggleState() ? 1.f : 0.f;
+    if(std::abs(target-position)<.001f) return;
+    position+= (target-position)*(1.f-std::exp(-seconds/.055f));
+    if(std::abs(target-position)<.001f) position=target;
+    repaint();
+}
+void QinAnalogSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
+{
+    const auto compact=getHeight()<62;
+    const auto cx=float(getWidth())*.5f;
+    const auto titleHeight=compact ? 11.f : 13.f;
+    const auto pivotY=titleHeight+(float(getHeight())-titleHeight)*.5f;
+    const auto nutRadius=compact ? 11.f : 14.f;
+    const auto flangeRadius=compact ? 8.5f : 11.f;
+    g.setColour(getToggleState() ? stageStyle::foreground : stageStyle::secondary);
+    g.setFont(juce::FontOptions(compact ? 8.f : 9.f).withStyle("bold"));
+    g.drawFittedText(getButtonText(),1,0,getWidth()-2,int(titleHeight),juce::Justification::centred,1);
+    const auto onCaption=getButtonText()=="*5" ? "5X" : "ON";
+    const auto offCaption=getButtonText()=="*5" ? "1X" : "OFF";
+    g.setFont(juce::FontOptions(7.f).withStyle("bold"));
+    g.setColour(getToggleState() ? accent : stageStyle::secondary);
+    g.drawText(onCaption,0,int(titleHeight)+1,getWidth(),9,juce::Justification::centred);
+    g.setColour(getToggleState() ? stageStyle::secondary : accent);
+    g.drawText(offCaption,0,getHeight()-10,getWidth(),9,juce::Justification::centred);
+    juce::Path nut;
+    for(int corner=0;corner<6;++corner)
+    {
+        const auto angle=juce::MathConstants<float>::twoPi*float(corner)/6.f;
+        const auto point=juce::Point<float>(cx+std::cos(angle)*nutRadius,pivotY+std::sin(angle)*nutRadius);
+        if(corner==0) nut.startNewSubPath(point); else nut.lineTo(point);
+    }
+    nut.closeSubPath();
+    g.setColour(juce::Colours::black.withAlpha(.3f)); g.fillPath(nut,juce::AffineTransform::translation(0,1.5f));
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xffb8bec2),cx-nutRadius,pivotY-nutRadius,
+                                          juce::Colour(0xff596169),cx+nutRadius,pivotY+nutRadius,false));
+    g.fillPath(nut);
+    g.setColour(stageStyle::secondary.darker(.3f)); g.strokePath(nut,juce::PathStrokeType(.8f));
+    const auto flange=juce::Rectangle<float>(cx-flangeRadius,pivotY-flangeRadius,2.f*flangeRadius,2.f*flangeRadius);
+    g.setColour(stageStyle::inset); g.fillEllipse(flange.expanded(1.f));
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xffc8cdd0),flange.getTopLeft(),
+                                          juce::Colour(0xff717980),flange.getBottomRight(),false));
+    g.fillEllipse(flange);
+    g.setColour(stageStyle::inset); g.fillEllipse(flange.reduced(3.f));
+    const auto tipY=pivotY+(.5f-position)*(compact ? 12.f : 17.f);
+    g.setColour(juce::Colours::black.withAlpha(.4f)); g.drawLine(cx+1,pivotY+1,cx+1,tipY+1,5.6f);
+    g.setColour(down ? juce::Colours::white : juce::Colour(0xffc6cbd0));
+    g.drawLine(cx,pivotY,cx,tipY,4.8f);
+    const auto cap=juce::Rectangle<float>(cx-4.5f,tipY-4.5f,9.f,9.f);
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xffe0e3e5),cap.getTopLeft(),
+                                          juce::Colour(0xff777f86),cap.getBottomRight(),false));
+    g.fillEllipse(cap);
+    g.setColour(highlighted ? accent : stageStyle::grid); g.drawEllipse(cap,.8f);
+    if(hasKeyboardFocus(true)) { g.setColour(accent); g.drawEllipse(flange.expanded(3.f),1.f); }
 }
 void QinLookAndFeel::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
     float sliderPos,float minSliderPos,float maxSliderPos,const juce::Slider::SliderStyle style,juce::Slider& slider)
@@ -258,7 +301,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     };
     slideTime.updateText(); slideShape.updateText();
     slideShape.onValueChange=[this]
-    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{341,627,78,68})); };
+    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{341,604,78,63})); };
     updatePlayAvailability();
     for(size_t i=0;i<oscillatorTabs.size();++i)
     {
@@ -308,10 +351,6 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     noiseSliders[1].updateText(); noiseSliders[2].updateText();
     timesFiveButton.setClickingTogglesState(true);
     timesFiveButton.setTooltip("Multiplies Attack, Decay, and Release of all three envelopes by five while enabled, up to 25000 ms.");
-    timesFiveButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-    timesFiveButton.setColour(juce::TextButton::buttonOnColourId,accent);
-    timesFiveButton.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-    timesFiveButton.setColour(juce::TextButton::textColourOnId,stageStyle::background);
     addAndMakeVisible(timesFiveButton);
     timesFiveAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"envTimesFive",timesFiveButton);
     filterMergeLabel.setText("MERGE",juce::dontSendNotification);
@@ -525,6 +564,10 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     oscillatorTabs[0].setToggleState(true,juce::dontSendNotification);
     envelopeTabs[0].setToggleState(true,juce::dontSendNotification);
     fxTabs[0].setToggleState(true,juce::dontSendNotification);
+    for(auto& toggle:retrig) toggle.snapToState();
+    polyLegatoButton.snapToState();
+    timesFiveButton.snapToState();
+    transformerButton.snapToState();
     updateVisibility(); editorScaling::enable(*this,designWidth,designHeight);
     updateDrivePreview(); gpu.attach(*this); startTimerHz(40);
 }
@@ -556,6 +599,10 @@ void QinSynthEditor::updateDrivePreview()
 }
 void QinSynthEditor::timerCallback()
 {
+    for(auto& toggle:retrig) toggle.advance(1.f/40.f);
+    polyLegatoButton.advance(1.f/40.f);
+    timesFiveButton.advance(1.f/40.f);
+    transformerButton.advance(1.f/40.f);
     const auto active=juce::String(processor.getActiveVoiceCount())+" ACTIVE";
     if(activeVoicesLabel.getText()!=active) activeVoicesLabel.setText(active,juce::dontSendNotification);
     if(polyLegatoButton.getToggleState()!=lastPolyLegato) updatePlayAvailability();
@@ -627,16 +674,16 @@ void QinSynthEditor::resized()
     titleHint.setBounds(18,29,360,38);
     voiceCount.setBounds(660,34,94,27);
     activeVoicesLabel.setBounds(761,35,130,25);
-    polyLegatoButton.setBounds(190,549,215,30);
+    polyLegatoButton.setBounds(337,547,90,54);
     legatoRuleLabel.setBounds(34,582,127,15); legatoRule.setBounds(34,600,127,29);
     slideTimeLabel.setBounds(168,582,80,15); slideTime.setBounds(168,598,80,69);
     slideShapeLabel.setBounds(254,582,81,15); slideShape.setBounds(254,598,81,69);
     for(int i=0;i<3;++i)
     {
         oscillatorTabs[size_t(i)].setBounds(31+i*109,101,103,27);
-        envelopeTabs[size_t(i)].setBounds(455+i*73,442,68,27);
+        envelopeTabs[size_t(i)].setBounds(455+i*55,442,52,27);
         waveLabels[size_t(i)].setBounds(34,129,96,11); waves[size_t(i)].setBounds(34,140,96,96);
-        retrig[size_t(i)].setBounds(198,163,100,34);
+        retrig[size_t(i)].setBounds(198,139,100,78);
         for(int control=0;control<6;++control)
         {
             const auto index=size_t(i*6+control); const auto x=35+(control%3)*132, y=343+(control/3)*88;
@@ -650,7 +697,7 @@ void QinSynthEditor::resized()
         const auto x=35+int(i%3)*132, y=343+int(i/3)*88;
         noiseLabels[i].setBounds(x,y,103,15); noiseSliders[i].setBounds(x,y+15,103,73);
     }
-    timesFiveButton.setBounds(618,414,51,24);
+    timesFiveButton.setBounds(622,410,50,55);
     labels[35].setBounds(302,136,112,15); sliders[35].setBounds(302,152,112,82);
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control)
@@ -675,8 +722,8 @@ void QinSynthEditor::resized()
     driveModeLabel.setBounds(706,165,90,14); driveMode.setBounds(706,179,90,79);
     labels[37].setBounds(802,165,90,14); sliders[37].setBounds(802,179,90,79);
     driveMixLabel.setBounds(758,261,88,14); driveMix.setBounds(758,275,88,79);
-    transformerButton.setBounds(760,538,126,30);
-    labels[36].setBounds(760,589,82,14); sliders[36].setBounds(760,595,82,74);
+    transformerButton.setBounds(806,538,90,70);
+    labels[36].setBounds(714,589,82,14); sliders[36].setBounds(714,595,82,74);
     for(int i=38;i<44;++i)
     {
         const auto n=i-38,x=706+(n%2)*94,y=178+(n/2)*99;
@@ -732,9 +779,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
     stageStyle::drawPanel(g,{692,536,212,139},panel);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("PLAY",30,552,120,20,juce::Justification::centredLeft);
-    const juce::Rectangle<float> glidePlot(342,600,76,62);
+    const juce::Rectangle<float> glidePlot(342,605,76,62);
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(9.f));
-    g.drawText("CURVE",342,582,76,15,juce::Justification::centred);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(glidePlot,5);
     const auto curveLeft=glidePlot.getX()+5.f, curveRight=glidePlot.getRight()-5.f;
     const auto curveTop=glidePlot.getY()+5.f, curveBottom=glidePlot.getBottom()-5.f;

@@ -897,8 +897,8 @@ int main(int argc,char** argv)
                 throw std::runtime_error("OSC waveform plot must follow the square pad");
             QinSynthEditorTestAccess::setWave(editor,0,{0.f,0.f});
             QinSynthEditorTestAccess::setSlide(editor,80,0);
-            if(changes({342,600,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
-               || changes({342,600,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
+            if(changes({342,605,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
+               || changes({342,605,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
                 throw std::runtime_error("Legato curve preview must follow the Shape knob");
             QinSynthEditorTestAccess::setSlide(editor,80,50);
             if(changes({455,476,218,50},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
