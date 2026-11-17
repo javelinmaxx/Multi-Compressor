@@ -89,7 +89,7 @@ private:
     void handleMidi(const juce::MidiMessage&,const Settings&);
     void renderSegment(juce::AudioBuffer<float>&,int,int,const Settings&,bool);
     void process(juce::AudioBuffer<float>&,juce::MidiBuffer&,bool);
-    static double oscillatorSample(Subvoice&,const std::array<float,3>&,double) noexcept;
+    static double oscillatorSample(Subvoice&,const std::array<float,4>&,double) noexcept;
     static double polyBlep(double,double) noexcept;
     static float notePan(int,float) noexcept;
     float advanceEnvelope(Envelope&,const EnvelopeSettings&,bool,const std::array<float,3>&) const noexcept;

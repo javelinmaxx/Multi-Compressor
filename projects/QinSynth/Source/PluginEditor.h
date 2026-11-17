@@ -53,7 +53,7 @@ public:
     void resized() override;
 private:
     friend struct QinSynthEditorTestAccess;
-    static constexpr int designWidth=920, designHeight=765;
+    static constexpr int designWidth=920, designHeight=719;
     void showOscillator(int oscillator);
     void showEnvelope(int envelope);
     void showFxSection(int section);

@@ -68,7 +68,7 @@ struct QinSynthEditorTestAccess
         && std::abs(editor.voiceCount.getMinimum()-1)<1.e-6
         && std::abs(editor.voiceCount.getMaximum()-16)<1.e-6; }
     static bool wavePadEnabled(const QinSynthEditor& editor,int index)
-    { return editor.waves[size_t(index)].getWidth()==154 && editor.waves[size_t(index)].getHeight()==83; }
+    { return editor.waves[size_t(index)].getWidth()==96 && editor.waves[size_t(index)].getHeight()==96; }
     static void setVoiceCount(QinSynthEditor& editor,int count)
     { editor.voiceCount.setValue(count,juce::sendNotificationSync); }
     static void setWave(QinSynthEditor& editor,int index,qin::WavePosition position)
@@ -115,7 +115,7 @@ struct QinSynthEditorTestAccess
     static bool playVisible(const QinSynthEditor& editor)
     { return editor.polyLegatoButton.isVisible() && editor.legatoRule.isVisible()
         && editor.slideTime.isVisible() && editor.slideShape.isVisible()
-        && editor.slideTime.getY()>=615; }
+        && editor.slideTime.getY()>=569; }
     static int legatoRules(const QinSynthEditor& editor) { return editor.legatoRule.getNumItems(); }
     static bool ruleEnabled(const QinSynthEditor& editor) { return editor.legatoRule.isEnabled(); }
     static void setPolyLegato(QinSynthEditor& editor,bool enabled)
@@ -133,7 +133,11 @@ struct QinSynthEditorTestAccess
     static float liveCutoff(const QinSynthEditor& editor) { return editor.liveCutoff; }
     static bool shapeControlsAreSliders(const QinSynthEditor& editor)
     {
-        for(int index=18;index<=34;++index)
+        for(int index=18;index<30;++index)
+            if(editor.sliders[size_t(index)].getSliderStyle()!=juce::Slider::LinearVertical) return false;
+        for(const auto& curve:editor.curveSliders)
+            if(curve.getSliderStyle()!=juce::Slider::LinearVertical) return false;
+        for(int index=31;index<=34;++index)
             if(editor.sliders[size_t(index)].getSliderStyle()!=juce::Slider::LinearHorizontal) return false;
         return true;
     }
@@ -141,6 +145,8 @@ struct QinSynthEditorTestAccess
     { editor.sliders[size_t(index)].setValue(value,juce::sendNotificationSync); }
     static double sliderMidpoint(QinSynthEditor& editor,int index)
     { return editor.sliders[size_t(index)].proportionOfLengthToValue(.5); }
+    static double envelopeTextValue(QinSynthEditor& editor,int index,const juce::String& text)
+    { return editor.sliders[size_t(index)].getValueFromText(text); }
     static void previewFilter(QinSynthEditor& editor,int item)
     { editor.filterType.setSelectedId(item,juce::sendNotificationSync); }
     static void previewCurve(QinSynthEditor& editor,int index,double value)
@@ -168,15 +174,16 @@ int main(int argc,char** argv)
     {
         juce::ScopedJuceInitialiser_GUI gui;
         for(const auto& [position,expected]:{
-                std::pair{qin::WavePosition{0.f,0.f},std::array<float,3>{1.f,0.f,0.f}},
-                std::pair{qin::WavePosition{1.f,0.f},std::array<float,3>{0.f,1.f,0.f}},
-                std::pair{qin::WavePosition{.5f,1.f},std::array<float,3>{0.f,0.f,1.f}},
-                std::pair{qin::WavePosition{.5f,1.f/3.f},std::array<float,3>{1.f/3.f,1.f/3.f,1.f/3.f}}})
+                std::pair{qin::WavePosition{0.f,0.f},std::array<float,4>{1.f,0.f,0.f,0.f}},
+                std::pair{qin::WavePosition{1.f,0.f},std::array<float,4>{0.f,1.f,0.f,0.f}},
+                std::pair{qin::WavePosition{0.f,1.f},std::array<float,4>{0.f,0.f,1.f,0.f}},
+                std::pair{qin::WavePosition{1.f,1.f},std::array<float,4>{0.f,0.f,0.f,1.f}},
+                std::pair{qin::WavePosition{.5f,.5f},std::array<float,4>{.25f,.25f,.25f,.25f}}})
         {
             const auto actual=qin::waveWeights(position);
             for(size_t index=0;index<actual.size();++index)
                 if(std::abs(actual[index]-expected[index])>1.e-5f)
-                    throw std::runtime_error("Triangle pad must use barycentric waveform blends");
+                    throw std::runtime_error("Square pad must use bilinear waveform blends");
         }
         for(const auto period:{27.3f,32.f,64.f,184.f,368.5f})
         {
@@ -287,9 +294,9 @@ int main(int argc,char** argv)
             throw std::runtime_error("Seventeenth note must steal one of sixteen voices");
         if(power(block,0)+power(block,1)<1.e-6) throw std::runtime_error("Three oscillators with eightfold unison must sound");
         {
-            QinSynthProcessor saw,pulse,triangle,mixed;
-            std::array<QinSynthProcessor*,4> instruments {&saw,&pulse,&triangle,&mixed};
-            constexpr std::array<qin::WavePosition,4> positions {{{0,0},{1,0},{.5f,1},{.5f,1.f/3.f}}};
+            QinSynthProcessor saw,pulse,triangle,sine,mixed;
+            std::array<QinSynthProcessor*,5> instruments {&saw,&pulse,&triangle,&sine,&mixed};
+            constexpr std::array<qin::WavePosition,5> positions {{{0,0},{1,0},{0,1},{1,1},{.5f,.5f}}};
             for(size_t index=0;index<instruments.size();++index)
             {
                 auto& instrument=*instruments[index];
@@ -298,8 +305,8 @@ int main(int argc,char** argv)
                 set(instrument,"verbMix",0); set(instrument,"filterType",0);
                 instrument.prepareToPlay(48000,256);
             }
-            juce::AudioBuffer<float> a(2,256),b(2,256),c(2,256),d(2,256);
-            std::array<juce::AudioBuffer<float>*,4> outputs {&a,&b,&c,&d};
+            juce::AudioBuffer<float> a(2,256),b(2,256),c(2,256),d(2,256),e(2,256);
+            std::array<juce::AudioBuffer<float>*,5> outputs {&a,&b,&c,&d,&e};
             juce::MidiBuffer events;
             events.addEvent(juce::MidiMessage::noteOn(1,60,.7f),0);
             for(int blockIndex=0;blockIndex<16;++blockIndex)
@@ -314,12 +321,12 @@ int main(int argc,char** argv)
             for(int sample=0;sample<256;++sample)
             {
                 const auto expected=actual[0]*a.getSample(0,sample)+actual[1]*b.getSample(0,sample)
-                    +actual[2]*c.getSample(0,sample);
-                error+=std::abs(d.getSample(0,sample)-expected);
-                difference+=std::abs(d.getSample(0,sample)-a.getSample(0,sample));
+                    +actual[2]*c.getSample(0,sample)+actual[3]*d.getSample(0,sample);
+                error+=std::abs(e.getSample(0,sample)-expected);
+                difference+=std::abs(e.getSample(0,sample)-a.getSample(0,sample));
             }
             if(error>.01 || difference<.05)
-                throw std::runtime_error("OSC pad must blend the three audible waveform signals");
+                throw std::runtime_error("OSC pad must blend all four audible waveform signals");
         }
         QinSynthProcessor low,high;
         for(auto* p:{&low,&high}) {set(*p,"keyPan",100); set(*p,"verbMix",0); p->prepareToPlay(48000,256);}
@@ -780,7 +787,8 @@ int main(int argc,char** argv)
         {
             QinSynthProcessor preview;
             QinSynthEditor editor(preview);
-            if(!QinSynthEditorTestAccess::voiceDragEnabled(editor)
+            if(editor.getWidth()!=920 || editor.getHeight()!=719
+               || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,0)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,2))
@@ -832,6 +840,13 @@ int main(int argc,char** argv)
                 if(std::abs(milliseconds-std::sqrt(5000.))>1.)
                     throw std::runtime_error("Every envelope time slider must use exponential millisecond positioning");
             }
+            if(std::abs(QinSynthEditorTestAccess::envelopeTextValue(editor,18,"150ms")-.15)>.001
+               || std::abs(QinSynthEditorTestAccess::envelopeTextValue(editor,22,"1.5s")-1500.)>.01)
+                throw std::runtime_error("Compact vertical envelope values must accept milliseconds and seconds");
+            QinSynthEditorTestAccess::timesFive(editor);
+            if(std::abs(QinSynthEditorTestAccess::envelopeTextValue(editor,18,"150ms")-.03)>.001)
+                throw std::runtime_error("Envelope text entry must respect the times-five multiplier");
+            QinSynthEditorTestAccess::timesFive(editor);
             if(!QinSynthEditorTestAccess::mergeVisible(editor))
                 throw std::runtime_error("Filter panel must show the Merge slider");
             const auto changes=[&editor](juce::Rectangle<int> area,auto change)
@@ -845,18 +860,18 @@ int main(int argc,char** argv)
                         different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
                 return different;
             };
-            if(changes({34,282,384,122},[&]{QinSynthEditorTestAccess::setWave(editor,0,{.5f,1.f});})<30)
-                throw std::runtime_error("OSC waveform plot must follow the triangular pad");
+            if(changes({34,282,384,76},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
+                throw std::runtime_error("OSC waveform plot must follow the square pad");
             QinSynthEditorTestAccess::setWave(editor,0,{0.f,0.f});
             QinSynthEditorTestAccess::setSlide(editor,80,0);
-            if(changes({342,670,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
-               || changes({342,670,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
+            if(changes({342,624,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
+               || changes({342,624,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
                 throw std::runtime_error("Legato curve preview must follow the Shape knob");
             QinSynthEditorTestAccess::setSlide(editor,80,50);
-            if(changes({455,500,218,64},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
+            if(changes({455,500,218,50},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
                 throw std::runtime_error("Envelope plot must respond to sustain changes");
             QinSynthEditorTestAccess::previewValue(editor,20,100);
-            if(changes({455,500,218,64},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
+            if(changes({455,500,218,50},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
                 throw std::runtime_error("Envelope plot must respond to curve changes");
             QinSynthEditorTestAccess::previewCurve(editor,0,0);
             QinSynthEditorTestAccess::previewFilter(editor,4);

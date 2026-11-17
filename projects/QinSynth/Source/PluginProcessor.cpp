@@ -32,8 +32,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     for(int osc=0;osc<oscillatorCount;++osc)
     {
         const juce::String prefix(prefixes[size_t(osc)]), title="Oscillator "+juce::String(osc+1);
-        add(prefix+"WaveX",title+" waveform horizontal",0,100,.1f,osc==1 ? 100.f : osc==2 ? 50.f : 0.f,"%");
-        add(prefix+"WaveY",title+" waveform triangle",0,100,.1f,osc==2 ? 100.f : 0.f,"%");
+        add(prefix+"WaveX",title+" waveform horizontal",0,100,.1f,osc==1 ? 100.f : 0.f,"%");
+        add(prefix+"WaveY",title+" waveform vertical",0,100,.1f,osc==2 ? 100.f : 0.f,"%");
         add(prefix+"Level",title+" level",0,100,.1f,osc==0 ? 80.f : 0.f,"%");
         add(prefix+"Octave",title+" octave",-2,2,1,0,"oct");
         add(prefix+"Unison",title+" unison",1,8,1,1,"voices");
@@ -319,14 +319,15 @@ double QinSynthProcessor::polyBlep(double phase,double step) noexcept
     if(phase>1-step) { const auto t=(phase-1)/step; return t*t+t+t+1; }
     return 0;
 }
-double QinSynthProcessor::oscillatorSample(Subvoice& state,const std::array<float,3>& weights,double step) noexcept
+double QinSynthProcessor::oscillatorSample(Subvoice& state,const std::array<float,4>& weights,double step) noexcept
 {
     const auto phase=state.phase;
     const auto edge=polyBlep(phase,step);
     const auto saw=2*phase-1-edge;
     const auto pulse=(phase<.5 ? 1.0 : -1.0)+edge-polyBlep(std::fmod(phase+.5,1.0),step);
     state.triangle=.9998*state.triangle+4*step*pulse;
-    const auto value=weights[0]*saw+weights[1]*pulse+weights[2]*state.triangle;
+    const auto sine=weights[3]>1.e-6f ? std::sin(2.0*juce::MathConstants<double>::pi*phase) : 0.0;
+    const auto value=weights[0]*saw+weights[1]*pulse+weights[2]*state.triangle+weights[3]*sine;
     state.phase+=step;
     if(state.phase>=1) state.phase-=1;
     return std::clamp(value,-1.5,1.5);
@@ -571,7 +572,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     for(int i=start;i<start+count;++i)
     {
-        std::array<std::array<float,3>,oscillatorCount> waveMixes {};
+        std::array<std::array<float,4>,oscillatorCount> waveMixes {};
         for(int osc=0;osc<oscillatorCount;++osc)
         {
             auto& current=smoothedWaves[size_t(osc)];
