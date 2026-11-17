@@ -46,7 +46,7 @@ constexpr std::array<Control,44> controls {{
     {"filterResonance","RESONANCE","Emphasizes the cutoff with finer control at high resonance."},
     {"filterKeyFollow","KEY FOLLOW","Raises the cutoff with MIDI note pitch."},
     {"filterEnvAmount","ENV AMOUNT","Sets how far the filter envelope moves the cutoff."},
-    {"keyPan","KEY PAN","Places low MIDI notes left and high notes right."},
+    {"keyPan","KEY PAN","Sets pitch panning from high notes left at -100% to high notes right at +100%."},
     {"output","OUTPUT","Sets the final synth level."},
     {"drive","DRIVE","Blends in the selected Zao circuit."},
     {"time","TIME","Sets Lan's delay and reverb time."},
@@ -337,7 +337,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     for(size_t i=0;i<fxTabs.size();++i)
     {
         auto& tab=fxTabs[i]; styleTab(tab,i==0 ? "DRIVE" : "DELAY",4);
-        tab.setTooltip(i==0 ? "Opens drive and output controls." : "Opens Lan's delay and reverb controls.");
+        tab.setTooltip(i==0 ? "Opens the drive controls." : "Opens Lan's delay and reverb controls.");
         tab.onClick=[this,i]{showFxSection(int(i));}; addAndMakeVisible(tab);
     }
     for(size_t mode=0;mode<zao::circuitNames.size();++mode)
@@ -592,7 +592,7 @@ void QinSynthEditor::updateVisibility()
     sliders[30].setVisible(currentEnvelope==2); labels[30].setVisible(currentEnvelope==2);
     modTarget.setVisible(currentEnvelope==2); modTargetLabel.setVisible(currentEnvelope==2);
     for(size_t i=36;i<sliders.size();++i)
-    { const auto selected=i==36 || (currentFxSection==0 ? i==37 : i>=38); sliders[i].setVisible(selected); labels[i].setVisible(selected); }
+    { const auto selected=i==36 || (currentFxSection==0 ? i==37 : i>=38); sliders[i].setVisible(selected); labels[i].setVisible(selected && i!=36); }
     driveMode.setVisible(currentFxSection==0); driveModeLabel.setVisible(currentFxSection==0);
 }
 void QinSynthEditor::resized()
@@ -646,13 +646,13 @@ void QinSynthEditor::resized()
     filterMergeSlider.setBounds(523,393,150,25);
     for(int i=0;i<2;++i) fxTabs[size_t(i)].setBounds(703+i*97,124,92,27);
     driveModeLabel.setBounds(707,178,180,14); driveMode.setBounds(707,194,180,29);
-    transformerButton.setBounds(710,553,176,31);
-    labels[36].setBounds(744,587,110,16); sliders[36].setBounds(744,604,110,83);
-    labels[37].setBounds(738,245,116,16); sliders[37].setBounds(738,261,116,95);
+    transformerButton.setBounds(710,588,176,30);
+    labels[36].setBounds(760,613,82,14); sliders[36].setBounds(760,619,82,74);
+    labels[37].setBounds(760,251,82,14); sliders[37].setBounds(760,265,82,74);
     for(int i=38;i<44;++i)
     {
-        const auto n=i-38,x=700+(n%2)*101,y=179+(n/2)*117;
-        labels[size_t(i)].setBounds(x,y,97,15); sliders[size_t(i)].setBounds(x,y+15,97,90);
+        const auto n=i-38,x=706+(n%2)*94,y=178+(n/2)*99;
+        labels[size_t(i)].setBounds(x,y,90,14); sliders[size_t(i)].setBounds(x+8,y+13,74,75);
     }
     const auto scale=editorScaling::transform(*this,designWidth,designHeight);
     titleHint.setTransform(scale);
@@ -699,7 +699,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
     stageStyle::drawPanel(g,{16,569,420,130},panel);
     stageStyle::drawPanel(g,{444,90,240,335},panel);
     stageStyle::drawPanel(g,{444,433,240,266},panel);
-    stageStyle::drawPanel(g,{692,90,212,609},panel);
+    stageStyle::drawPanel(g,{692,90,212,460},panel);
+    stageStyle::drawPanel(g,{692,560,212,139},panel);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText(currentOscillator==3 ? "NOISE" : "OSC",30,99,120,20,juce::Justification::centredLeft);
     g.drawText("PLAY",30,576,120,20,juce::Justification::centredLeft);
@@ -727,6 +728,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.drawText("FLT",455,99,120,20,juce::Justification::centredLeft);
     g.drawText("ENV / ADSRC",455,442,160,20,juce::Justification::centredLeft);
     g.drawText("FX",703,99,120,20,juce::Justification::centredLeft);
+    g.drawText("OUTPUT",703,566,120,20,juce::Justification::centredLeft);
     const juce::Rectangle<float> filterPlot(455,185,218,90), envelopePlot(455,500,218,50);
     for(const auto plot:{filterPlot,envelopePlot})
     {
@@ -775,7 +777,6 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(cyan.withAlpha(.15f)); g.fillPath(envelopeFill);
     g.setColour(cyan); g.strokePath(envelopePath,juce::PathStrokeType(1.7f));
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
-    g.drawText("ADSR  /  TIME",461,502,165,10,juce::Justification::centredLeft);
     g.drawText("0",459,536,28,10,juce::Justification::centredLeft);
     g.drawText(juce::String(total*.5f,1)+"s",536,536,56,10,juce::Justification::centred);
     g.drawText(juce::String(total,1)+"s",617,536,51,10,juce::Justification::centredRight);
@@ -816,7 +817,6 @@ void QinSynthEditor::paint(juce::Graphics& g)
         g.setColour(accent); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.6f));
     }
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
-    g.drawText(liveCutoff>0 ? "LIVE / FILTER" : "C5  /  HELD",461,186,90,10,juce::Justification::centredLeft);
     for(const auto frequency:{100.f,1000.f,10000.f})
     {
         const auto x=filterPlot.getX()+3.f+(filterPlot.getWidth()-6.f)
@@ -828,8 +828,6 @@ void QinSynthEditor::paint(juce::Graphics& g)
                    juce::roundToInt(x)-15,262,30,11,juce::Justification::centred);
     }
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(9.f));
-    g.drawText(currentOscillator==3 ? "NOISE OSCILLATOR / TEXTURE"
-        : "OSCILLATOR "+juce::String(currentOscillator+1)+" / WAVEFORM",34,263,322,16,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(34,282,384,76),6);
     for(int line=1;line<4;++line) { g.setColour(stageStyle::grid); g.drawHorizontalLine(282+line*19,34,418); }
     const auto waveMix=currentOscillator==3 ? std::array<float,4>{1.f,0.f,0.f,0.f}
@@ -859,7 +857,6 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(cyan.withAlpha(.2f)); g.strokePath(waveform,juce::PathStrokeType(4));
     g.setColour(cyan); g.strokePath(waveform,juce::PathStrokeType(1.5f));
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(10.f));
-    g.drawText(currentFxSection==0 ? "DRIVE / SATURATION" : "LAN / DELAY-VERB",704,160,185,15,juce::Justification::centredLeft);
     if(currentFxSection==0)
     {
         const juce::Rectangle<float> scope(707,392,182,153);

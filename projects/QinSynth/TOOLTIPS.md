@@ -20,7 +20,7 @@
 | AMP tab | Opens the amplitude envelope. |
 | FLT tab | Opens the filter envelope. |
 | MOD tab | Opens the effect modulation envelope. |
-| DRIVE tab | Opens drive and output controls. |
+| DRIVE tab | Opens the drive controls. |
 | Drive Circuit | Selects BJT, op-amp, diode shunt, or series crossover drive from Zao. |
 | Transformer | Adds Ren's transformer to the output and saves CPU when off. |
 | DELAY tab | Opens Lan's delay and reverb controls. |
@@ -55,7 +55,7 @@
 | FLT Key Follow | Raises the cutoff with MIDI note pitch. |
 | FLT Env Amount | Sets how far the filter envelope moves the cutoff. |
 | FLT Merge | Blends per-voice filters into one shared master filter at 100%. |
-| Key Pan | Places low MIDI notes left and high notes right. |
+| Key Pan | Sets pitch panning from high notes left at -100% to high notes right at +100%. |
 | Output | Sets the final synth level. |
 | Drive | Blends in the selected Zao circuit. |
 | Time | Sets Lan's delay and reverb time. |

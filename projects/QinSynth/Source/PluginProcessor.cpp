@@ -93,7 +93,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"filterType",1},"Filter type",
         juce::StringArray{"Bypass","TB-303 ladder","Sallen-Key 18 dB","Digital 12 dB","Digital 24 dB"},0));
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"noise",1},"Noise oscillator",false));
-    add("keyPan","Key pan",0,100,.1f,50,"%");
+    add("keyPan","Key pan",-100,100,.1f,50,"%");
     add("drive","Drive",0,100,.1f,0,"%");
     add("time","Delay time",25,1000,.1f,180,"ms");
     add("decay","Reverb decay",.3f,20,.1f,3,"s");
@@ -243,7 +243,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.noiseOscillator.pan=std::clamp(get("noisePan")*.01f,-1.f,1.f);
     settings.noiseOscillator.style=std::clamp(juce::roundToInt(get("noiseStyle")),0,2);
     settings.voiceCount=std::clamp(juce::roundToInt(get("voiceCount")),1,maxVoices);
-    settings.pan=std::clamp(get("keyPan")*.01f,0.f,1.f);
+    settings.pan=std::clamp(get("keyPan")*.01f,-1.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
     settings.driveMode=std::clamp(juce::roundToInt(get("driveMode")),0,3);
     settings.transformer=get("transformer")>=.5f;

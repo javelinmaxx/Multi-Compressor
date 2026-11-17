@@ -84,6 +84,11 @@ struct QinSynthEditorTestAccess
     static bool driveVisible(const QinSynthEditor& editor)
     { return editor.sliders[37].isVisible() && editor.driveMode.isVisible(); }
     static bool transformerVisible(const QinSynthEditor& editor) { return editor.transformerButton.isVisible(); }
+    static bool outputSectionVisible(const QinSynthEditor& editor)
+    { return editor.transformerButton.isVisible() && editor.sliders[36].isVisible()
+        && editor.transformerButton.getY()>=560 && editor.sliders[36].getY()>=560; }
+    static bool compactFxKnobs(const QinSynthEditor& editor)
+    { return editor.sliders[37].getHeight()<80 && editor.sliders[38].getHeight()<80; }
     static int driveModeCount(const QinSynthEditor& editor) { return editor.driveMode.getNumItems(); }
     static void selectDriveMode(QinSynthEditor& editor,int item)
     { editor.driveMode.setSelectedId(item,juce::sendNotificationSync); }
@@ -338,6 +343,21 @@ int main(int argc,char** argv)
         {low.processBlock(lowAudio,lowMidi); high.processBlock(highAudio,highMidi); lowMidi.clear(); highMidi.clear();}
         if(power(lowAudio,0)<=power(lowAudio,1)*2 || power(highAudio,1)<=power(highAudio,0)*2)
             throw std::runtime_error("Low keys must favor left and high keys must favor right");
+        QinSynthProcessor reverseLow,reverseHigh;
+        for(auto* p:{&reverseLow,&reverseHigh})
+        { set(*p,"keyPan",-100); set(*p,"verbMix",0); p->prepareToPlay(48000,256); }
+        juce::AudioBuffer<float> reverseLowAudio(2,256),reverseHighAudio(2,256);
+        lowMidi.addEvent(juce::MidiMessage::noteOn(1,36,.8f),0);
+        highMidi.addEvent(juce::MidiMessage::noteOn(1,96,.8f),0);
+        for(int i=0;i<8;++i)
+        {
+            reverseLow.processBlock(reverseLowAudio,lowMidi);
+            reverseHigh.processBlock(reverseHighAudio,highMidi);
+            lowMidi.clear(); highMidi.clear();
+        }
+        if(power(reverseLowAudio,1)<=power(reverseLowAudio,0)*2
+           || power(reverseHighAudio,0)<=power(reverseHighAudio,1)*2)
+            throw std::runtime_error("Negative Key Pan must send high notes left and low notes right");
         {
             QinSynthProcessor plain, driven;
             for(auto* p:{&plain,&driven}) {set(*p,"verbMix",0); p->prepareToPlay(48000,256);}
@@ -789,6 +809,8 @@ int main(int argc,char** argv)
             QinSynthEditor editor(preview);
             if(editor.getWidth()!=920 || editor.getHeight()!=719
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
+               || !QinSynthEditorTestAccess::outputSectionVisible(editor)
+               || !QinSynthEditorTestAccess::compactFxKnobs(editor)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,0)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,2))
@@ -942,7 +964,8 @@ int main(int argc,char** argv)
             QinSynthEditorTestAccess::fxSection(editor,1);
             if(!QinSynthEditorTestAccess::delayFxVisible(editor)
                || QinSynthEditorTestAccess::driveVisible(editor)
-               || !QinSynthEditorTestAccess::transformerVisible(editor))
+               || !QinSynthEditorTestAccess::transformerVisible(editor)
+               || !QinSynthEditorTestAccess::outputSectionVisible(editor))
                 throw std::runtime_error("Delay-verb tab must show only the reverb controls");
             if(argc>3) save(argv[3]);
             QinSynthEditorTestAccess::envelope(editor,2);
