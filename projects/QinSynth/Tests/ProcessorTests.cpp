@@ -82,16 +82,21 @@ struct QinSynthEditorTestAccess
     static bool delayFxVisible(const QinSynthEditor& editor)
     { return editor.sliders[38].isVisible() && editor.sliders[43].isVisible(); }
     static bool driveVisible(const QinSynthEditor& editor)
-    { return editor.sliders[37].isVisible() && editor.driveMode.isVisible(); }
+    { return editor.sliders[37].isVisible() && editor.driveMode.isVisible() && editor.driveMix.isVisible()
+        && editor.driveMix.getSliderStyle()==juce::Slider::RotaryHorizontalVerticalDrag; }
     static bool transformerVisible(const QinSynthEditor& editor) { return editor.transformerButton.isVisible(); }
     static bool outputSectionVisible(const QinSynthEditor& editor)
     { return editor.transformerButton.isVisible() && editor.sliders[36].isVisible()
         && editor.transformerButton.getY()>=536 && editor.sliders[36].getY()>=536; }
     static bool compactFxKnobs(const QinSynthEditor& editor)
     { return editor.sliders[37].getHeight()<80 && editor.sliders[38].getHeight()<80; }
-    static int driveModeCount(const QinSynthEditor& editor) { return editor.driveMode.getNumItems(); }
+    static int driveModeCount(const QinSynthEditor& editor)
+    { return editor.driveMode.getSliderStyle()==juce::Slider::RotaryHorizontalVerticalDrag
+        ? juce::roundToInt(editor.driveMode.getMaximum()-editor.driveMode.getMinimum())+1 : 0; }
     static void selectDriveMode(QinSynthEditor& editor,int item)
-    { editor.driveMode.setSelectedId(item,juce::sendNotificationSync); }
+    { editor.driveMode.setValue(item-1,juce::sendNotificationSync); }
+    static void setDriveMix(QinSynthEditor& editor,double mix)
+    { editor.driveMix.setValue(mix,juce::sendNotificationSync); }
     static void setTransformer(QinSynthEditor& editor,bool on)
     { editor.transformerButton.setToggleState(on,juce::sendNotificationSync); }
     static bool envelopeVisible(const QinSynthEditor& editor,int index)
@@ -359,19 +364,25 @@ int main(int argc,char** argv)
            || power(reverseHighAudio,0)<=power(reverseHighAudio,1)*2)
             throw std::runtime_error("Negative Key Pan must send high notes left and low notes right");
         {
-            QinSynthProcessor plain, driven;
-            for(auto* p:{&plain,&driven}) {set(*p,"verbMix",0); p->prepareToPlay(48000,256);}
+            QinSynthProcessor plain, driven, dryMix;
+            for(auto* p:{&plain,&driven,&dryMix}) {set(*p,"verbMix",0); p->prepareToPlay(48000,256);}
             set(driven,"drive",75);
-            juce::AudioBuffer<float> a(2,256),b(2,256);
+            set(dryMix,"drive",75); set(dryMix,"driveMix",0);
+            juce::AudioBuffer<float> a(2,256),b(2,256),c(2,256);
             juce::MidiBuffer note;
             note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
-            double difference=0;
+            double difference=0,dryDifference=0;
             for(int blockIndex=0;blockIndex<8;++blockIndex)
             {
-                plain.processBlock(a,note); driven.processBlock(b,note); note.clear();
-                for(int i=0;i<256;++i) difference+=std::abs(a.getSample(0,i)-b.getSample(0,i));
+                plain.processBlock(a,note); driven.processBlock(b,note); dryMix.processBlock(c,note); note.clear();
+                for(int i=0;i<256;++i)
+                {
+                    difference+=std::abs(a.getSample(0,i)-b.getSample(0,i));
+                    dryDifference+=std::abs(a.getSample(0,i)-c.getSample(0,i));
+                }
             }
-            if(difference<1) throw std::runtime_error("Zao drive control must alter the generated tone");
+            if(difference<1 || dryDifference>1.e-4)
+                throw std::runtime_error("Drive Mix must independently blend the driven and dry oscillator signals");
         }
         {
             std::array<std::array<float,256>,4> outputs {};
@@ -934,10 +945,12 @@ int main(int argc,char** argv)
                || QinSynthEditorTestAccess::driveModeCount(editor)!=4)
                 throw std::runtime_error("FX must expose four Zao circuits and the output transformer");
             QinSynthEditorTestAccess::selectDriveMode(editor,3);
+            QinSynthEditorTestAccess::setDriveMix(editor,45);
             QinSynthEditorTestAccess::setTransformer(editor,true);
             if(std::abs(preview.parameters.getRawParameterValue("driveMode")->load()-2)>1.e-6
+               || std::abs(preview.parameters.getRawParameterValue("driveMix")->load()-45)>1.e-3
                || preview.parameters.getRawParameterValue("transformer")->load()<.5f)
-                throw std::runtime_error("Drive circuit and transformer controls must update host parameters");
+                throw std::runtime_error("Drive circuit, mix, and transformer controls must update host parameters");
             if(changes({707,368,182,153},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
                 throw std::runtime_error("Drive preview must follow the selected circuit");
             QinSynthEditorTestAccess::selectDriveMode(editor,2);

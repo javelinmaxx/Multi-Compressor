@@ -48,7 +48,7 @@ constexpr std::array<Control,44> controls {{
     {"filterEnvAmount","ENV AMOUNT","Sets how far the filter envelope moves the cutoff."},
     {"keyPan","KEY PAN","Sets pitch panning from high notes left at -100% to high notes right at +100%."},
     {"output","OUTPUT","Sets the final synth level."},
-    {"drive","DRIVE","Blends in the selected Zao circuit."},
+    {"drive","DRIVE","Sets how hard the oscillator signal drives the selected circuit."},
     {"time","TIME","Sets Lan's delay and reverb time."},
     {"decay","DECAY","Sets how long Lan's feedback tail lasts."},
     {"scatter","SCATTER","Morphs Lan's delay into a diffuse reverb."},
@@ -340,18 +340,43 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         tab.setTooltip(i==0 ? "Opens the drive controls." : "Opens Lan's delay and reverb controls.");
         tab.onClick=[this,i]{showFxSection(int(i));}; addAndMakeVisible(tab);
     }
-    for(size_t mode=0;mode<zao::circuitNames.size();++mode)
-        driveMode.addItem(zao::circuitNames[mode],int(mode)+1);
-    driveMode.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a));
-    driveMode.setColour(juce::ComboBox::textColourId,stageStyle::foreground);
+    driveMode.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    driveMode.setRange(0,3,1);
+    driveMode.setTextBoxStyle(juce::Slider::TextBoxBelow,false,88,17);
+    driveMode.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+    driveMode.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
     driveMode.setTooltip("Selects BJT, op-amp, diode shunt, or series crossover drive from Zao.");
     driveModeLabel.setText("CIRCUIT",juce::dontSendNotification);
     driveModeLabel.setFont(juce::FontOptions(9.f));
+    driveModeLabel.setJustificationType(juce::Justification::centred);
     driveModeLabel.setColour(juce::Label::textColourId,stageStyle::secondary);
     driveModeLabel.setTooltip(driveMode.getTooltip());
     addAndMakeVisible(driveMode); addAndMakeVisible(driveModeLabel);
-    driveModeAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"driveMode",driveMode);
-    driveMode.onChange=[this]
+    driveModeAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"driveMode",driveMode);
+    driveMode.textFromValueFunction=[](double value)
+    {
+        constexpr std::array<const char*,4> names {"BJT CE","OPAMP FB","SHUNT","CROSSOVER"};
+        return juce::String(names[size_t(std::clamp(juce::roundToInt(value),0,3))]);
+    };
+    driveMode.setTextBoxIsEditable(false);
+    driveMode.updateText();
+    driveMode.onValueChange=[this]
+    {
+        updateDrivePreview();
+        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{707,368,182,153}));
+    };
+    driveMix.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    driveMix.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,17);
+    driveMix.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+    driveMix.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+    driveMixLabel.setText("MIX",juce::dontSendNotification);
+    driveMixLabel.setFont(juce::FontOptions(9.f));
+    driveMixLabel.setJustificationType(juce::Justification::centred);
+    driveMixLabel.setColour(juce::Label::textColourId,stageStyle::secondary);
+    editorTooltips::setHint(driveMix,driveMixLabel,"Blends the driven signal with the dry oscillator signal.");
+    addAndMakeVisible(driveMix); addAndMakeVisible(driveMixLabel);
+    driveMixAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"driveMix",driveMix);
+    driveMix.onValueChange=[this]
     {
         updateDrivePreview();
         repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{707,368,182,153}));
@@ -513,13 +538,14 @@ void QinSynthEditor::updateDrivePreview()
 {
     qin::DriveCircuitBank circuit;
     circuit.prepare(48000.0);
-    const auto mode=std::clamp(driveMode.getSelectedId()-1,0,3);
-    const auto mix=std::clamp(float(sliders[37].getValue())*.01f,0.f,1.f);
+    const auto mode=std::clamp(juce::roundToInt(driveMode.getValue()),0,3);
+    const auto drive=std::clamp(float(sliders[37].getValue())*.01f,0.f,1.f);
+    const auto mix=std::clamp(float(driveMix.getValue())*.01f,0.f,1.f);
     for(int sample=0;sample<384;++sample)
     {
         const auto phase=std::fmod(float(sample)/64.f,1.f);
         const auto original=.55f*(1.f-4.f*std::abs(phase-.5f));
-        const auto driven=float(circuit.process(mode,0,original*(1.f+5.f*mix)));
+        const auto driven=drive>1.e-4f ? float(circuit.process(mode,0,original*(1.f+5.f*drive))) : original;
         if(sample>=256)
         {
             const auto index=size_t(sample-256);
@@ -594,6 +620,7 @@ void QinSynthEditor::updateVisibility()
     for(size_t i=36;i<sliders.size();++i)
     { const auto selected=i==36 || (currentFxSection==0 ? i==37 : i>=38); sliders[i].setVisible(selected); labels[i].setVisible(selected && i!=36); }
     driveMode.setVisible(currentFxSection==0); driveModeLabel.setVisible(currentFxSection==0);
+    driveMix.setVisible(currentFxSection==0); driveMixLabel.setVisible(currentFxSection==0);
 }
 void QinSynthEditor::resized()
 {
@@ -645,10 +672,11 @@ void QinSynthEditor::resized()
     filterMergeLabel.setBounds(454,369,68,25);
     filterMergeSlider.setBounds(523,369,150,25);
     for(int i=0;i<2;++i) fxTabs[size_t(i)].setBounds(703+i*97,124,92,27);
-    driveModeLabel.setBounds(707,178,180,14); driveMode.setBounds(707,194,180,29);
+    driveModeLabel.setBounds(706,165,90,14); driveMode.setBounds(706,179,90,79);
+    labels[37].setBounds(802,165,90,14); sliders[37].setBounds(802,179,90,79);
+    driveMixLabel.setBounds(758,261,88,14); driveMix.setBounds(758,275,88,79);
     transformerButton.setBounds(760,538,126,30);
     labels[36].setBounds(760,589,82,14); sliders[36].setBounds(760,595,82,74);
-    labels[37].setBounds(760,251,82,14); sliders[37].setBounds(760,265,82,74);
     for(int i=38;i<44;++i)
     {
         const auto n=i-38,x=706+(n%2)*94,y=178+(n/2)*99;
@@ -666,6 +694,7 @@ void QinSynthEditor::resized()
     for(auto& tab:envelopeTabs) tab.setTransform(scale);
     for(auto& tab:fxTabs) tab.setTransform(scale);
     driveMode.setTransform(scale); driveModeLabel.setTransform(scale);
+    driveMix.setTransform(scale); driveMixLabel.setTransform(scale);
     transformerButton.setTransform(scale);
     for(auto& slider:sliders) slider.setTransform(scale);
     for(auto& slider:curveSliders) slider.setTransform(scale);

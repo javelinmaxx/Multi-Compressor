@@ -76,7 +76,7 @@ private:
         std::array<OscillatorSettings,oscillatorCount> oscillator;
         NoiseSettings noiseOscillator;
         std::array<EnvelopeSettings,3> env;
-        float pan=0, drive=0, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
+        float pan=0, drive=0, driveMix=1, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
         int filterType=0, modTarget=0, voiceCount=maxVoices, driveMode=1, legatoMode=0;
         bool noise=false, transformer=false, polyLegato=false;
         float slideMs=80, slideShape=.5f;

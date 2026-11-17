@@ -57,7 +57,8 @@
 | FLT Merge | Blends per-voice filters into one shared master filter at 100%. |
 | Key Pan | Sets pitch panning from high notes left at -100% to high notes right at +100%. |
 | Output | Sets the final synth level. |
-| Drive | Blends in the selected Zao circuit. |
+| Drive | Sets how hard the oscillator signal drives the selected circuit. |
+| Drive Mix | Blends the driven signal with the dry oscillator signal. |
 | Time | Sets Lan's delay and reverb time. |
 | Decay | Sets how long Lan's feedback tail lasts. |
 | Scatter | Morphs Lan's delay into a diffuse reverb. |

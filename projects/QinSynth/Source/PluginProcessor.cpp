@@ -95,6 +95,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"noise",1},"Noise oscillator",false));
     add("keyPan","Key pan",-100,100,.1f,50,"%");
     add("drive","Drive",0,100,.1f,0,"%");
+    add("driveMix","Drive mix",0,100,.1f,100,"%");
     add("time","Delay time",25,1000,.1f,180,"ms");
     add("decay","Reverb decay",.3f,20,.1f,3,"s");
     add("scatter","Scatter",0,100,.1f,70,"%");
@@ -245,6 +246,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.voiceCount=std::clamp(juce::roundToInt(get("voiceCount")),1,maxVoices);
     settings.pan=std::clamp(get("keyPan")*.01f,-1.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
+    settings.driveMix=std::clamp(get("driveMix")*.01f,0.f,1.f);
     settings.driveMode=std::clamp(juce::roundToInt(get("driveMode")),0,3);
     settings.transformer=get("transformer")>=.5f;
     settings.polyLegato=get("polyLegato")>=.5f;
@@ -727,7 +729,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         const auto original=capture ? .5f*(buffer.getSample(0,i)+buffer.getSample(1,i)) : 0.f;
         std::array<float,zao::circuitCount> weights {};
         for(size_t mode=0;mode<weights.size();++mode) weights[mode]=driveWeights[mode].getNextValue();
-        if(settings.drive>1.e-4f)
+        if(settings.drive>1.e-4f && settings.driveMix>1.e-4f)
             for(int ch=0;ch<2;++ch)
             {
                 const auto dry=buffer.getSample(ch,i);
@@ -735,7 +737,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 for(size_t mode=0;mode<weights.size();++mode)
                     if(weights[mode]>1.e-6f)
                         driven+=weights[mode]*driveCircuit.process(int(mode),ch,dry*(1+5*settings.drive));
-                const auto result=dry+settings.drive*(driven-dry);
+                const auto result=dry+settings.driveMix*(driven-dry);
                 buffer.setSample(ch,i,!bypass && std::isfinite(result) ? float(std::clamp(result,-4.0,4.0)) : dry);
             }
         if(capture)

@@ -78,8 +78,8 @@ private:
     std::array<juce::TextButton,2> fxTabs;
     juce::TextButton noiseButton {"N"};
     QinRetrigSwitch transformerButton {"TRANSFORMER"};
-    juce::ComboBox driveMode;
-    juce::Label driveModeLabel;
+    juce::Slider driveMode, driveMix;
+    juce::Label driveModeLabel, driveMixLabel;
     QinVoiceSlider voiceCount;
     juce::Label activeVoicesLabel;
     QinRetrigSwitch polyLegatoButton {"POLY LEGATO"};
@@ -112,7 +112,7 @@ private:
     std::unique_ptr<State::ComboBoxAttachment> legatoRuleAttachment;
     std::unique_ptr<State::SliderAttachment> slideTimeAttachment, slideShapeAttachment;
     std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
-    std::unique_ptr<State::ComboBoxAttachment> driveModeAttachment;
+    std::unique_ptr<State::SliderAttachment> driveModeAttachment, driveMixAttachment;
     std::unique_ptr<State::ButtonAttachment> transformerAttachment;
     std::unique_ptr<State::ButtonAttachment> noiseAttachment, timesFiveAttachment;
     std::array<std::unique_ptr<State::SliderAttachment>,4> noiseSliderAttachments;
