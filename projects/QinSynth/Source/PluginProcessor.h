@@ -43,6 +43,7 @@ public:
     void setStateInformation(const void*,int) override;
     DriveScope getDriveScope() const noexcept;
     float getLiveFilterCutoff() const noexcept { return liveFilterCutoff.load(std::memory_order_relaxed); }
+    int getActiveVoiceCount() const noexcept { return activeVoiceCount.load(std::memory_order_relaxed); }
     juce::AudioProcessorValueTreeState parameters;
 private:
     friend struct QinSynthTestAccess;
@@ -58,12 +59,14 @@ private:
         int note=-1, channel=1;
         uint64_t age=0;
         float velocity=0, pan=0, cutoff=0;
+        double pitchNote=0, glideStart=0;
+        float glideProgress=1, glideIncrement=1, glideShape=.5f;
         uint32_t noiseState=1;
         std::array<float,3> pink {};
         float noiseBandState=0, noiseLowState=0, noiseHighPassState=0;
         bool keyDown=false, sustained=false, active=false;
     };
-    struct HeldNote { int note=-1, channel=1; };
+    struct HeldNote { int note=-1, channel=1, voiceIndex=-1; };
     struct OscillatorSettings { int wave=0, octave=0, unison=1; bool retrig=false; float level=0, detune=0, spread=.12f, pan=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
@@ -73,12 +76,15 @@ private:
         NoiseSettings noiseOscillator;
         std::array<EnvelopeSettings,3> env;
         float pan=0, drive=0, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
-        int filterType=0, modTarget=0, voiceCount=maxVoices, driveMode=1;
-        bool noise=false, transformer=false;
+        int filterType=0, modTarget=0, voiceCount=maxVoices, driveMode=1, legatoMode=0;
+        bool noise=false, transformer=false, polyLegato=false;
+        float slideMs=80, slideShape=.5f;
         float verbTime=180, verbDecay=3, verbScatter=.7f, verbMix=.2f;
         float tapMotion=.5f, phaseMotion=.5f;
     };
     Settings readSettings() const noexcept;
+    void retargetVoice(Voice&,int,int,const Settings&) noexcept;
+    double advancePitch(Voice&,const Settings&) const noexcept;
     void handleMidi(const juce::MidiMessage&,const Settings&);
     void renderSegment(juce::AudioBuffer<float>&,int,int,const Settings&,bool);
     void process(juce::AudioBuffer<float>&,juce::MidiBuffer&,bool);
@@ -98,11 +104,13 @@ private:
     std::array<std::atomic<float>,driveScopePoints> driveScopeInput {}, driveScopeOutput {};
     std::atomic<uint32_t> driveScopeEpoch {0};
     std::atomic<float> liveFilterCutoff {0};
+    std::atomic<int> activeVoiceCount {0};
     uint32_t driveScopeWrite=0, driveScopeCounter=0;
     lan::ReverbEngine reverb;
     ren::TransformerStage transformerStage;
     uint64_t voiceAge=0, onsetCount=0;
     double sampleRate=48000;
+    float glideShapeSmoothing=.002f;
     float onsetTap=0, onsetPhase=0;
     bool sustain=false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(QinSynthProcessor)

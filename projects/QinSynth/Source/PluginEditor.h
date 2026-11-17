@@ -50,9 +50,10 @@ private:
     void timerCallback() override;
     void updateDrivePreview();
     void updateEnvelopeTimePresentation();
+    void updatePlayAvailability();
     QinSynthProcessor& processor;
     int currentOscillator=0, currentEnvelope=0, currentFxSection=0;
-    bool lastTimesFive=false;
+    bool lastTimesFive=false, lastPolyLegato=false;
     float liveCutoff=0;
     uint32_t lastScopeEpoch=0;
     bool liveScopeValid=false;
@@ -69,6 +70,11 @@ private:
     juce::ComboBox driveMode;
     juce::Label driveModeLabel;
     QinVoiceSlider voiceCount;
+    juce::Label activeVoicesLabel;
+    QinRetrigSwitch polyLegatoButton {"POLY LEGATO"};
+    juce::ComboBox legatoRule;
+    juce::Label legatoRuleLabel, slideTimeLabel, slideShapeLabel;
+    juce::Slider slideTime, slideShape;
     std::array<juce::Slider,4> noiseSliders;
     std::array<juce::Label,4> noiseLabels;
     juce::ComboBox noiseStyle;
@@ -91,6 +97,9 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>,3> waveAttachments;
     std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
     std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
+    std::unique_ptr<State::ButtonAttachment> polyLegatoAttachment;
+    std::unique_ptr<State::ComboBoxAttachment> legatoRuleAttachment;
+    std::unique_ptr<State::SliderAttachment> slideTimeAttachment, slideShapeAttachment;
     std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
     std::unique_ptr<State::ComboBoxAttachment> driveModeAttachment;
     std::unique_ptr<State::ButtonAttachment> transformerAttachment;

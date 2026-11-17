@@ -9,6 +9,11 @@ struct QinSynthTestAccess
 {
     static int active(const QinSynthProcessor& p)
     { int count=0; for(const auto& voice:p.voices) if(voice.active) ++count; return count; }
+    static int note(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].note; }
+    static bool held(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].keyDown; }
+    static double pitch(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].pitchNote; }
+    static double glideStart(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].glideStart; }
+    static float glideProgress(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].glideProgress; }
     static float tap(const QinSynthProcessor& p) { return p.onsetTap; }
     static float phase(const QinSynthProcessor& p) { return p.onsetPhase; }
     static uint32_t analysisJobs(const QinSynthProcessor& p) { return p.reverb.analysisJobs(); }
@@ -106,6 +111,23 @@ struct QinSynthEditorTestAccess
     static void timesFive(QinSynthEditor& editor)
     { editor.timesFiveButton.setToggleState(!editor.timesFiveButton.getToggleState(),juce::sendNotificationSync); }
     static void tick(QinSynthEditor& editor) { editor.timerCallback(); }
+    static bool playVisible(const QinSynthEditor& editor)
+    { return editor.polyLegatoButton.isVisible() && editor.legatoRule.isVisible()
+        && editor.slideTime.isVisible() && editor.slideShape.isVisible()
+        && editor.slideTime.getY()>=615; }
+    static int legatoRules(const QinSynthEditor& editor) { return editor.legatoRule.getNumItems(); }
+    static bool ruleEnabled(const QinSynthEditor& editor) { return editor.legatoRule.isEnabled(); }
+    static void setPolyLegato(QinSynthEditor& editor,bool enabled)
+    { editor.polyLegatoButton.setToggleState(enabled,juce::sendNotificationSync); editor.updatePlayAvailability(); }
+    static void selectLegatoRule(QinSynthEditor& editor,int item)
+    { editor.legatoRule.setSelectedId(item,juce::sendNotificationSync); }
+    static void setSlide(QinSynthEditor& editor,double time,double shape)
+    { editor.slideTime.setValue(time,juce::sendNotificationSync); editor.slideShape.setValue(shape,juce::sendNotificationSync); }
+    static juce::String activeLabel(const QinSynthEditor& editor) { return editor.activeVoicesLabel.getText(); }
+    static juce::String slideLabel(QinSynthEditor& editor)
+    { return editor.slideTime.getTextFromValue(editor.slideTime.getValue()); }
+    static juce::String shapeLabel(QinSynthEditor& editor)
+    { return editor.slideShape.getTextFromValue(editor.slideShape.getValue()); }
     static bool liveScope(const QinSynthEditor& editor) { return editor.liveScopeValid; }
     static float liveCutoff(const QinSynthEditor& editor) { return editor.liveCutoff; }
     static bool shapeControlsAreSliders(const QinSynthEditor& editor)
@@ -349,6 +371,82 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Final MIDI note-off must release the mono voice");
         }
         {
+            constexpr std::array<int,4> selectedVoices {1,2,0,1};
+            constexpr std::array<int,3> pitches {60,72,84};
+            for(int mode=0;mode<4;++mode)
+            {
+                auto instrument=std::make_unique<QinSynthProcessor>();
+                set(*instrument,"voiceCount",3); set(*instrument,"polyLegato",1);
+                set(*instrument,"legatoMode",float(mode)); set(*instrument,"slideTime",100);
+                set(*instrument,"verbMix",0); instrument->prepareToPlay(48000,256);
+                for(const auto note:pitches) QinSynthTestAccess::noteOn(*instrument,note);
+                juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer empty;
+                instrument->processBlock(audio,empty);
+                if(instrument->getActiveVoiceCount()!=3)
+                    throw std::runtime_error("Active voice readout must count the sounding voices");
+                QinSynthTestAccess::noteOn(*instrument,70);
+                const auto selected=selectedVoices[size_t(mode)];
+                if(QinSynthTestAccess::note(*instrument,selected)!=70
+                   || QinSynthTestAccess::active(*instrument)!=3
+                   || std::abs(QinSynthTestAccess::glideStart(*instrument,selected)-pitches[size_t(selected)])>1.e-6
+                   || QinSynthTestAccess::glideProgress(*instrument,selected)>.001f)
+                    throw std::runtime_error("Poly legato must choose and glide the voice specified by its rule");
+                QinSynthTestAccess::noteOff(*instrument,70);
+                if(QinSynthTestAccess::note(*instrument,selected)!=pitches[size_t(selected)]
+                   || !QinSynthTestAccess::held(*instrument,selected))
+                    throw std::runtime_error("Releasing a poly legato note must restore its held predecessor");
+            }
+            for(int mode=2;mode<=3;++mode)
+            {
+                auto instrument=std::make_unique<QinSynthProcessor>();
+                set(*instrument,"voiceCount",3); set(*instrument,"polyLegato",1);
+                set(*instrument,"legatoMode",float(mode)); instrument->prepareToPlay(48000,256);
+                for(const auto note:pitches) QinSynthTestAccess::noteOn(*instrument,note);
+                QinSynthTestAccess::noteOn(*instrument,mode==2 ? 48 : 96);
+                if(QinSynthTestAccess::note(*instrument,mode==2 ? 0 : 2)!=(mode==2 ? 48 : 96))
+                    throw std::runtime_error("Directional legato must fall back to the closest voice at the range edge");
+            }
+            {
+                auto instrument=std::make_unique<QinSynthProcessor>();
+                set(*instrument,"voiceCount",3); set(*instrument,"polyLegato",1);
+                instrument->prepareToPlay(48000,256);
+                for(const auto note:pitches) QinSynthTestAccess::noteOn(*instrument,note);
+                QinSynthTestAccess::noteOff(*instrument,72);
+                QinSynthTestAccess::noteOn(*instrument,70);
+                if(QinSynthTestAccess::note(*instrument,1)!=70
+                   || QinSynthTestAccess::active(*instrument)!=3)
+                    throw std::runtime_error("Poly legato must reuse a released voice before stealing a held one");
+            }
+            std::array<double,3> quarterPitches {};
+            for(int shape=0;shape<3;++shape)
+            {
+                auto instrument=std::make_unique<QinSynthProcessor>();
+                set(*instrument,"voiceCount",1); set(*instrument,"slideTime",100);
+                set(*instrument,"slideShape",float(shape*50)); set(*instrument,"verbMix",0);
+                instrument->prepareToPlay(48000,256);
+                QinSynthTestAccess::noteOn(*instrument,60);
+                QinSynthTestAccess::noteOn(*instrument,72);
+                juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer empty;
+                for(int blockIndex=0;blockIndex<5;++blockIndex) instrument->processBlock(audio,empty);
+                quarterPitches[size_t(shape)]=QinSynthTestAccess::pitch(*instrument,0);
+                for(int blockIndex=0;blockIndex<16;++blockIndex) instrument->processBlock(audio,empty);
+                if(std::abs(QinSynthTestAccess::pitch(*instrument,0)-72.0)>.001)
+                    throw std::runtime_error("Slide time must reach the destination pitch");
+            }
+            if(!(quarterPitches[0]>quarterPitches[1]+1.0
+                 && quarterPitches[1]>quarterPitches[2]+.5))
+                throw std::runtime_error("Log, linear, and sigmoid glide shapes must differ in order");
+            {
+                auto instrument=std::make_unique<QinSynthProcessor>();
+                set(*instrument,"voiceCount",1); set(*instrument,"slideTime",0);
+                instrument->prepareToPlay(48000,256);
+                QinSynthTestAccess::noteOn(*instrument,60);
+                QinSynthTestAccess::noteOn(*instrument,72);
+                if(std::abs(QinSynthTestAccess::pitch(*instrument,0)-72.0)>.001)
+                    throw std::runtime_error("Zero slide time must move immediately to the new pitch");
+            }
+        }
+        {
             QinSynthProcessor tail;
             set(tail,"verbMix",100); set(tail,"time",25); set(tail,"decay",2);
             tail.prepareToPlay(48000,256);
@@ -570,6 +668,8 @@ int main(int argc,char** argv)
             note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
             monitored.processBlock(audio,note); note.clear();
             QinSynthEditorTestAccess::tick(editor);
+            if(QinSynthEditorTestAccess::activeLabel(editor)!="1 ACTIVE")
+                throw std::runtime_error("Active voice display must follow the audio processor");
             const auto firstCutoff=QinSynthEditorTestAccess::liveCutoff(editor);
             const auto firstPlot=editor.createComponentSnapshot({455,185,218,90});
             for(int blockIndex=0;blockIndex<24;++blockIndex) monitored.processBlock(audio,note);
@@ -620,6 +720,24 @@ int main(int argc,char** argv)
                || std::abs(preview.parameters.getRawParameterValue("osc2Wave")->load()-2)>1.e-6
                || preview.parameters.getRawParameterValue("osc3Retrig")->load()<.5f)
                 throw std::runtime_error("Polyphony, waveform, and Retrig UI must update their host parameters");
+            if(!QinSynthEditorTestAccess::playVisible(editor)
+               || QinSynthEditorTestAccess::legatoRules(editor)!=4
+               || QinSynthEditorTestAccess::ruleEnabled(editor)
+               || QinSynthEditorTestAccess::activeLabel(editor)!="0 ACTIVE")
+                throw std::runtime_error("Play panel and active-voice readout must initialize correctly");
+            QinSynthEditorTestAccess::setPolyLegato(editor,true);
+            QinSynthEditorTestAccess::selectLegatoRule(editor,4);
+            QinSynthEditorTestAccess::setSlide(editor,125,100);
+            if(!QinSynthEditorTestAccess::ruleEnabled(editor)
+               || std::abs(preview.parameters.getRawParameterValue("polyLegato")->load()-1)>1.e-6
+               || std::abs(preview.parameters.getRawParameterValue("legatoMode")->load()-3)>1.e-6
+               || std::abs(preview.parameters.getRawParameterValue("slideTime")->load()-125)>1.e-6
+               || std::abs(preview.parameters.getRawParameterValue("slideShape")->load()-100)>1.e-6
+               || QinSynthEditorTestAccess::slideLabel(editor)!="125 ms"
+               || QinSynthEditorTestAccess::shapeLabel(editor)!="SIGMOID")
+                throw std::runtime_error("Play controls must update host parameters and show their glide values");
+            QinSynthEditorTestAccess::selectLegatoRule(editor,1);
+            QinSynthEditorTestAccess::setSlide(editor,80,50);
             if(!QinSynthEditorTestAccess::oscillatorVisible(editor,0)
                || QinSynthEditorTestAccess::oscillatorVisible(editor,1)
                || !QinSynthEditorTestAccess::voiceFxVisible(editor)

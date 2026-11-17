@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -121,6 +122,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         juce::StringArray{"BJT CE","Op-Amp Feedback","Diode Shunt","Series Crossover"},1));
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"transformer",1},
         "Output transformer",false));
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"polyLegato",1},
+        "Polyphonic legato",false));
+    result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"legatoMode",1},
+        "Polyphonic legato rule",juce::StringArray{"Closest","Farthest","Upwards","Downwards"},0));
+    juce::NormalisableRange<float> slideRange {0.f,2000.f,
+        [](float,float,float position) { return 2000.f*std::pow(std::clamp(position,0.f,1.f),2.5f); },
+        [](float,float,float value) { return std::pow(std::clamp(value/2000.f,0.f,1.f),.4f); },
+        [](float,float,float value) { return std::round(value); }};
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"slideTime",1},
+        "Legato slide time",slideRange,80.f,juce::AudioParameterFloatAttributes().withLabel("ms")));
+    add("slideShape","Legato slide shape",0,100,.1f,50,"%");
     return result;
 }
 QinSynthProcessor::QinSynthProcessor()
@@ -138,9 +150,11 @@ bool QinSynthProcessor::isBusesLayoutSupported(const BusesLayout& buses) const
 void QinSynthProcessor::prepareToPlay(double rate,int)
 {
     sampleRate=std::isfinite(rate) && rate>=8000 ? rate : 48000;
+    glideShapeSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.01)));
     voices={}; heldNotes={}; heldNoteCount=0;
     masterFilter={}; masterCutoff=smoothedFilterMerge=0;
     voiceAge=onsetCount=0; onsetTap=onsetPhase=0; sustain=false;
+    activeVoiceCount.store(0,std::memory_order_relaxed);
     driveCircuit.prepare(sampleRate);
     lastDriveMode=std::clamp(juce::roundToInt(parameters.getRawParameterValue("driveMode")->load()),0,3);
     for(size_t mode=0;mode<driveWeights.size();++mode)
@@ -224,6 +238,10 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
     settings.driveMode=std::clamp(juce::roundToInt(get("driveMode")),0,3);
     settings.transformer=get("transformer")>=.5f;
+    settings.polyLegato=get("polyLegato")>=.5f;
+    settings.legatoMode=std::clamp(juce::roundToInt(get("legatoMode")),0,3);
+    settings.slideMs=std::clamp(get("slideTime"),0.f,2000.f);
+    settings.slideShape=std::clamp(get("slideShape")*.01f,0.f,1.f);
     settings.verbTime=std::clamp(get("time"),25.f,1000.f);
     settings.verbDecay=std::clamp(get("decay"),.3f,20.f);
     settings.verbScatter=std::clamp(get("scatter")*.01f,0.f,1.f);
@@ -308,6 +326,37 @@ double QinSynthProcessor::oscillatorSample(Subvoice& state,int wave,double step)
     if(state.phase>=1) state.phase-=1;
     return std::clamp(value,-1.5,1.5);
 }
+void QinSynthProcessor::retargetVoice(Voice& voice,int note,int channel,const Settings& settings) noexcept
+{
+    const auto start=std::isfinite(voice.pitchNote) ? voice.pitchNote : double(voice.note);
+    voice.glideStart=start;
+    voice.note=note; voice.channel=channel; voice.pan=notePan(note,settings.pan);
+    voice.keyDown=true; voice.sustained=false;
+    voice.glideShape=settings.slideShape;
+    if(settings.slideMs<=0.f || std::abs(start-double(note))<1.e-9)
+    {
+        voice.pitchNote=note; voice.glideProgress=1.f; voice.glideIncrement=1.f;
+    }
+    else
+    {
+        voice.glideProgress=0.f;
+        voice.glideIncrement=std::min(1.f,float(1000.0/(sampleRate*settings.slideMs)));
+    }
+}
+double QinSynthProcessor::advancePitch(Voice& voice,const Settings& settings) const noexcept
+{
+    if(voice.glideProgress>=1.f) return voice.pitchNote=voice.note;
+    voice.glideShape+=glideShapeSmoothing*(settings.slideShape-voice.glideShape);
+    const auto t=voice.glideProgress=std::min(1.f,voice.glideProgress+voice.glideIncrement);
+    const auto logarithmic=std::log1p(9.f*t)/std::log(10.f);
+    const auto sigmoid=t*t*(3.f-2.f*t);
+    const auto curve=voice.glideShape<=.5f
+        ? logarithmic+(t-logarithmic)*(voice.glideShape*2.f)
+        : t+(sigmoid-t)*((voice.glideShape-.5f)*2.f);
+    voice.pitchNote=voice.glideStart+(double(voice.note)-voice.glideStart)*curve;
+    if(t>=1.f) voice.pitchNote=voice.note;
+    return voice.pitchNote;
+}
 void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settings& settings)
 {
     if(message.isNoteOn())
@@ -320,47 +369,97 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
             std::move(heldNotes.begin()+1,heldNotes.end(),heldNotes.begin());
             --heldNoteCount;
         }
-        heldNotes[size_t(heldNoteCount++)]={note,message.getChannel()};
+        heldNotes[size_t(heldNoteCount++)]={note,message.getChannel(),-1};
+        int selectedIndex=0;
         if(settings.voiceCount==1 && overlapping && voices[0].active)
         {
             // A legato note changes pitch without restarting oscillators,
             // envelopes, or filters, even when oscillator Retrig is enabled.
-            auto& voice=voices[0];
-            voice.note=note; voice.channel=message.getChannel();
-            voice.pan=notePan(note,settings.pan);
-            voice.keyDown=true; voice.sustained=false;
+            retargetVoice(voices[0],note,message.getChannel(),settings);
         }
         else
         {
             Voice* selected=nullptr;
             const auto end=voices.begin()+settings.voiceCount;
-            for(auto it=voices.begin();it!=end;++it) if(!it->active) { selected=&*it; break; }
-            if(selected==nullptr)
-                selected=&*std::min_element(voices.begin(),end,[](const Voice& a,const Voice& b)
+            if(settings.polyLegato && settings.voiceCount>1)
+            {
+                const auto match=[&](bool releasedOnly)
                 {
-                    if(a.keyDown!=b.keyDown) return !a.keyDown;
-                    return a.age<b.age;
-                });
-            const auto previousOscillators=selected->oscillators;
-            const auto hadPreviousNote=selected->age!=0;
-            *selected={}; selected->active=selected->keyDown=true;
-            selected->note=note; selected->channel=message.getChannel(); selected->velocity=velocity;
-            selected->age=++voiceAge; selected->pan=notePan(note,settings.pan);
-            selected->noiseState=0x9e3779b9u^uint32_t(selected->age*747796405u)^(uint32_t(note)*2891336453u);
-            if(selected->noiseState==0) selected->noiseState=1;
-            for(int osc=0;osc<oscillatorCount;++osc)
-                for(int u=0;u<maxUnison;++u)
+                    for(int pass=0;pass<2;++pass)
+                    {
+                        int best=-1;
+                        double bestScore=std::numeric_limits<double>::infinity();
+                        for(int index=0;index<settings.voiceCount;++index)
+                        {
+                            const auto& candidate=voices[size_t(index)];
+                            if(!candidate.active || (releasedOnly && candidate.keyDown)) continue;
+                            const auto difference=note-candidate.note;
+                            if(pass==0 && settings.legatoMode==2 && difference<=0) continue;
+                            if(pass==0 && settings.legatoMode==3 && difference>=0) continue;
+                            const auto score=settings.legatoMode==1
+                                ? -double(std::abs(difference)) : double(std::abs(difference));
+                            if(score<bestScore) { bestScore=score; best=index; }
+                        }
+                        if(best>=0) return best;
+                        if(settings.legatoMode<2) break;
+                    }
+                    return -1;
+                };
+                if(const auto index=match(true);index>=0) selected=&voices[size_t(index)];
+                if(selected==nullptr)
+                    for(auto it=voices.begin();it!=end;++it)
+                        if(!it->active) { selected=&*it; break; }
+                if(selected==nullptr)
+                    if(const auto index=match(false);index>=0) selected=&voices[size_t(index)];
+            }
+            else
+            {
+                for(auto it=voices.begin();it!=end;++it)
+                    if(!it->active) { selected=&*it; break; }
+                if(selected==nullptr)
+                    selected=&*std::min_element(voices.begin(),end,[](const Voice& a,const Voice& b)
+                    {
+                        if(a.keyDown!=b.keyDown) return !a.keyDown;
+                        return a.age<b.age;
+                    });
+            }
+            selectedIndex=int(selected-voices.data());
+            if(settings.polyLegato && settings.voiceCount>1 && selected->active)
+            {
+                if(!selected->keyDown && !selected->sustained)
                 {
-                    auto& subvoice=selected->oscillators[size_t(osc)][size_t(u)];
-                    if(settings.oscillator[size_t(osc)].retrig)
-                        subvoice={};
-                    else if(hadPreviousNote)
-                        subvoice=previousOscillators[size_t(osc)][size_t(u)];
-                    else
-                        subvoice.phase=std::fmod(.179*double(u)+.137*double(osc)
-                            +.073*double(selected->age),1.0);
+                    for(auto& envelope:selected->env)
+                    { envelope.start=envelope.value; envelope.progress=0.f; envelope.stage=0; }
                 }
+                retargetVoice(*selected,note,message.getChannel(),settings);
+                selected->age=++voiceAge;
+            }
+            else
+            {
+                const auto previousOscillators=selected->oscillators;
+                const auto hadPreviousNote=selected->age!=0;
+                *selected={}; selected->active=selected->keyDown=true;
+                selected->note=note; selected->channel=message.getChannel(); selected->velocity=velocity;
+                selected->pitchNote=selected->glideStart=note;
+                selected->glideShape=settings.slideShape;
+                selected->age=++voiceAge; selected->pan=notePan(note,settings.pan);
+                selected->noiseState=0x9e3779b9u^uint32_t(selected->age*747796405u)^(uint32_t(note)*2891336453u);
+                if(selected->noiseState==0) selected->noiseState=1;
+                for(int osc=0;osc<oscillatorCount;++osc)
+                    for(int u=0;u<maxUnison;++u)
+                    {
+                        auto& subvoice=selected->oscillators[size_t(osc)][size_t(u)];
+                        if(settings.oscillator[size_t(osc)].retrig)
+                            subvoice={};
+                        else if(hadPreviousNote)
+                            subvoice=previousOscillators[size_t(osc)][size_t(u)];
+                        else
+                            subvoice.phase=std::fmod(.179*double(u)+.137*double(osc)
+                                +.073*double(selected->age),1.0);
+                    }
+            }
         }
+        heldNotes[size_t(heldNoteCount-1)].voiceIndex=selectedIndex;
         // Change only on MIDI note-ons. Alternating direction prevents the
         // feedback tap from repeatedly reinforcing the same frequencies.
         onsetTap=std::clamp((onsetCount++%2==0 ? 1.f : -1.f)
@@ -369,24 +468,40 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
     }
     else if(message.isNoteOff())
     {
-        bool removed=false;
+        int removedVoice=-1;
         for(int index=heldNoteCount-1;index>=0;--index)
             if(heldNotes[size_t(index)].note==message.getNoteNumber()
                && heldNotes[size_t(index)].channel==message.getChannel())
             {
+                removedVoice=heldNotes[size_t(index)].voiceIndex;
                 std::move(heldNotes.begin()+index+1,heldNotes.begin()+heldNoteCount,heldNotes.begin()+index);
                 --heldNoteCount;
-                removed=true;
                 break;
             }
-        if(settings.voiceCount==1 && !removed) return;
+        if(removedVoice<0) return;
         if(settings.voiceCount==1 && voices[0].active && voices[0].keyDown
            && voices[0].note==message.getNoteNumber() && voices[0].channel==message.getChannel()
            && heldNoteCount>0)
         {
             const auto& previous=heldNotes[size_t(heldNoteCount-1)];
-            voices[0].note=previous.note; voices[0].channel=previous.channel;
-            voices[0].pan=notePan(previous.note,settings.pan);
+            retargetVoice(voices[0],previous.note,previous.channel,settings);
+            return;
+        }
+        if(settings.polyLegato && settings.voiceCount>1 && removedVoice<settings.voiceCount)
+        {
+            auto& voice=voices[size_t(removedVoice)];
+            if(voice.active && voice.keyDown && voice.note==message.getNoteNumber()
+               && voice.channel==message.getChannel())
+            {
+                for(int index=heldNoteCount-1;index>=0;--index)
+                    if(heldNotes[size_t(index)].voiceIndex==removedVoice)
+                    {
+                        const auto& previous=heldNotes[size_t(index)];
+                        retargetVoice(voice,previous.note,previous.channel,settings);
+                        return;
+                    }
+                voice.keyDown=false; voice.sustained=sustain;
+            }
             return;
         }
         for(auto& voice:voices)
@@ -466,6 +581,11 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             const auto filterEnv=advanceEnvelope(voice.env[1],settings.env[1],held,coefficients[1]);
             const auto modEnv=advanceEnvelope(voice.env[2],settings.env[2],held,coefficients[2]);
             if(!held && amp<1.e-4f) { voice.active=false; continue; }
+            const auto gliding=voice.glideProgress<1.f;
+            const auto currentPitch=gliding ? advancePitch(voice,settings) : double(voice.note);
+            const auto pitchFactor=voice.glideProgress>=1.f ? 1.0
+                : std::exp2((currentPitch-double(voice.note))/12.0);
+            if(gliding) voice.pan=std::clamp(float((currentPitch-64.0)/44.0)*settings.pan,-.95f,.95f);
             double voiceLeft=0,voiceRight=0;
             const auto spreadMod=settings.modTarget==1 ? settings.modDepth*modEnv : 0.f;
             for(int osc=0;osc<oscillatorCount;++osc)
@@ -476,7 +596,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 {
                     const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
                     const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],control.wave,
-                        steps[voiceIndex][size_t(osc)][size_t(u)])
+                        std::min(.49,steps[voiceIndex][size_t(osc)][size_t(u)]*pitchFactor))
                         *control.level/control.unison;
                     const auto pan=std::clamp(double(voice.pan)+control.pan
                         +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
@@ -497,7 +617,17 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 const auto velvet=(random&1023u)<64u ? white*4.f : 0.f;
                 const auto source=settings.noiseOscillator.style==1 ? pinkSample
                     : settings.noiseOscillator.style==2 ? velvet : white;
-                const auto& noiseFilter=noiseCoefficients[voiceIndex];
+                auto noiseFilter=noiseCoefficients[voiceIndex];
+                if(voice.glideProgress<1.f)
+                {
+                    const auto noteHz=440.0*std::exp2((currentPitch-69.0)/12.0);
+                    const auto center=std::clamp(noteHz*std::exp2(settings.noiseOscillator.tune/12.f),
+                                                 30.0,sampleRate*.4);
+                    const auto g=std::tan(juce::MathConstants<double>::pi*center/sampleRate);
+                    constexpr double damping=1.5;
+                    const auto a1=1/(1+g*(g+damping));
+                    noiseFilter.a1=float(a1); noiseFilter.a2=float(g*a1); noiseFilter.a3=float(g*g*a1);
+                }
                 const auto v3=source-voice.noiseLowState;
                 const auto band=noiseFilter.a1*voice.noiseBandState+noiseFilter.a2*v3;
                 const auto low=voice.noiseLowState+noiseFilter.a2*voice.noiseBandState+noiseFilter.a3*v3;
@@ -517,7 +647,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             }
             if(settings.filterType!=0)
             {
-                const auto octaves=settings.keyFollow*(voice.note-60)/12.f+settings.filterEnv*filterEnv*4.f;
+                const auto octaves=settings.keyFollow*float((currentPitch-60.0)/12.0)
+                    +settings.filterEnv*filterEnv*4.f;
                 const auto target=std::clamp(settings.cutoff*(std::abs(octaves)<1.e-6f ? 1.f : std::exp2(octaves)),
                                              30.f,float(sampleRate*.44));
                 voice.cutoff+=cutoffSmoothing*(target-voice.cutoff);
@@ -643,6 +774,9 @@ void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffe
         position=next;
     }
     renderSegment(buffer,position,buffer.getNumSamples()-position,settings,bypass);
+    int active=0;
+    for(const auto& voice:voices) if(voice.active) ++active;
+    activeVoiceCount.store(active,std::memory_order_relaxed);
 }
 void QinSynthProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer& midi) { process(buffer,midi,false); }
 void QinSynthProcessor::processBlockBypassed(juce::AudioBuffer<float>& buffer,juce::MidiBuffer& midi) { process(buffer,midi,true); }

@@ -194,7 +194,7 @@ input, generated delta, and resulting spectra.
 ![Qin Synth Sound page with horizontal oscillator tabs, a waveform display, and unison controls](projects/QinSynth/Previews/qin-synth.png)
 
 Set one to sixteen voices by dragging the header readout; one voice supports overlapping legato notes and returns to the previous held pitch on release. Three OSC tabs each provide a three-position waveform switch, a Retrig switch, and up to eight unison copies. The **FX** tabs switch between four Zao drive circuits and Lan Delay-Verb, with a Ren Transformer button on the output. **Key Pan** spreads notes by pitch; MIDI note-ons steer Lan's tap and phase motion without running its resonance tamer.
-AMP, FLT, and MOD envelope times use logarithmic 1–5000 ms sliders, with a shared `*5` toggle beside the ENV tabs.
+The PLAY panel adds a live voice count, four Poly Legato matching rules, and adjustable slide time and shape. AMP, FLT, and MOD envelope times use logarithmic 1–5000 ms sliders, with a shared `*5` toggle beside the ENV tabs.
 The **N** oscillator has its own level, tuning, high-pass filter, pan, and White/Pink/Velvet noise styles.
 
 [Controls and signal path](projects/QinSynth/README.md).
