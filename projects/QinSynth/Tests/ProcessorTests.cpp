@@ -1,6 +1,7 @@
 #include "../Source/PluginProcessor.h"
 #include "../../ParameterRetentionTests.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/WaveformSync.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -166,6 +167,31 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        for(const auto period:{27.3f,32.f,64.f,184.f,368.5f})
+        {
+            std::array<float,QinSynthProcessor::driveScopeCapturePoints> samples {};
+            for(size_t index=0;index<samples.size();++index)
+            {
+                const auto phase=2.f*juce::MathConstants<float>::pi*(float(index)/period+.23f);
+                samples[index]=std::sin(phase)+.2f*std::sin(phase*2.f);
+            }
+            const auto window=qin::waveformWindow(samples);
+            if(!window.synchronized || std::abs(window.length-2.f*period)>.5f
+               || std::abs(qin::waveformSample(samples,window.start)
+                    -qin::waveformSample(samples,window.start+window.length))>.02f)
+                throw std::runtime_error("Drive waveform must align complete input periods");
+        }
+        if(qin::waveformWindow(std::array<float,QinSynthProcessor::driveScopeCapturePoints>{}).synchronized)
+            throw std::runtime_error("Silent drive scope must not invent a period");
+        std::array<float,QinSynthProcessor::driveScopeCapturePoints> noiseScope {};
+        uint32_t noiseState=0x691ade8bu;
+        for(auto& sample:noiseScope)
+        {
+            noiseState^=noiseState<<13; noiseState^=noiseState>>17; noiseState^=noiseState<<5;
+            sample=float(noiseState>>8)*(1.f/8388607.5f)-1.f;
+        }
+        if(qin::waveformWindow(noiseScope).synchronized)
+            throw std::runtime_error("Noise scope must not invent a waveform period");
         verifyParameterRetention<QinSynthProcessor>();
         QinSynthProcessor synth;
         set(synth,"verbMix",0); synth.prepareToPlay(48000,256);

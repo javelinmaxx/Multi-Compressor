@@ -12,10 +12,10 @@ class QinSynthProcessor final : public juce::AudioProcessor
 {
 public:
     static constexpr int maxVoices=16, oscillatorCount=3, maxUnison=8;
-    static constexpr size_t driveScopePoints=128;
+    static constexpr size_t driveScopePoints=128, driveScopeCapturePoints=1024;
     struct DriveScope
     {
-        std::array<float,driveScopePoints> input {}, output {};
+        std::array<float,driveScopeCapturePoints> input {}, output {};
         uint32_t epoch=0;
     };
     QinSynthProcessor();
@@ -101,7 +101,7 @@ private:
     int lastDriveMode=1;
     std::array<FilterState,2> masterFilter {};
     float masterCutoff=0, smoothedFilterMerge=0;
-    std::array<std::atomic<float>,driveScopePoints> driveScopeInput {}, driveScopeOutput {};
+    std::array<std::atomic<float>,driveScopeCapturePoints> driveScopeInput {}, driveScopeOutput {};
     std::atomic<uint32_t> driveScopeEpoch {0};
     std::atomic<float> liveFilterCutoff {0};
     std::atomic<int> activeVoiceCount {0};

@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "LegatoCurve.h"
+#include "WaveformSync.h"
 #include "../../EditorScaling.h"
 #include <cmath>
 #include <complex>
@@ -768,7 +769,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
     float pinkPreview=0;
     for(int point=0;point<=380;++point)
     {
-        const auto cycle=std::fmod(point/125.f,1.f);
+        const auto cycle=std::fmod(float(point)/380.f*3.f,1.f);
         noisePreviewState^=noisePreviewState<<13;
         noisePreviewState^=noisePreviewState>>17;
         noisePreviewState^=noisePreviewState<<5;
@@ -796,24 +797,36 @@ void QinSynthEditor::paint(juce::Graphics& g)
         g.setColour(cyan); g.drawText("IN",818,396,20,12,juce::Justification::centred);
         g.setColour(accent); g.drawText("OUT",845,396,32,12,juce::Justification::centred);
         g.setColour(stageStyle::grid); g.drawHorizontalLine(469,712,884);
-        const auto& input=liveScopeValid ? liveScope.input : previewInput;
-        const auto& output=liveScopeValid ? liveScope.output : previewOutput;
+        const auto window=liveScopeValid ? qin::waveformWindow(liveScope.input)
+            : qin::WaveformWindow{0.f,float(previewInput.size()-1),true};
         float peak=.2f;
-        for(size_t index=0;index<input.size();++index)
-            peak=std::max({peak,std::abs(input[index]),std::abs(output[index])});
+        const auto includePeak=[&](const auto& samples)
+        {
+            for(size_t index=0;index<QinSynthProcessor::driveScopePoints;++index)
+            {
+                const auto fraction=float(index)/float(QinSynthProcessor::driveScopePoints-1);
+                peak=std::max(peak,std::abs(qin::waveformSample(samples,window.start+fraction*window.length)));
+            }
+        };
+        if(liveScopeValid) { includePeak(liveScope.input); includePeak(liveScope.output); }
+        else { includePeak(previewInput); includePeak(previewOutput); }
         const auto gain=58.f/std::max(.2f,peak*1.2f);
         const auto drawWave=[&](const auto& samples,juce::Colour colour)
         {
             juce::Path path;
-            for(size_t index=0;index<samples.size();++index)
+            for(size_t index=0;index<QinSynthProcessor::driveScopePoints;++index)
             {
-                const auto x=713.f+170.f*float(index)/float(samples.size()-1);
-                const auto y=469.f-std::clamp(samples[index]*gain,-58.f,58.f);
+                const auto fraction=float(index)/float(QinSynthProcessor::driveScopePoints-1);
+                const auto x=713.f+170.f*fraction;
+                const auto sample=qin::waveformSample(samples,window.start+fraction*window.length);
+                const auto y=469.f-std::clamp(sample*gain,-58.f,58.f);
                 if(index==0) path.startNewSubPath(x,y); else path.lineTo(x,y);
             }
             g.setColour(colour); g.strokePath(path,juce::PathStrokeType(1.3f));
         };
-        drawWave(input,cyan.withAlpha(.65f)); drawWave(output,accent);
+        if(liveScopeValid)
+        { drawWave(liveScope.input,cyan.withAlpha(.65f)); drawWave(liveScope.output,accent); }
+        else { drawWave(previewInput,cyan.withAlpha(.65f)); drawWave(previewOutput,accent); }
     }
     g.restoreState();
 }

@@ -181,10 +181,10 @@ QinSynthProcessor::DriveScope QinSynthProcessor::getDriveScope() const noexcept
 {
     DriveScope result;
     result.epoch=driveScopeEpoch.load(std::memory_order_acquire);
-    const auto cursor=result.epoch%driveScopePoints;
-    for(size_t index=0;index<driveScopePoints;++index)
+    const auto cursor=result.epoch%driveScopeCapturePoints;
+    for(size_t index=0;index<driveScopeCapturePoints;++index)
     {
-        const auto source=(cursor+index)%driveScopePoints;
+        const auto source=(cursor+index)%driveScopeCapturePoints;
         result.input[index]=driveScopeInput[source].load(std::memory_order_relaxed);
         result.output[index]=driveScopeOutput[source].load(std::memory_order_relaxed);
     }
@@ -704,7 +704,9 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             driveWeights[mode].setTargetValue(int(mode)==settings.driveMode ? 1.f : 0.f);
         lastDriveMode=settings.driveMode;
     }
-    const auto stride=std::max(1u,uint32_t(sampleRate/(driveScopePoints*50.0)));
+    // Around 12 kHz of scope samples spans roughly 85 ms, enough to see two
+    // complete cycles of a low piano note without processing every sample.
+    const auto stride=std::max(1u,uint32_t(sampleRate/12000.0));
     for(int i=start;i<start+count;++i)
     {
         const auto capture=driveScopeCounter+1>=stride;
@@ -728,7 +730,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             const auto driven=.5f*(buffer.getSample(0,i)+buffer.getSample(1,i));
             driveScopeInput[driveScopeWrite].store(original,std::memory_order_relaxed);
             driveScopeOutput[driveScopeWrite].store(driven,std::memory_order_relaxed);
-            driveScopeWrite=(driveScopeWrite+1)%driveScopePoints;
+            driveScopeWrite=(driveScopeWrite+1)%driveScopeCapturePoints;
             driveScopeEpoch.fetch_add(1,std::memory_order_release);
         }
         else ++driveScopeCounter;
