@@ -41,7 +41,7 @@ constexpr std::array<Control,44> controls {{
     {"modRelease","RELEASE","Sets the modulation envelope release from 1 to 5000 ms on a logarithmic scale."},
     {"modDepth","MOD DEPTH","Sets how strongly the modulation envelope affects its destination."},
     {"filterCutoff","FREQ","Sets the filter's base cutoff on a logarithmic frequency scale."},
-    {"filterResonance","RESONANCE","Emphasizes the filter cutoff with logarithmic control resolution."},
+    {"filterResonance","RESONANCE","Emphasizes the cutoff with finer control at high resonance."},
     {"filterKeyFollow","KEY FOLLOW","Raises the cutoff with MIDI note pitch."},
     {"filterEnvAmount","ENV AMOUNT","Sets how far the filter envelope moves the cutoff."},
     {"keyPan","KEY PAN","Places low MIDI notes left and high notes right."},

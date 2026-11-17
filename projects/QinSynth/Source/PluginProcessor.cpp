@@ -78,8 +78,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"filterCutoff",1},
         "Filter cutoff",cutoffRange,18000.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
     juce::NormalisableRange<float> resonanceRange {0.f,100.f,
-        [](float,float,float value) { return std::exp(value*std::log(101.f))-1.f; },
-        [](float,float,float value) { return std::log1p(value)/std::log(101.f); },
+        [](float,float,float position)
+        { return 100.f*std::log1p(100.f*std::clamp(position,0.f,1.f))/std::log(101.f); },
+        [](float,float,float value)
+        { return std::expm1(std::clamp(value,0.f,100.f)*std::log(101.f)/100.f)/100.f; },
         [](float,float,float value) { return std::round(value*10.f)*.1f; }};
     result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"filterResonance",1},
         "Filter resonance",resonanceRange,0.f,juce::AudioParameterFloatAttributes().withLabel("%")));

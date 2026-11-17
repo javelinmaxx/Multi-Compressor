@@ -24,6 +24,8 @@ FLT uses logarithmic Freq and Resonance sliders, plus Key Follow, Env Amount, an
 
 The Drive Circuit selector uses Zao Drive's BJT common emitter, op-amp feedback, diode shunt, and series diode crossover models with Zao's default bias and diode knee. Drive blends the selected circuit into the sound, and a short crossfade softens mode changes. The waveform display compares input and post-drive output in real time; when idle, it previews the selected circuit driven by a triangle wave. The delay-reverb reuses Lan Reverb's eight-line feedback network and Scatter control. Qin disables Lan's spectral resonance analyser and tamer. A MIDI note-on changes the feedback tap target and phase-scatter depth according to note pitch, velocity, and alternating onset direction; Tap Motion and Phase Motion set the amount. Lan's existing tap crossfades and phase smoothing soften these changes. No audio-spectrum detection controls the tap or phase. The **Transformer** button inserts Ren Transformer's default stage after Lan's output. Its nonlinear core stops processing when the button is off; a fixed 64-sample delay keeps the on and off paths aligned.
 
+The FLT Resonance slider uses a logarithmic taper with finer control near 100%, while keeping the same 0–100% filter setting.
+
 The instrument outputs stereo VST3 and Standalone formats on Windows, macOS, and Linux, plus AU on macOS. The shared suite version is defined in `../PluginVersion.cmake`.
 
 Build the native processor tests with:

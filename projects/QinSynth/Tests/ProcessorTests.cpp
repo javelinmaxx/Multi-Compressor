@@ -150,9 +150,25 @@ int main(int argc,char** argv)
         if(!synth.acceptsMidi() || !synth.isBusesLayoutSupported(synth.getBusesLayout()))
             throw std::runtime_error("Qin must expose a stereo MIDI instrument bus");
         const auto cutoffMid=synth.parameters.getParameter("filterCutoff")->convertFrom0to1(.5f);
-        const auto resonanceMid=synth.parameters.getParameter("filterResonance")->convertFrom0to1(.5f);
-        if(std::abs(cutoffMid-std::sqrt(30.f*18000.f))>2.f || std::abs(resonanceMid-(std::sqrt(101.f)-1.f))>.2f)
-            throw std::runtime_error("Cutoff and resonance automation must use logarithmic positions");
+        auto* resonance=synth.parameters.getParameter("filterResonance");
+        const auto resonanceMid=resonance->convertFrom0to1(.5f);
+        const auto lowSpan=resonance->convertFrom0to1(.2f)-resonance->convertFrom0to1(.1f);
+        const auto highSpan=resonance->convertFrom0to1(.9f)-resonance->convertFrom0to1(.8f);
+        if(std::abs(cutoffMid-std::sqrt(30.f*18000.f))>2.f
+           || std::abs(resonanceMid-100.f*std::log(51.f)/std::log(101.f))>.2f
+           || highSpan>=lowSpan*.3f)
+            throw std::runtime_error("Resonance slider must allocate finer resolution to high values");
+        for(const auto value:{0.f,25.f,75.f,95.f,99.9f,100.f})
+            if(std::abs(resonance->convertFrom0to1(resonance->convertTo0to1(value))-value)>.11f)
+                throw std::runtime_error("Resonance mapping must round-trip displayed percentages");
+        set(synth,"filterResonance",95.f);
+        juce::MemoryBlock resonanceState;
+        synth.getStateInformation(resonanceState);
+        auto restoredResonance=std::make_unique<QinSynthProcessor>();
+        restoredResonance->setStateInformation(resonanceState.getData(),int(resonanceState.getSize()));
+        if(std::abs(restoredResonance->parameters.getRawParameterValue("filterResonance")->load()-95.f)>.11f)
+            throw std::runtime_error("Saved high resonance must reload at the same physical value");
+        set(synth,"filterResonance",0.f);
         for(const auto* id:{"fltAttack","fltDecay","fltRelease"})
             if(std::abs(synth.parameters.getParameter(id)->convertFrom0to1(.5f)-std::sqrt(5000.f))>1.f)
                 throw std::runtime_error("Filter envelope time sliders must use logarithmic 1–5000 ms positions");

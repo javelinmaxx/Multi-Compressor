@@ -46,7 +46,7 @@
 | MOD Target | Routes the modulation envelope to drive or unison spread. |
 | FLT Type | Selects the TB-303, 18 dB Sallen-Key, or 12/24 dB digital filter model. |
 | FLT Freq | Sets the filter's base cutoff on a logarithmic frequency scale. |
-| FLT Resonance | Emphasizes the filter cutoff with logarithmic control resolution. |
+| FLT Resonance | Emphasizes the cutoff with finer control at high resonance. |
 | FLT Key Follow | Raises the cutoff with MIDI note pitch. |
 | FLT Env Amount | Sets how far the filter envelope moves the cutoff. |
 | FLT Merge | Blends per-voice filters into one shared master filter at 100%. |
