@@ -74,7 +74,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     }
     add("modDepth","Mod depth",0,100,.1f,0,"%");
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"modTarget",1},"Mod destination",
-        juce::StringArray{"Drive","Spread"},0));
+        juce::StringArray{"Drive","Spread","Pitch","Filter"},0));
     juce::NormalisableRange<float> cutoffRange {30.f,18000.f,
         [](float low,float high,float value) { return low*std::pow(high/low,value); },
         [](float low,float high,float value) { return std::log(value/low)/std::log(high/low); },
@@ -163,8 +163,18 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
         smoothedWaves[size_t(osc)]=qin::clampWavePosition(
             parameters.getRawParameterValue(prefix+"WaveX")->load()*.01f,
             parameters.getRawParameterValue(prefix+"WaveY")->load()*.01f);
+        const auto octave=juce::roundToInt(parameters.getRawParameterValue(prefix+"Octave")->load());
+        const auto unison=juce::roundToInt(parameters.getRawParameterValue(prefix+"Unison")->load());
+        const auto cents=parameters.getRawParameterValue(prefix+"Detune")->load();
+        const auto shape=parameters.getRawParameterValue(prefix+"DetuneShape")->load()*.01f;
+        for(int u=0;u<maxUnison;++u)
+            detuneRatios[size_t(osc)][size_t(u)]=u<unison
+                ? std::ldexp(std::exp2(qin::detunePosition(u,unison,shape)*cents/1200.0),octave) : 1.0;
     }
+    for(int i=0;i<=coefficientTableSize;++i)
+        coefficientTable[size_t(i)]=std::tan(juce::MathConstants<double>::pi*.44*double(i)/coefficientTableSize);
     masterFilter={}; masterCutoff=smoothedFilterMerge=0;
+    smoothedModDepth=std::clamp(parameters.getRawParameterValue("modDepth")->load()*.01f,0.f,1.f);
     voiceAge=onsetCount=0; onsetTap=onsetPhase=0; sustain=false;
     activeVoiceCount.store(0,std::memory_order_relaxed);
     driveCircuit.prepare(sampleRate);
@@ -233,7 +243,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
             std::clamp(get(prefix+"Release")*scale,.001f,25.f),std::clamp(get(prefix+"Curve")*.01f,-1.f,1.f)};
     }
     settings.modDepth=std::clamp(get("modDepth")*.01f,0.f,1.f);
-    settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,1);
+    settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,3);
     settings.cutoff=std::clamp(get("filterCutoff"),30.f,18000.f);
     settings.resonance=std::clamp(get("filterResonance")*.01f,0.f,1.f);
     settings.keyFollow=std::clamp(get("filterKeyFollow")*.01f,0.f,1.f);
@@ -284,6 +294,14 @@ float QinSynthProcessor::advanceEnvelope(Envelope& envelope,const EnvelopeSettin
     { envelope.start=envelope.value; envelope.progress=0; ++envelope.stage; }
     return envelope.value;
 }
+float QinSynthProcessor::filterCoefficient(float hz) const noexcept
+{
+    const auto index=std::clamp(double(hz)/sampleRate/.44*coefficientTableSize,0.0,double(coefficientTableSize));
+    const auto low=int(index);
+    const auto high=std::min(low+1,coefficientTableSize);
+    const auto fraction=float(index-low);
+    return coefficientTable[size_t(low)]+fraction*(coefficientTable[size_t(high)]-coefficientTable[size_t(low)]);
+}
 float QinSynthProcessor::filterSample(FilterState& state,float input,float g,float onePole,float resonance,int type) const noexcept
 {
     if(type==0) return input;
@@ -292,6 +310,25 @@ float QinSynthProcessor::filterSample(FilterState& state,float input,float g,flo
         auto value=std::tanh(input*1.8f-3.5f*resonance*state.ladder[3]);
         for(auto& pole:state.ladder) { pole+=g*(value-pole); value=std::tanh(pole); }
         return std::clamp(state.ladder[3]*1.3f,-4.f,4.f);
+    }
+    if(type==2)
+    {
+        // Equal-R/C non-inverting Sallen-Key low-pass: K controls its feedback,
+        // while the output is normalized to unity gain at DC. Trapezoidal
+        // integration solves both capacitor voltages together.
+        const auto k=1.f+1.7f*std::clamp(resonance,0.f,1.f);
+        const auto denominator=1.f+(3.f-k)*g+g*g;
+        const auto v1=((state.s1+g*input)*(1.f+g)+g*(1.f-k)*state.s2)/denominator;
+        const auto v2=(state.s2+g*v1)/(1.f+g);
+        state.s1=2.f*v1-state.s1;
+        state.s2=2.f*v2-state.s2;
+        const auto third=onePole*(v2-state.pole);
+        const auto output=state.pole+third;
+        state.pole=output+third;
+        if(!std::isfinite(output) || !std::isfinite(state.s1) || !std::isfinite(state.s2)
+           || std::abs(state.s1)>64.f || std::abs(state.s2)>64.f)
+        { state={}; return 0; }
+        return 2.f*std::tanh(output*.5f);
     }
     const auto k=std::clamp(1.4f-1.1f*resonance,.3f,1.4f);
     const auto section=[g](float x,float damping,float& s1,float& s2)
@@ -307,11 +344,6 @@ float QinSynthProcessor::filterSample(FilterState& state,float input,float g,flo
         return low;
     };
     auto value=section(input,k,state.s1,state.s2);
-    if(type==2)
-    {
-        state.pole+=onePole*(value-state.pole);
-        value=state.pole;
-    }
     if(type==4) value=section(value,1.4f-.55f*resonance,state.t1,state.t2);
     if(!std::isfinite(value) || !std::isfinite(state.s1) || !std::isfinite(state.s2)
        || !std::isfinite(state.t1) || !std::isfinite(state.t2))
@@ -545,15 +577,22 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             coefficients[env][stage]=float(1.0/(sampleRate*std::max(.001f,times[stage])));
     }
     const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
-    std::array<std::array<std::array<double,maxUnison>,oscillatorCount>,maxVoices> steps {};
-    std::array<std::array<double,maxUnison>,oscillatorCount> detuneOffsets {};
+    const auto modDepthIncrement=(settings.modDepth-smoothedModDepth)/count;
+    std::array<std::array<double,maxUnison>,oscillatorCount> ratioIncrements {};
+    bool pitchMoving=false;
     for(int osc=0;osc<oscillatorCount;++osc)
     {
         const auto& control=settings.oscillator[size_t(osc)];
-        if(control.level<=0) continue;
         for(int u=0;u<control.unison;++u)
-            detuneOffsets[size_t(osc)][size_t(u)]=qin::detunePosition(u,control.unison,control.detuneShape);
+        {
+            const auto offset=qin::detunePosition(u,control.unison,control.detuneShape);
+            const auto target=std::ldexp(std::exp2(offset*control.detune/1200.0),control.octave);
+            auto& current=detuneRatios[size_t(osc)][size_t(u)];
+            ratioIncrements[size_t(osc)][size_t(u)]=(target-current)/count;
+            pitchMoving|=std::abs(target-current)>1.e-12;
+        }
     }
+    std::array<std::array<double,oscillatorCount>,maxVoices> baseSteps {};
     struct NoiseCoefficients { float a1=1, a2=0, a3=0, highPass=0; };
     std::array<NoiseCoefficients,maxVoices> noiseCoefficients {};
     for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
@@ -565,12 +604,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         {
             const auto& control=settings.oscillator[size_t(osc)];
             if(control.level<=0) continue;
-            const auto center=base*std::ldexp(1.0,control.octave);
-            for(int u=0;u<control.unison;++u)
-            {
-                const auto offset=detuneOffsets[size_t(osc)][size_t(u)];
-                steps[voiceIndex][size_t(osc)][size_t(u)]=std::min(.49,center*std::pow(2.0,offset*control.detune/1200.0)/sampleRate);
-            }
+            baseSteps[voiceIndex][size_t(osc)]=base/sampleRate;
         }
         if(settings.noise && settings.noiseOscillator.level>0)
         {
@@ -585,6 +619,11 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     for(int i=start;i<start+count;++i)
     {
+        smoothedModDepth+=modDepthIncrement;
+        if(pitchMoving)
+            for(int osc=0;osc<oscillatorCount;++osc)
+                for(int u=0;u<settings.oscillator[size_t(osc)].unison;++u)
+                    detuneRatios[size_t(osc)][size_t(u)]+=ratioIncrements[size_t(osc)][size_t(u)];
         std::array<std::array<float,4>,oscillatorCount> waveMixes {};
         for(int osc=0;osc<oscillatorCount;++osc)
         {
@@ -611,7 +650,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 : std::exp2((currentPitch-double(voice.note))/12.0);
             if(gliding) voice.pan=std::clamp(float((currentPitch-64.0)/44.0)*settings.pan,-.95f,.95f);
             double voiceLeft=0,voiceRight=0;
-            const auto spreadMod=settings.modTarget==1 ? settings.modDepth*modEnv : 0.f;
+            const auto spreadMod=settings.modTarget==1 ? smoothedModDepth*modEnv : 0.f;
+            const auto pitchMod=settings.modTarget==2 ? std::exp2(double(smoothedModDepth*modEnv)) : 1.0;
             for(int osc=0;osc<oscillatorCount;++osc)
             {
                 const auto& control=settings.oscillator[size_t(osc)];
@@ -620,7 +660,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 {
                     const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
                     const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],waveMixes[size_t(osc)],
-                        std::min(.49,steps[voiceIndex][size_t(osc)][size_t(u)]*pitchFactor))
+                        std::min(.49,baseSteps[voiceIndex][size_t(osc)]
+                            *detuneRatios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod))
                         *control.level/control.unison;
                     const auto pan=std::clamp(double(voice.pan)+control.pan
                         +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
@@ -663,25 +704,26 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 voiceLeft+=noise*std::sqrt((1.f-pan)*.5f);
                 voiceRight+=noise*std::sqrt((1.f+pan)*.5f);
             }
-            if(settings.modTarget==0 && settings.modDepth>0)
+            if(settings.modTarget==0 && smoothedModDepth>0)
             {
-                const auto amount=settings.modDepth*modEnv;
+                const auto amount=smoothedModDepth*modEnv;
                 voiceLeft=voiceLeft+amount*(std::tanh(voiceLeft*(1+3*amount))-voiceLeft);
                 voiceRight=voiceRight+amount*(std::tanh(voiceRight*(1+3*amount))-voiceRight);
             }
             if(settings.filterType!=0)
             {
                 const auto octaves=settings.keyFollow*float((currentPitch-60.0)/12.0)
-                    +settings.filterEnv*filterEnv*4.f;
+                    +settings.filterEnv*filterEnv*4.f
+                    +(settings.modTarget==3 ? smoothedModDepth*modEnv*4.f : 0.f);
                 const auto target=std::clamp(settings.cutoff*(std::abs(octaves)<1.e-6f ? 1.f : std::exp2(octaves)),
                                              30.f,float(sampleRate*.44));
                 voice.cutoff+=cutoffSmoothing*(target-voice.cutoff);
                 const auto hz=std::clamp(voice.cutoff,25.f,float(sampleRate*.44));
                 const auto coefficient=settings.filterType==1
                     ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)
-                    : std::tan(float(juce::MathConstants<double>::pi*hz/sampleRate));
+                    : filterCoefficient(hz);
                 const auto onePole=settings.filterType==2
-                    ? std::clamp(float(1-std::exp(-2*juce::MathConstants<double>::pi*hz/sampleRate)),0.f,1.f) : 0.f;
+                    ? coefficient/(1.f+coefficient) : 0.f;
                 const auto gain=.16*voice.velocity*amp;
                 masterInputLeft+=gain*voiceLeft; masterInputRight+=gain*voiceRight;
                 cutoffSum+=gain*hz; cutoffWeight+=gain;
@@ -698,9 +740,9 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             const auto hz=std::clamp(masterCutoff,25.f,float(sampleRate*.44));
             const auto coefficient=settings.filterType==1
                 ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)
-                : std::tan(float(juce::MathConstants<double>::pi*hz/sampleRate));
+                : filterCoefficient(hz);
             const auto onePole=settings.filterType==2
-                ? std::clamp(float(1-std::exp(-2*juce::MathConstants<double>::pi*hz/sampleRate)),0.f,1.f) : 0.f;
+                ? coefficient/(1.f+coefficient) : 0.f;
             const auto masterLeft=filterSample(masterFilter[0],float(masterInputLeft),coefficient,onePole,
                                                settings.resonance,settings.filterType);
             const auto masterRight=filterSample(masterFilter[1],float(masterInputRight),coefficient,onePole,

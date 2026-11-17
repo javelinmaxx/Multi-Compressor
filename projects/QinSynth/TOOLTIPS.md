@@ -49,7 +49,7 @@
 | MOD Release | Sets the modulation envelope release from 1 to 5000 ms on a logarithmic scale. |
 | MOD Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
 | MOD Depth | Sets how strongly the modulation envelope affects its destination. |
-| MOD Target | Routes the modulation envelope to drive or unison spread. |
+| MOD Target | Routes the modulation envelope to Drive, Spread, Pitch, or Filter cutoff. |
 | FLT Type | Selects the TB-303, 18 dB Sallen-Key, or 12/24 dB digital filter model. |
 | FLT Freq | Sets the filter's base cutoff on a logarithmic frequency scale. |
 | FLT Resonance | Emphasizes the cutoff with finer control at high resonance. |

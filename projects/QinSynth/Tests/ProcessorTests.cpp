@@ -41,6 +41,26 @@ struct QinSynthTestAccess
     { const auto settings=p.readSettings(); const auto& e=settings.env[size_t(index)]; return {e.attack,e.decay,e.release}; }
     static float detuneShape(const QinSynthProcessor& p,int oscillator)
     { return p.readSettings().oscillator[size_t(oscillator)].detuneShape; }
+    static double detuneRatio(const QinSynthProcessor& p,int oscillator,int unisonVoice)
+    { return p.detuneRatios[size_t(oscillator)][size_t(unisonVoice)]; }
+    static double oscillatorPhase(const QinSynthProcessor& p,int oscillator,int unisonVoice)
+    { return p.voices[0].oscillators[size_t(oscillator)][size_t(unisonVoice)].phase; }
+    static float modDepth(const QinSynthProcessor& p) { return p.smoothedModDepth; }
+    static float coefficient(const QinSynthProcessor& p,float hz) { return p.filterCoefficient(hz); }
+    static double sallenGain(QinSynthProcessor& p,float resonance)
+    {
+        QinSynthProcessor::FilterState state;
+        constexpr float frequency=500.f, rate=48000.f;
+        const auto g=p.filterCoefficient(frequency), onePole=g/(1.f+g);
+        double inPower=0,outPower=0;
+        for(int i=0;i<8192;++i)
+        {
+            const auto input=.02f*std::sin(juce::MathConstants<float>::twoPi*frequency*i/rate);
+            const auto output=p.filterSample(state,input,g,onePole,resonance,2);
+            if(i>=4096) { inPower+=input*input; outPower+=output*output; }
+        }
+        return std::sqrt(outPower/inPower);
+    }
     static bool stableFilters(const QinSynthProcessor& p)
     {
         for(const auto& filter:p.masterFilter)
@@ -257,6 +277,14 @@ int main(int argc,char** argv)
             throw std::runtime_error("Detune Shape must survive session recall");
         set(synth,"osc1DetuneShape",0.f);
         set(synth,"verbMix",0); synth.prepareToPlay(48000,256);
+        for(const auto hz:{30.f,250.f,1000.f,10000.f,18000.f})
+        {
+            const auto expected=std::tan(juce::MathConstants<double>::pi*hz/48000.);
+            if(std::abs(QinSynthTestAccess::coefficient(synth,hz)-expected)>expected*.001)
+                throw std::runtime_error("Filter coefficient lookup must track the bilinear transform");
+        }
+        if(QinSynthTestAccess::sallenGain(synth,1.f)<QinSynthTestAccess::sallenGain(synth,0.f)*2.)
+            throw std::runtime_error("Sallen-Key feedback must produce a stable resonant peak");
         if(!synth.acceptsMidi() || !synth.isBusesLayoutSupported(synth.getBusesLayout()))
             throw std::runtime_error("Qin must expose a stereo MIDI instrument bus");
         const auto cutoffMid=synth.parameters.getParameter("filterCutoff")->convertFrom0to1(.5f);
@@ -848,6 +876,46 @@ int main(int argc,char** argv)
                 for(int i=0;i<256;++i) difference+=std::abs(a.getSample(0,i)-b.getSample(0,i));
             }
             if(difference<.01) throw std::runtime_error("MOD envelope must change the chosen effect");
+        }
+        for(const auto destination:{2,3})
+        {
+            QinSynthProcessor plain,modulated;
+            for(auto* p:{&plain,&modulated})
+            {
+                set(*p,"verbMix",0); set(*p,"modAttack",.001f); set(*p,"modSustain",100);
+                set(*p,"filterType",3); set(*p,"filterCutoff",600);
+                p->prepareToPlay(48000,256);
+            }
+            set(modulated,"modDepth",100); set(modulated,"modTarget",float(destination));
+            juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            double difference=0;
+            for(int blockIndex=0;blockIndex<12;++blockIndex)
+            {
+                plain.processBlock(a,note); modulated.processBlock(b,note); note.clear();
+                for(int i=0;i<256;++i) difference+=std::abs(a.getSample(0,i)-b.getSample(0,i));
+            }
+            if(difference<.01)
+                throw std::runtime_error("MOD Pitch and Filter destinations must affect rendered audio");
+            if(std::abs(QinSynthTestAccess::modDepth(modulated)-1.f)>1.e-4f)
+                throw std::runtime_error("MOD depth ramp must reach the automated value");
+        }
+        {
+            QinSynthProcessor pitched;
+            set(pitched,"verbMix",0); set(pitched,"osc1Unison",8);
+            set(pitched,"osc1Detune",0); set(pitched,"osc1Retrig",1); pitched.prepareToPlay(48000,256);
+            set(pitched,"osc1Detune",30); set(pitched,"osc1DetuneShape",100);
+            juce::AudioBuffer<float> audio(2,64); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            pitched.processBlock(audio,note);
+            const auto expected=std::exp2(qin::detunePosition(1,8,1.f)*30./1200.);
+            if(std::abs(QinSynthTestAccess::detuneRatio(pitched,0,1)-expected)>1.e-8)
+                throw std::runtime_error("Detune pitch ramp must reach its target at the block boundary");
+            const auto outer=std::exp2(30./1200.);
+            const auto phaseExpected=juce::MidiMessage::getMidiNoteInHertz(60)/48000.
+                *(64.+(outer-1.)*65./2.);
+            if(std::abs(QinSynthTestAccess::oscillatorPhase(pitched,0,7)-phaseExpected)>1.e-5)
+                throw std::runtime_error("Unison phase increment must ramp within the audio block");
         }
         {
             QinSynthProcessor preview;

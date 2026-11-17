@@ -80,7 +80,7 @@ float filterMagnitude(int type,float frequency,float cutoff,float resonance)
         const auto fourth=pole*pole*pole*pole;
         return std::abs(fourth*(1.f+3.5f*resonance)/(1.f+3.5f*resonance*fourth));
     }
-    const auto k=std::clamp(1.4f-1.1f*resonance,.3f,1.4f);
+    const auto k=type==2 ? 2.f-1.7f*resonance : std::clamp(1.4f-1.1f*resonance,.3f,1.4f);
     const auto second=1.f/std::sqrt(std::pow(1.f-ratio*ratio,2.f)+k*k*ratio*ratio);
     if(type==2) return second/std::sqrt(1.f+ratio*ratio);
     if(type==4)
@@ -576,8 +576,9 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     for(const auto* option:{"Bypass","TB-303 ladder","Sallen-Key 18 dB","Digital 12 dB","Digital 24 dB"})
         filterType.addItem(option,filterType.getNumItems()+1);
     modTarget.addItem("Drive",1); modTarget.addItem("Spread",2);
+    modTarget.addItem("Pitch",3); modTarget.addItem("Filter",4);
     filterType.setTooltip("Selects the TB-303, 18 dB Sallen-Key, or 12/24 dB digital filter model.");
-    modTarget.setTooltip("Routes the modulation envelope to drive or unison spread.");
+    modTarget.setTooltip("Routes the modulation envelope to Drive, Spread, Pitch, or Filter cutoff.");
     for(auto* box:{&filterType,&modTarget})
     { box->setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a)); box->setColour(juce::ComboBox::textColourId,stageStyle::foreground); addAndMakeVisible(*box); }
     modTargetLabel.setFont(juce::FontOptions(9.f));
