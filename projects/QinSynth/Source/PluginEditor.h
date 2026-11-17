@@ -53,7 +53,7 @@ public:
     void resized() override;
 private:
     friend struct QinSynthEditorTestAccess;
-    static constexpr int designWidth=920, designHeight=719;
+    static constexpr int designWidth=920, designHeight=695;
     void showOscillator(int oscillator);
     void showEnvelope(int envelope);
     void showFxSection(int section);
@@ -102,7 +102,7 @@ private:
     std::array<QinRetrigSwitch,3> retrig;
     std::array<juce::Label,3> waveLabels;
     juce::ComboBox filterType, modTarget;
-    juce::Label filterTypeLabel, modTargetLabel;
+    juce::Label modTargetLabel;
     using State=juce::AudioProcessorValueTreeState;
     std::array<std::unique_ptr<State::SliderAttachment>,44> sliderAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> curveAttachments;

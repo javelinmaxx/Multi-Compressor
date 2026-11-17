@@ -86,7 +86,7 @@ struct QinSynthEditorTestAccess
     static bool transformerVisible(const QinSynthEditor& editor) { return editor.transformerButton.isVisible(); }
     static bool outputSectionVisible(const QinSynthEditor& editor)
     { return editor.transformerButton.isVisible() && editor.sliders[36].isVisible()
-        && editor.transformerButton.getY()>=560 && editor.sliders[36].getY()>=560; }
+        && editor.transformerButton.getY()>=536 && editor.sliders[36].getY()>=536; }
     static bool compactFxKnobs(const QinSynthEditor& editor)
     { return editor.sliders[37].getHeight()<80 && editor.sliders[38].getHeight()<80; }
     static int driveModeCount(const QinSynthEditor& editor) { return editor.driveMode.getNumItems(); }
@@ -120,7 +120,7 @@ struct QinSynthEditorTestAccess
     static bool playVisible(const QinSynthEditor& editor)
     { return editor.polyLegatoButton.isVisible() && editor.legatoRule.isVisible()
         && editor.slideTime.isVisible() && editor.slideShape.isVisible()
-        && editor.slideTime.getY()>=569; }
+        && editor.slideTime.getY()>=545; }
     static int legatoRules(const QinSynthEditor& editor) { return editor.legatoRule.getNumItems(); }
     static bool ruleEnabled(const QinSynthEditor& editor) { return editor.legatoRule.isEnabled(); }
     static void setPolyLegato(QinSynthEditor& editor,bool enabled)
@@ -770,11 +770,11 @@ int main(int argc,char** argv)
             if(QinSynthEditorTestAccess::activeLabel(editor)!="1 ACTIVE")
                 throw std::runtime_error("Active voice display must follow the audio processor");
             const auto firstCutoff=QinSynthEditorTestAccess::liveCutoff(editor);
-            const auto firstPlot=editor.createComponentSnapshot({455,185,218,90});
+            const auto firstPlot=editor.createComponentSnapshot({455,166,218,90});
             for(int blockIndex=0;blockIndex<24;++blockIndex) monitored.processBlock(audio,note);
             QinSynthEditorTestAccess::tick(editor);
             const auto lateCutoff=QinSynthEditorTestAccess::liveCutoff(editor);
-            const auto latePlot=editor.createComponentSnapshot({455,185,218,90});
+            const auto latePlot=editor.createComponentSnapshot({455,166,218,90});
             if(lateCutoff<firstCutoff*1.5f || !QinSynthEditorTestAccess::liveScope(editor))
                 throw std::runtime_error("Filter response and drive scope must follow active audio");
             int changed=0;
@@ -807,7 +807,7 @@ int main(int argc,char** argv)
         {
             QinSynthProcessor preview;
             QinSynthEditor editor(preview);
-            if(editor.getWidth()!=920 || editor.getHeight()!=719
+            if(editor.getWidth()!=920 || editor.getHeight()!=695
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
                || !QinSynthEditorTestAccess::outputSectionVisible(editor)
                || !QinSynthEditorTestAccess::compactFxKnobs(editor)
@@ -882,23 +882,23 @@ int main(int argc,char** argv)
                         different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
                 return different;
             };
-            if(changes({34,282,384,76},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
+            if(changes({34,258,384,76},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
                 throw std::runtime_error("OSC waveform plot must follow the square pad");
             QinSynthEditorTestAccess::setWave(editor,0,{0.f,0.f});
             QinSynthEditorTestAccess::setSlide(editor,80,0);
-            if(changes({342,624,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
-               || changes({342,624,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
+            if(changes({342,600,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
+               || changes({342,600,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
                 throw std::runtime_error("Legato curve preview must follow the Shape knob");
             QinSynthEditorTestAccess::setSlide(editor,80,50);
-            if(changes({455,500,218,50},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
+            if(changes({455,476,218,50},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
                 throw std::runtime_error("Envelope plot must respond to sustain changes");
             QinSynthEditorTestAccess::previewValue(editor,20,100);
-            if(changes({455,500,218,50},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
+            if(changes({455,476,218,50},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
                 throw std::runtime_error("Envelope plot must respond to curve changes");
             QinSynthEditorTestAccess::previewCurve(editor,0,0);
             QinSynthEditorTestAccess::previewFilter(editor,4);
             QinSynthEditorTestAccess::previewValue(editor,31,200);
-            if(changes({455,185,218,90},[&]{QinSynthEditorTestAccess::previewValue(editor,31,5000);})<20)
+            if(changes({455,166,218,90},[&]{QinSynthEditorTestAccess::previewValue(editor,31,5000);})<20)
                 throw std::runtime_error("Filter plot must respond to cutoff changes");
             QinSynthEditorTestAccess::previewValue(editor,31,2500);
             QinSynthEditorTestAccess::previewValue(editor,32,95);
@@ -938,7 +938,7 @@ int main(int argc,char** argv)
             if(std::abs(preview.parameters.getRawParameterValue("driveMode")->load()-2)>1.e-6
                || preview.parameters.getRawParameterValue("transformer")->load()<.5f)
                 throw std::runtime_error("Drive circuit and transformer controls must update host parameters");
-            if(changes({707,392,182,153},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
+            if(changes({707,368,182,153},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
                 throw std::runtime_error("Drive preview must follow the selected circuit");
             QinSynthEditorTestAccess::selectDriveMode(editor,2);
             QinSynthEditorTestAccess::setTransformer(editor,false);
