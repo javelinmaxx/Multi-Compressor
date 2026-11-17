@@ -87,7 +87,7 @@ struct QinSynthEditorTestAccess
     static bool transformerVisible(const QinSynthEditor& editor) { return editor.transformerButton.isVisible(); }
     static bool outputSectionVisible(const QinSynthEditor& editor)
     { return editor.transformerButton.isVisible() && editor.sliders[36].isVisible()
-        && editor.transformerButton.getY()>=536 && editor.sliders[36].getY()>=536; }
+        && editor.transformerButton.getY()>=500 && editor.sliders[36].getY()>=500; }
     static bool compactFxKnobs(const QinSynthEditor& editor)
     { return editor.sliders[37].getHeight()<80 && editor.sliders[38].getHeight()<80; }
     static int driveModeCount(const QinSynthEditor& editor)
@@ -125,13 +125,14 @@ struct QinSynthEditorTestAccess
     static bool playVisible(const QinSynthEditor& editor)
     { return editor.polyLegatoButton.isVisible() && editor.legatoRule.isVisible()
         && editor.slideTime.isVisible() && editor.slideShape.isVisible()
-        && editor.slideTime.getY()>=545; }
-    static int legatoRules(const QinSynthEditor& editor) { return editor.legatoRule.getNumItems(); }
+        && editor.slideTime.getY()>=510; }
+    static int legatoRules(const QinSynthEditor& editor)
+    { return juce::roundToInt(editor.legatoRule.getMaximum()-editor.legatoRule.getMinimum())+1; }
     static bool ruleEnabled(const QinSynthEditor& editor) { return editor.legatoRule.isEnabled(); }
     static void setPolyLegato(QinSynthEditor& editor,bool enabled)
     { editor.polyLegatoButton.setToggleState(enabled,juce::sendNotificationSync); editor.updatePlayAvailability(); }
     static void selectLegatoRule(QinSynthEditor& editor,int item)
-    { editor.legatoRule.setSelectedId(item,juce::sendNotificationSync); }
+    { editor.legatoRule.setValue(item-1,juce::sendNotificationSync); }
     static void setSlide(QinSynthEditor& editor,double time,double shape)
     { editor.slideTime.setValue(time,juce::sendNotificationSync); editor.slideShape.setValue(shape,juce::sendNotificationSync); }
     static juce::String activeLabel(const QinSynthEditor& editor) { return editor.activeVoicesLabel.getText(); }
@@ -818,7 +819,7 @@ int main(int argc,char** argv)
         {
             QinSynthProcessor preview;
             QinSynthEditor editor(preview);
-            if(editor.getWidth()!=920 || editor.getHeight()!=695
+            if(editor.getWidth()!=920 || editor.getHeight()!=640
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
                || !QinSynthEditorTestAccess::outputSectionVisible(editor)
                || !QinSynthEditorTestAccess::compactFxKnobs(editor)
@@ -893,18 +894,18 @@ int main(int argc,char** argv)
                         different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
                 return different;
             };
-            if(changes({34,258,384,76},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
+            if(changes({34,246,384,64},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
                 throw std::runtime_error("OSC waveform plot must follow the square pad");
             QinSynthEditorTestAccess::setWave(editor,0,{0.f,0.f});
             QinSynthEditorTestAccess::setSlide(editor,80,0);
-            if(changes({342,605,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
-               || changes({342,605,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
+            if(changes({297,554,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
+               || changes({297,554,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
                 throw std::runtime_error("Legato curve preview must follow the Shape knob");
             QinSynthEditorTestAccess::setSlide(editor,80,50);
-            if(changes({455,476,218,50},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
+            if(changes({455,471,218,46},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
                 throw std::runtime_error("Envelope plot must respond to sustain changes");
             QinSynthEditorTestAccess::previewValue(editor,20,100);
-            if(changes({455,476,218,50},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
+            if(changes({455,471,218,46},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
                 throw std::runtime_error("Envelope plot must respond to curve changes");
             QinSynthEditorTestAccess::previewCurve(editor,0,0);
             QinSynthEditorTestAccess::previewFilter(editor,4);
@@ -951,7 +952,7 @@ int main(int argc,char** argv)
                || std::abs(preview.parameters.getRawParameterValue("driveMix")->load()-45)>1.e-3
                || preview.parameters.getRawParameterValue("transformer")->load()<.5f)
                 throw std::runtime_error("Drive circuit, mix, and transformer controls must update host parameters");
-            if(changes({707,368,182,153},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
+            if(changes({707,354,182,133},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
                 throw std::runtime_error("Drive preview must follow the selected circuit");
             QinSynthEditorTestAccess::selectDriveMode(editor,2);
             QinSynthEditorTestAccess::setTransformer(editor,false);

@@ -57,7 +57,7 @@ public:
     void resized() override;
 private:
     friend struct QinSynthEditorTestAccess;
-    static constexpr int designWidth=920, designHeight=695;
+    static constexpr int designWidth=920, designHeight=640;
     void showOscillator(int oscillator);
     void showEnvelope(int envelope);
     void showFxSection(int section);
@@ -87,7 +87,7 @@ private:
     QinVoiceSlider voiceCount;
     juce::Label activeVoicesLabel;
     QinAnalogSwitch polyLegatoButton {"POLY LEGATO"};
-    juce::ComboBox legatoRule;
+    juce::Slider legatoRule;
     juce::Label legatoRuleLabel, slideTimeLabel, slideShapeLabel;
     juce::Slider slideTime, slideShape;
     std::array<juce::Slider,4> noiseSliders;
@@ -113,7 +113,7 @@ private:
     std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
     std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
     std::unique_ptr<State::ButtonAttachment> polyLegatoAttachment;
-    std::unique_ptr<State::ComboBoxAttachment> legatoRuleAttachment;
+    std::unique_ptr<State::SliderAttachment> legatoRuleAttachment;
     std::unique_ptr<State::SliderAttachment> slideTimeAttachment, slideShapeAttachment;
     std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
     std::unique_ptr<State::SliderAttachment> driveModeAttachment, driveMixAttachment;
