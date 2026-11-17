@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "LegatoCurve.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -348,11 +349,7 @@ double QinSynthProcessor::advancePitch(Voice& voice,const Settings& settings) co
     if(voice.glideProgress>=1.f) return voice.pitchNote=voice.note;
     voice.glideShape+=glideShapeSmoothing*(settings.slideShape-voice.glideShape);
     const auto t=voice.glideProgress=std::min(1.f,voice.glideProgress+voice.glideIncrement);
-    const auto logarithmic=std::log1p(9.f*t)/std::log(10.f);
-    const auto sigmoid=t*t*(3.f-2.f*t);
-    const auto curve=voice.glideShape<=.5f
-        ? logarithmic+(t-logarithmic)*(voice.glideShape*2.f)
-        : t+(sigmoid-t)*((voice.glideShape-.5f)*2.f);
+    const auto curve=qin::legatoCurve(t,voice.glideShape);
     voice.pitchNote=voice.glideStart+(double(voice.note)-voice.glideStart)*curve;
     if(t>=1.f) voice.pitchNote=voice.note;
     return voice.pitchNote;

@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "LegatoCurve.h"
 #include "../../EditorScaling.h"
 #include <cmath>
 #include <complex>
@@ -208,7 +209,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     for(auto* slider:{&slideTime,&slideShape})
     {
         slider->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        slider->setTextBoxStyle(juce::Slider::TextBoxBelow,false,88,17);
+        slider->setTextBoxStyle(juce::Slider::TextBoxBelow,false,70,17);
         slider->setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
         slider->setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
         addAndMakeVisible(*slider);
@@ -230,6 +231,8 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
                         : juce::String(juce::roundToInt((value-50)*2))+"% SIG";
     };
     slideTime.updateText(); slideShape.updateText();
+    slideShape.onValueChange=[this]
+    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{341,651,78,83})); };
     updatePlayAvailability();
     for(size_t i=0;i<oscillatorTabs.size();++i)
     {
@@ -529,9 +532,9 @@ void QinSynthEditor::resized()
     voiceCount.setBounds(660,34,94,27);
     activeVoicesLabel.setBounds(761,35,130,25);
     polyLegatoButton.setBounds(190,619,215,30);
-    legatoRuleLabel.setBounds(34,652,134,15); legatoRule.setBounds(34,670,134,29);
-    slideTimeLabel.setBounds(179,652,104,15); slideTime.setBounds(179,668,104,69);
-    slideShapeLabel.setBounds(296,652,105,15); slideShape.setBounds(296,668,105,69);
+    legatoRuleLabel.setBounds(34,652,127,15); legatoRule.setBounds(34,670,127,29);
+    slideTimeLabel.setBounds(168,652,80,15); slideTime.setBounds(168,668,80,69);
+    slideShapeLabel.setBounds(254,652,81,15); slideShape.setBounds(254,668,81,69);
     for(int i=0;i<3;++i)
     {
         oscillatorTabs[size_t(i)].setBounds(31+i*109,125,103,27);
@@ -630,6 +633,27 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText(currentOscillator==3 ? "NOISE" : "OSC",30,99,120,20,juce::Justification::centredLeft);
     g.drawText("PLAY",30,622,120,20,juce::Justification::centredLeft);
+    const juce::Rectangle<float> glidePlot(342,670,76,62);
+    g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(9.f));
+    g.drawText("CURVE",342,652,76,15,juce::Justification::centred);
+    g.setColour(stageStyle::inset); g.fillRoundedRectangle(glidePlot,5);
+    const auto curveLeft=glidePlot.getX()+5.f, curveRight=glidePlot.getRight()-5.f;
+    const auto curveTop=glidePlot.getY()+5.f, curveBottom=glidePlot.getBottom()-5.f;
+    g.setColour(stageStyle::grid.withAlpha(.48f));
+    g.drawLine(curveLeft,curveBottom,curveRight,curveTop,.8f);
+    g.drawLine(curveLeft,glidePlot.getCentreY(),curveRight,glidePlot.getCentreY(),.6f);
+    g.drawLine(glidePlot.getCentreX(),curveTop,glidePlot.getCentreX(),curveBottom,.6f);
+    const auto glideShapeValue=std::clamp(float(slideShape.getValue())*.01f,0.f,1.f);
+    juce::Path glidePath;
+    for(int point=0;point<=64;++point)
+    {
+        const auto t=float(point)/64.f;
+        const auto x=curveLeft+(curveRight-curveLeft)*t;
+        const auto y=curveBottom-(curveBottom-curveTop)*qin::legatoCurve(t,glideShapeValue);
+        if(point==0) glidePath.startNewSubPath(x,y); else glidePath.lineTo(x,y);
+    }
+    g.setColour(cyan.withAlpha(.18f)); g.strokePath(glidePath,juce::PathStrokeType(4.f));
+    g.setColour(cyan); g.strokePath(glidePath,juce::PathStrokeType(1.8f));
     g.drawText("FLT",455,99,120,20,juce::Justification::centredLeft);
     g.drawText("ENV",455,442,120,20,juce::Justification::centredLeft);
     g.drawText("FX",703,99,120,20,juce::Justification::centredLeft);

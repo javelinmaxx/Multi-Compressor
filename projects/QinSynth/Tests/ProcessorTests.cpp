@@ -767,6 +767,11 @@ int main(int argc,char** argv)
                         different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
                 return different;
             };
+            QinSynthEditorTestAccess::setSlide(editor,80,0);
+            if(changes({342,670,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
+               || changes({342,670,76,62},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
+                throw std::runtime_error("Legato curve preview must follow the Shape knob");
+            QinSynthEditorTestAccess::setSlide(editor,80,50);
             if(changes({455,500,218,64},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
                 throw std::runtime_error("Envelope plot must respond to sustain changes");
             QinSynthEditorTestAccess::previewValue(editor,20,100);
