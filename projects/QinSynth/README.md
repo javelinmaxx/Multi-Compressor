@@ -1,6 +1,7 @@
 # Qin Synth
 
 Qin Synth is a stereo MIDI instrument with adjustable 1–16-note polyphony, three virtual-analog oscillators per note, and up to eight unison copies per oscillator. It is version 0.7.5 in the J-Sonic suite.
+The oscillator sine and three envelope shapes use interpolated lookup curves during voice rendering; controls remain continuous under automation.
 
 ![Qin Synth with OSC, ENV, FLT and tabbed FX panels at illustrative filter settings](Previews/qin-synth.png)
 

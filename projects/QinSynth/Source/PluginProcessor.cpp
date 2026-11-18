@@ -2,6 +2,7 @@
 #include "UnisonDetune.h"
 #include "PluginEditor.h"
 #include "LegatoCurve.h"
+#include "CurveLookup.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -286,9 +287,7 @@ float QinSynthProcessor::advanceEnvelope(Envelope& envelope,const EnvelopeSettin
     const auto target=envelope.stage==0 ? 1.f : envelope.stage==1 ? settings.sustain : 0.f;
     const auto increment=step[size_t(envelope.stage==0 ? 0 : envelope.stage==1 ? 1 : 2)];
     envelope.progress=std::min(1.f,envelope.progress+increment);
-    const auto slope=envelope.stage==0 ? 6.9f : 5.f;
-    const auto base=(1.f-std::exp(-slope*envelope.progress))/(1.f-std::exp(-slope));
-    const auto shaped=std::pow(base,std::exp2(settings.curve*2.f));
+    const auto shaped=qin::curveLookup.envelopeAt(envelope.progress,settings.curve,envelope.stage==0);
     envelope.value=envelope.start+(target-envelope.start)*shaped;
     if(envelope.progress>=1.f && envelope.stage<2)
     { envelope.start=envelope.value; envelope.progress=0; ++envelope.stage; }
@@ -363,7 +362,7 @@ double QinSynthProcessor::oscillatorSample(Subvoice& state,const std::array<floa
     const auto saw=2*phase-1-edge;
     const auto pulse=(phase<.5 ? 1.0 : -1.0)+edge-polyBlep(std::fmod(phase+.5,1.0),step);
     state.triangle=.9998*state.triangle+4*step*pulse;
-    const auto sine=weights[3]>1.e-6f ? std::sin(2.0*juce::MathConstants<double>::pi*phase) : 0.0;
+    const auto sine=weights[3]>1.e-6f ? qin::curveLookup.sineAt(phase) : 0.0;
     const auto value=weights[0]*saw+weights[1]*pulse+weights[2]*state.triangle+weights[3]*sine;
     state.phase+=step;
     if(state.phase>=1) state.phase-=1;

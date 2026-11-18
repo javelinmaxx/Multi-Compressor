@@ -19,6 +19,7 @@ wet/dry mix, output gain, and optional transformer. A single polyphase FIR
 converter surrounds this path; the transformer uses its core directly rather
 than adding another conversion stage. [Oversampling measurements](Tests/Reports/oversampling.md)
 compare folded harmonics with the same compressor equations running at 1×.
+Gain and adaptive timing curve values come from prepared exponential/logarithm tables; the detector and gain envelope still update at 4×.
 
 These are behavioral models, not measured recreations of particular hardware.
 The transformer adds flux-dependent saturation. Its generated distortion is

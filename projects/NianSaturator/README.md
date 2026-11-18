@@ -55,6 +55,7 @@ biased arctangent curve with a DC-blocked residual; a feed-forward band-level
 detector gently reduces only the added harmonic signal on loud notes, with a
 5 ms detector, 2 ms attack, and 75 ms release. The split and both saturation
 modes run at 4× the host sample rate through a linear-phase FIR converter.
+T mode interpolates a precomputed arctangent curve during oversampled processing, retaining the analytic function for overload values.
 This original residual-control design takes conceptual inspiration from
 [Roth-AIR's high-band saturation and compression](https://github.com/danielrothmann/Roth-AIR);
 it does not reuse Roth-AIR source code.

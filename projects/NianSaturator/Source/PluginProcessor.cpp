@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "AtanLookup.h"
 #include "PluginEditor.h"
 #include <cmath>
 #include <algorithm>
@@ -431,7 +432,7 @@ void NianSaturatorProcessor::process(juce::AudioBuffer<float>& b,bool hostBypass
                         const auto targetGain=level>.18f ? std::sqrt(.18f/level) : 1.f;
                         auto& dynamicGain=tubeGainState[index][band];
                         dynamicGain+=(targetGain<dynamicGain ? tubeAttackStep : tubeReleaseStep)*(targetGain-dynamicGain);
-                        const auto shaped=(std::atan(drives[band]*(bands[band]+biases[band]))-centers[band])*normalizers[band];
+                        const auto shaped=(nian::atanLookup.evaluate(drives[band]*(bands[band]+biases[band]))-centers[band])*normalizers[band];
                         const auto residual=shaped-bands[band];
                         auto& dc=tubeDcState[index][band];
                         dc+=dcStep*(residual-dc);

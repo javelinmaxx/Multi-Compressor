@@ -23,6 +23,41 @@ struct Parameters
     bool transformer = false, bypass = false, upward = false, midSide = false;
 };
 
+// Reuse parameter-independent curves at the 4x processing rate. Timing bases
+// are converted to log coefficients when host parameters change.
+struct ControlCurves
+{
+    static constexpr int expSteps = 4096, logSteps = 2048;
+    static constexpr float expMinimum = -12.f, expMaximum = 2.f;
+    std::array<float,expSteps+1> exponentials {};
+    std::array<float,logSteps+1> logarithms {};
+    ControlCurves() noexcept
+    {
+        for (int i=0;i<=expSteps;++i)
+            exponentials[size_t(i)] = std::exp(expMinimum+(expMaximum-expMinimum)*i/expSteps);
+        for (int i=0;i<=logSteps;++i)
+            logarithms[size_t(i)] = std::log(.5f+.5f*i/logSteps);
+    }
+    float exp(float x) const noexcept
+    {
+        if (std::abs(x)<1.e-12f) return 1.f;
+        if (!(x>=expMinimum && x<expMaximum)) return std::exp(x);
+        const auto position=(x-expMinimum)*(expSteps/(expMaximum-expMinimum));
+        const auto index=size_t(position);
+        const auto fraction=position-float(index);
+        return exponentials[index]+fraction*(exponentials[index+1]-exponentials[index]);
+    }
+    float log(float x) const noexcept
+    {
+        if (!(x>=.5f && x<=1.f)) return std::log(x);
+        const auto position=(x-.5f)*(2.f*logSteps);
+        const auto index=std::min(size_t(position),size_t(logSteps-1));
+        const auto fraction=position-float(index);
+        return logarithms[index]+fraction*(logarithms[index+1]-logarithms[index]);
+    }
+};
+inline const ControlCurves controlCurves {};
+
 // No allocation, locks, host calls, or GUI dependencies in the processing path.
 // Both channels share the same detector and gain to preserve the stereo image.
 class Compressor
@@ -33,7 +68,7 @@ public:
 
     // Convert between the linear signal/envelope domain and the dB control
     // domain. The floor keeps silence and tiny numerical residues finite.
-    static float gain (float db) noexcept { return std::pow (10.0f, db / 20.0f); }
+    static float gain (float db) noexcept { return controlCurves.exp (db * 0.11512925465f); }
     static float db (float level) noexcept
     {
         return 20.0f * std::log10 (std::max (level, 1.0e-10f));
@@ -128,6 +163,12 @@ public:
         releases = { coefficient (p.releaseMs * 0.7f), coefficient (p.releaseMs),
                      coefficient (p.releaseMs * 1.6f), coefficient (p.releaseMs) };
         slowRelease = coefficient (p.releaseMs * 6);
+        for (size_t m=0;m<attacks.size();++m)
+        {
+            attackLogs[m]=std::log(attacks[m]);
+            releaseLogs[m]=std::log(releases[m]);
+        }
+        slowReleaseLog=std::log(slowRelease);
         rmsCoefficient = coefficient (10);
         if (firstSet)
         {
@@ -298,7 +339,7 @@ private:
                     // side of threshold: above for downward, below for upward.
                     const auto activeOver = over * (1 - 2 * values[upward]);
                     effectiveRatio = 1 + (effectiveRatio - 1)
-                                       * (1 - std::exp (-std::max (activeOver, 0.0f) / 12));
+                                       * (1 - controlCurves.exp (-std::max (activeOver, 0.0f) / 12));
                 }
 
                 // Feed-forward curves use slope 1 - 1/R. Feedback curves use
@@ -319,10 +360,9 @@ private:
                     // Bound the feedback attack coefficient for stability at
                     // high ratios, where a one-sample loop can otherwise ring.
                     attack = std::max (attack, 1 - 0.5f / effectiveRatio);
-                auto release = releases[m];
-                if (m == 2)
-                    // Mu recovery gets slower as stored gain reduction deepens.
-                    release = std::pow (release, 1 / (1 + std::abs (s.reduction) * 0.06f));
+                // Mu recovery gets slower as stored gain reduction deepens.
+                auto releaseExponent = m == 2 ? releaseLogs[m]/(1 + std::abs (s.reduction) * 0.06f)
+                                              : releaseLogs[m];
                 // VariTransient uses a 3 dB soft knee from 3 to 6 dB GR.
                 // At 400%, attack reaches 4x and release reaches 1/4x.
                 auto transientFactor = 1.0f;
@@ -334,9 +374,11 @@ private:
                 }
                 if (transientFactor > 1.0f)
                 {
-                    attack = std::pow (attack, 1.0f / transientFactor);
-                    release = std::pow (release, transientFactor);
+                    attack = controlCurves.exp ((m == 1 || m == 2 ? controlCurves.log(attack) : attackLogs[m]) / transientFactor);
+                    releaseExponent *= transientFactor;
                 }
+                const auto release = m != 2 && transientFactor <= 1.0f
+                    ? releases[m] : controlCurves.exp (releaseExponent);
                 // In upward mode the control state goes negative as gain rises,
                 // so attack/release must compare gain magnitude, not sign.
                 const auto a = std::abs (desired) > std::abs (s.reduction) ? attack : release;
@@ -347,9 +389,9 @@ private:
                     // Optical combines its main envelope with a slower memory:
                     // the latter recovers at six times the Release setting.
                     const auto slowAttack = transientFactor > 1.0f
-                        ? std::pow (attacks[m], 1.0f / transientFactor) : attacks[m];
+                        ? controlCurves.exp (attackLogs[m] / transientFactor) : attacks[m];
                     const auto slowRecovery = transientFactor > 1.0f
-                        ? std::pow (slowRelease, transientFactor) : slowRelease;
+                        ? controlCurves.exp (slowReleaseLog * transientFactor) : slowRelease;
                     const auto slow = std::abs (desired) > std::abs (s.memory) ? slowAttack : slowRecovery;
                     s.memory = desired + slow * (s.memory - desired);
                     gr = 0.65f * gr + 0.35f * s.memory;
@@ -431,9 +473,11 @@ private:
     bool firstSet = true, hpEnabled = true;
     int selected = 0;
     float smoothing = 0, hpCoefficient = 0, slowRelease = 0, rmsCoefficient = 0;
+    float slowReleaseLog = 0;
     float meterReduction = 0;
     std::array<float, 15> values {}, targets {};
     std::array<float, 4> weights {}, attacks {}, releases {};
+    std::array<float, 4> attackLogs {}, releaseLogs {};
     std::array<std::array<Detector, 4>, 2> states {};
     std::array<Oversampling4x, 2> converters {}, sidechainConverters {};
     std::array<TransformerCore, 2> transformers {};

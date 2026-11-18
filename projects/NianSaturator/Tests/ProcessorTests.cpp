@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../Source/AtanLookup.h"
 #include "../Source/PluginEditor.h"
 #include "../../ParameterRetentionTests.h"
 #include <algorithm>
@@ -86,6 +87,12 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        for(int i=0;i<=20000;++i)
+        {
+            const auto input=-20.f+40.f*i/20000.f;
+            if(std::abs(nian::atanLookup.evaluate(input)-std::atan(input))>2.e-6f)
+                throw std::runtime_error("Tube lookup must match the analytic saturation curve, including overload");
+        }
         verifyParameterRetention<NianSaturatorProcessor>();
         const auto midpoint=NianSaturatorProcessor().parameters.getParameter("crossover")->convertFrom0to1(.5f);
         if(std::abs(midpoint-800.f)>1.f)

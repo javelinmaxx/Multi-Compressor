@@ -141,6 +141,15 @@ void inactiveModelTests()
 
 int main()
 {
+    for(int i=0;i<=4096;++i)
+    {
+        const auto x=-12.f+14.f*i/4096.f;
+        check(std::abs(character::controlCurves.exp(x)/std::exp(x)-1.f)<4.e-6f,
+              "gain lookup must match the analytic exponential across the compressor range");
+        const auto coefficient=.5f+.5f*i/4096.f;
+        check(std::abs(character::controlCurves.log(coefficient)-std::log(coefficient))<1.e-6f,
+              "timing lookup must match analytic log coefficients");
+    }
     inactiveModelTests();
     using namespace character;
     // Closed-loop VCA compensation should produce the same steady 4:1 slope

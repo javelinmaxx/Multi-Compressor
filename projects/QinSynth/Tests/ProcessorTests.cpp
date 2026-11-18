@@ -3,6 +3,7 @@
 #include "../Source/PluginEditor.h"
 #include "../Source/WaveformSync.h"
 #include "../Source/UnisonDetune.h"
+#include "../Source/CurveLookup.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -214,6 +215,25 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        for(int c=-100;c<=100;c+=5)
+            for(int i=0;i<=1000;++i)
+            {
+                const auto progress=i==1 ? 1.e-8 : double(i)/1000;
+                for(int stage=0;stage<2;++stage)
+                {
+                    const auto slope=stage==0 ? 6.9 : 5.0;
+                    const auto base=(1-std::exp(-slope*progress))/(1-std::exp(-slope));
+                    const auto expected=std::pow(base,std::exp2(c*.02));
+                    if(std::abs(qin::curveLookup.envelopeAt(float(progress),c*.01f,stage==0)-expected)>1.e-4)
+                        throw std::runtime_error("Envelope lookup must preserve the curve under long attacks and automation");
+                }
+            }
+        for(int i=0;i<8192;++i)
+        {
+            const auto phase=double(i)/8192;
+            if(std::abs(qin::curveLookup.sineAt(phase)-std::sin(2*juce::MathConstants<double>::pi*phase))>1.e-6)
+                throw std::runtime_error("Oscillator sine lookup must preserve phase and amplitude");
+        }
         for(const auto& [position,expected]:{
                 std::pair{qin::WavePosition{0.f,0.f},std::array<float,4>{1.f,0.f,0.f,0.f}},
                 std::pair{qin::WavePosition{1.f,0.f},std::array<float,4>{0.f,1.f,0.f,0.f}},
