@@ -6,6 +6,12 @@ namespace
 {
 void transformerTests()
 {
+    for (int i=0;i<=16000;++i)
+    {
+        const auto x=-16.f+32.f*i/16000.f;
+        check(std::abs(character::transformerTanh.evaluate(x)-std::tanh(x))<8.e-7f,
+              "shared transformer lookup matches analytic tanh through clipping and overload");
+    }
     character::TransformerCore driveOnly;
     driveOnly.prepare (192000);
     double driveError = 0;

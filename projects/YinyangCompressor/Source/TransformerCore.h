@@ -3,6 +3,7 @@
 #include <cmath>
 #include "MagneticHysteresis.h"
 #include "TransformerResponse.h"
+#include "TransformerTanh.h"
 
 namespace character
 {
@@ -50,12 +51,12 @@ public:
         // A controlled DC magnetizing current biases the core and makes its
         // transfer curve asymmetric, increasing even-order harmonics. The
         // zero setting preserves the original symmetric operating point.
-        const auto bias = responseAmount * (0.12f * std::tanh (flux * drive) + 0.8f * evenHarmonics);
-        const auto b = std::tanh (bias);
+        const auto bias = responseAmount * (0.12f * transformerTanh.evaluate (flux * drive) + 0.8f * evenHarmonics);
+        const auto b = transformerTanh.evaluate (bias);
         // Bias-corrected tanh, normalized for unity minor-loop small-signal
         // slope. At full Response, filtering only (shaped - x) preserves clean
         // highs while generated distortion rolls off above 500 Hz.
-        const auto shaped = (std::tanh (effectiveField + bias) - b)
+        const auto shaped = (transformerTanh.evaluate (effectiveField + bias) - b)
                           / (drive * (1 + coupling) * (1 - b * b));
         const auto rawResidual = shaped - x;
         auto filteredResidual = rawResidual;

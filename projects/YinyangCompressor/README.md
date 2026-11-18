@@ -26,6 +26,7 @@ The transformer adds flux-dependent saturation. Its generated distortion is
 isolated as a nonlinear residual, filtered by a **500 Hz second-order Butterworth
 low-pass (12 dB/octave)**, and added back to the clean signal. This preserves clean
 high frequencies while reducing harmonics above 500 Hz; the cutoff is gradual.
+Its three nonlinear shaping calls use a shared, interpolated tanh curve that Ren Transformer, Qin Synth, and Zao Drive also use.
 The combined signal then passes through a causal loaded
 transformer response: a 20 Hz second-order high-pass (Q 1.0) models
 low-frequency phase lead and droop, while a 19 kHz second-order low-pass
