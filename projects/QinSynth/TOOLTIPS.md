@@ -6,9 +6,10 @@
 | OSC 1/2/3 tabs | Opens the selected oscillator in the OSC panel. |
 | Voices | Drag up or down to set the maximum number of simultaneous notes from one to sixteen. |
 | TUNE | Opens the custom tuning table and A4 reference controls. |
-| Tuning root | Selects the root pitch class for the twelve cent offsets. |
+| Tuning root | Transposes the deviation pattern to this pitch class and locks it at zero cents. |
 | Tuning A4 | Sets the reference frequency for A4 from 400 to 480 Hz. |
-| Tuning degree | Offsets this pitch class by up to 100 cents in either direction. |
+| Tuning key | Drag this piano key to adjust its pitch deviation in cents. |
+| Root key | The selected root is locked to zero cents. |
 | Active Voices | Shows the number of allocated voices, including release tails. |
 | Poly Legato | Enables voice matching and pitch slides when polyphony exceeds one voice. |
 | Voice Match | Closest and Farthest use pitch distance, while Upwards and Downwards prefer voices below or above the new note. |
@@ -55,8 +56,8 @@
 | MOD Sustain | Sets the held level of effect modulation. |
 | MOD Release | Sets the modulation envelope release from 1 to 5000 ms on a logarithmic scale. |
 | MOD Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
-| MOD Depth | Sets how strongly the modulation envelope affects its destination. |
-| MOD Target | Routes the modulation envelope to Drive, Spread, Pitch, or Filter cutoff. |
+| MOD Depth | Sets the modulation amount, with negative values moving the destination downward. |
+| MOD Target | Routes the modulation envelope to any continuous synth control. |
 | FLT Type | Selects the TB-303, 18 dB Sallen-Key, or 12/24 dB digital filter model. |
 | FLT Freq | Sets the filter's base cutoff on a logarithmic frequency scale. |
 | FLT Resonance | Emphasizes the cutoff with finer control at high resonance. |

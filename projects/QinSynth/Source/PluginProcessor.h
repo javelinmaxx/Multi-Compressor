@@ -7,6 +7,7 @@
 #include "StereoPanLookup.h"
 #include "FmRouting.h"
 #include "TuningTable.h"
+#include "ModulationTargets.h"
 #include "../../LanReverb/Source/DelayTiming.h"
 #include <juce_dsp/juce_dsp.h>
 #include <array>
@@ -97,7 +98,7 @@ private:
         int verbNote=lan::defaultNote;
         float tapMotion=.5f, phaseMotion=.5f;
     };
-    Settings readSettings() const noexcept;
+    Settings readSettings(const char* overrideId=nullptr,float overrideValue=0) const noexcept;
     void retargetVoice(Voice&,int,int,const Settings&) noexcept;
     double advancePitch(Voice&,const Settings&) const noexcept;
     void handleMidi(const juce::MidiMessage&,const Settings&);

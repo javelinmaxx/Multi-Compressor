@@ -82,9 +82,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         }
         add(id+"Curve",id+" curve",-100,100,.1f,0,"%");
     }
-    add("modDepth","Mod depth",0,100,.1f,0,"%");
+    add("modDepth","Mod depth",-100,100,.1f,0,"%");
+    juce::StringArray modTargets {"Drive","Spread","Pitch","Filter"};
+    for(const auto& target:qin::continuousModTargets) modTargets.add(target.label);
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"modTarget",1},"Mod destination",
-        juce::StringArray{"Drive","Spread","Pitch","Filter"},0));
+        modTargets,0));
     juce::NormalisableRange<float> cutoffRange {30.f,18000.f,
         [](float low,float high,float value) { return low*std::pow(high/low,value); },
         [](float low,float high,float value) { return std::log(value/low)/std::log(high/low); },
@@ -126,7 +128,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"tuneRoot",1},
         "Tuning root",juce::StringArray{"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"},0));
     add("tuneA4","Tuning A4 reference",400,480,.1f,440,"Hz");
-    for(int degree=0;degree<12;++degree)
+    for(int degree=1;degree<12;++degree)
         add("tune"+juce::String(degree),"Tuning degree "+juce::String(degree),-100,100,.1f,0,"cents");
     add("noiseTune","Noise tune",-24,24,.1f,0,"st");
     juce::NormalisableRange<float> noiseHighPassRange {20.f,12000.f,
@@ -199,7 +201,7 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
     for(int i=0;i<=coefficientTableSize;++i)
         coefficientTable[size_t(i)]=std::tan(juce::MathConstants<double>::pi*.44*double(i)/coefficientTableSize);
     masterFilter={}; masterCutoff=smoothedFilterMerge=0;
-    smoothedModDepth=std::clamp(parameters.getRawParameterValue("modDepth")->load()*.01f,0.f,1.f);
+    smoothedModDepth=std::clamp(parameters.getRawParameterValue("modDepth")->load()*.01f,-1.f,1.f);
     voiceAge=onsetCount=0; onsetTap=onsetPhase=0; sustain=false;
     activeVoiceCount.store(0,std::memory_order_relaxed);
     driveCircuit.prepare(sampleRate);
@@ -237,10 +239,14 @@ QinSynthProcessor::DriveScope QinSynthProcessor::getDriveScope() const noexcept
     return result;
 }
 juce::AudioProcessorEditor* QinSynthProcessor::createEditor() { return new QinSynthEditor(*this); }
-QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
+QinSynthProcessor::Settings QinSynthProcessor::readSettings(const char* overrideId,float overrideValue) const noexcept
 {
     Settings settings;
-    const auto get=[this](const juce::String& id) { return parameters.getRawParameterValue(id)->load(std::memory_order_relaxed); };
+    const auto get=[this,overrideId,overrideValue](const juce::String& id)
+    {
+        return overrideId!=nullptr && id==overrideId ? overrideValue
+            : parameters.getRawParameterValue(id)->load(std::memory_order_relaxed);
+    };
     for(int osc=0;osc<oscillatorCount;++osc)
     {
         const juce::String prefix(prefixes[size_t(osc)]);
@@ -271,8 +277,9 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
             std::clamp(get(prefix+"Decay")*scale,.001f,25.f),std::clamp(get(prefix+"Sustain")*.01f,0.f,1.f),
             std::clamp(get(prefix+"Release")*scale,.001f,25.f),std::clamp(get(prefix+"Curve")*.01f,-1.f,1.f)};
     }
-    settings.modDepth=std::clamp(get("modDepth")*.01f,0.f,1.f);
-    settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,3);
+    settings.modDepth=std::clamp(get("modDepth")*.01f,-1.f,1.f);
+    settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,
+        qin::legacyModTargetCount+qin::continuousModTargetCount-1);
     settings.cutoff=std::clamp(get("filterCutoff"),30.f,18000.f);
     settings.resonance=std::clamp(get("filterResonance")*.01f,0.f,1.f);
     settings.keyFollow=std::clamp(get("filterKeyFollow")*.01f,0.f,1.f);
@@ -288,7 +295,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.tuning.root=std::clamp(juce::roundToInt(get("tuneRoot")),0,11);
     settings.tuning.setReferenceA4(std::clamp(get("tuneA4"),400.f,480.f));
     settings.tuning.equalTempered=std::abs(settings.tuning.referenceA4-440.f)<1.e-6f;
-    for(int degree=0;degree<12;++degree)
+    for(int degree=1;degree<12;++degree)
     {
         const auto cents=std::clamp(get("tune"+juce::String(degree)),-100.f,100.f);
         settings.tuning.cents[size_t(degree)]=cents;
@@ -680,10 +687,11 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     {
         auto& voice=voices[voiceIndex];
         if(!voice.active) continue;
+        if(voice.glideProgress>=1.f) voice.pan=notePan(voice.note,settings.pan);
         tunedBasePitch[voiceIndex]=settings.tuning.tunedPitch(voice.note);
         const auto base=440.0*std::exp2((tunedBasePitch[voiceIndex]-69.0)/12.0);
         movingPan[voiceIndex]=voice.glideProgress<1.f
-            || (settings.modTarget==1 && (settings.modDepth>0.f || smoothedModDepth>0.f));
+            || (settings.modTarget==1 && (std::abs(settings.modDepth)>0.f || std::abs(smoothedModDepth)>0.f));
         for(int osc=0;osc<oscillatorCount;++osc)
         {
             const auto& control=settings.oscillator[size_t(osc)];
@@ -884,11 +892,15 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 voiceLeft+=noiseRaw*settings.noiseOscillator.level*gains.left;
                 voiceRight+=noiseRaw*settings.noiseOscillator.level*gains.right;
             }
-            if(settings.modTarget==0 && smoothedModDepth>0)
+            if(settings.modTarget==0 && std::abs(smoothedModDepth)>1.e-6f)
             {
                 const auto amount=smoothedModDepth*modEnv;
-                voiceLeft=voiceLeft+amount*(std::tanh(voiceLeft*(1+3*amount))-voiceLeft);
-                voiceRight=voiceRight+amount*(std::tanh(voiceRight*(1+3*amount))-voiceRight);
+                if(amount>0)
+                {
+                    voiceLeft=voiceLeft+amount*(std::tanh(voiceLeft*(1+3*amount))-voiceLeft);
+                    voiceRight=voiceRight+amount*(std::tanh(voiceRight*(1+3*amount))-voiceRight);
+                }
+                else { voiceLeft*=1+amount; voiceRight*=1+amount; }
             }
             if(settings.filterType!=0)
             {
@@ -1018,15 +1030,82 @@ void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffe
                 if(std::isfinite(*bpm) && *bpm>=lan::minimumTempo && *bpm<=lan::maximumTempo)
                     hostTempo.store(*bpm,std::memory_order_relaxed);
     const auto settings=readSettings();
+    const auto render=[this,&buffer,&settings,bypass](int start,int count)
+    {
+        if(count<=0) return;
+        if(settings.modTarget<qin::legacyModTargetCount
+           || (std::abs(settings.modDepth)<1.e-6f && std::abs(smoothedModDepth)<1.e-6f)
+           || std::none_of(voices.begin(),voices.end(),[](const Voice& voice) { return voice.active; }))
+        { renderSegment(buffer,start,count,settings,bypass); return; }
+        const auto& route=qin::continuousModTargets[settings.modTarget-qin::legacyModTargetCount];
+        auto* parameter=parameters.getParameter(route.id);
+        auto* raw=parameters.getRawParameterValue(route.id);
+        if(parameter==nullptr || raw==nullptr)
+        { renderSegment(buffer,start,count,settings,bypass); return; }
+        const auto baseline=parameter->convertTo0to1(raw->load(std::memory_order_relaxed));
+        const auto stableSustain=std::abs(smoothedModDepth-settings.modDepth)<1.e-6f
+            && settings.modTarget!=qin::modTargetIndex("modSustain")
+            && settings.modTarget!=qin::modTargetIndex("modDepth")
+            && std::all_of(voices.begin(),voices.end(),[](const Voice& voice)
+               { return !voice.active || ((voice.keyDown || voice.sustained) && voice.env[2].stage==2); });
+        if(stableSustain)
+        {
+            float envelope=0;
+            for(const auto& voice:voices)
+                if(voice.active) envelope=std::max(envelope,voice.env[2].value);
+            const auto shift=std::clamp(smoothedModDepth*envelope,-1.f,1.f);
+            if(std::abs(shift)<1.e-6f) renderSegment(buffer,start,count,settings,bypass);
+            else
+            {
+                const auto value=parameter->convertFrom0to1(std::clamp(baseline+shift,0.f,1.f));
+                renderSegment(buffer,start,count,readSettings(route.id,value),bypass);
+            }
+            return;
+        }
+        constexpr int modulationSlice=64;
+        for(int offset=0;offset<count;offset+=modulationSlice)
+        {
+            float envelope=0;
+            for(const auto& voice:voices)
+                if(voice.active) envelope=std::max(envelope,voice.env[2].value);
+            const auto shift=std::clamp(smoothedModDepth*envelope,-1.f,1.f);
+            const auto size=std::min(modulationSlice,count-offset);
+            if(std::abs(shift)<1.e-6f)
+                renderSegment(buffer,start+offset,size,settings,bypass);
+            else
+            {
+                const auto value=parameter->convertFrom0to1(std::clamp(baseline+shift,0.f,1.f));
+                auto modulated=readSettings(route.id,value);
+                renderSegment(buffer,start+offset,size,modulated,bypass);
+            }
+        }
+    };
     int position=0;
     for(const auto metadata:midi)
     {
         const auto next=std::clamp(metadata.samplePosition,position,buffer.getNumSamples());
-        renderSegment(buffer,position,next-position,settings,bypass);
-        handleMidi(metadata.getMessage(),settings);
+        render(position,next-position);
+        if(settings.modTarget==qin::modTargetIndex("slideTime")
+           || settings.modTarget==qin::modTargetIndex("slideShape"))
+        {
+            const auto& route=qin::continuousModTargets[settings.modTarget-qin::legacyModTargetCount];
+            auto* parameter=parameters.getParameter(route.id);
+            auto* raw=parameters.getRawParameterValue(route.id);
+            float envelope=0;
+            for(const auto& voice:voices)
+                if(voice.active) envelope=std::max(envelope,voice.env[2].value);
+            if(parameter!=nullptr && raw!=nullptr && envelope>0)
+            {
+                const auto baseline=parameter->convertTo0to1(raw->load(std::memory_order_relaxed));
+                const auto value=parameter->convertFrom0to1(std::clamp(baseline+smoothedModDepth*envelope,0.f,1.f));
+                handleMidi(metadata.getMessage(),readSettings(route.id,value));
+            }
+            else handleMidi(metadata.getMessage(),settings);
+        }
+        else handleMidi(metadata.getMessage(),settings);
         position=next;
     }
-    renderSegment(buffer,position,buffer.getNumSamples()-position,settings,bypass);
+    render(position,buffer.getNumSamples()-position);
     int active=0;
     for(const auto& voice:voices) if(voice.active) ++active;
     activeVoiceCount.store(active,std::memory_order_relaxed);

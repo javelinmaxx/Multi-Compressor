@@ -57,6 +57,20 @@ public:
     void paint(juce::Graphics&) override;
 };
 
+class QinTuningKey final : public juce::Slider
+{
+public:
+    QinTuningKey();
+    void setIdentity(juce::String note,bool black,bool root);
+    const juce::String& getNoteName() const noexcept { return noteName; }
+    bool isRootKey() const noexcept { return rootKey; }
+    bool isBlackKey() const noexcept { return blackKey; }
+    void paint(juce::Graphics&) override;
+private:
+    juce::String noteName;
+    bool blackKey=false, rootKey=false;
+};
+
 class QinSynthEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -98,8 +112,7 @@ private:
     std::array<QinVoiceSlider,3> octaveDisplays;
     juce::TextButton tuneButton {"TUNE"}, syncButton {"SYNC"};
     QinTuningPanel tuningPanel;
-    std::array<juce::Slider,12> tuningSliders;
-    std::array<juce::Label,12> tuningLabels;
+    std::array<QinTuningKey,12> tuningSliders;
     juce::Slider tuningRoot, tuningA4, verbNoteSlider;
     juce::Label tuningRootLabel, tuningA4Label;
     juce::Label activeVoicesLabel;

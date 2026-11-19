@@ -16,6 +16,8 @@ struct QinSynthTestAccess
     static int note(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].note; }
     static bool held(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].keyDown; }
     static double pitch(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].pitchNote; }
+    static float voicePan(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].pan; }
+    static float glideIncrement(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].glideIncrement; }
     static double glideStart(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].glideStart; }
     static float glideProgress(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].glideProgress; }
     static float tap(const QinSynthProcessor& p) { return p.onsetTap; }
@@ -140,6 +142,10 @@ struct QinSynthEditorTestAccess
     { return editor.filterType.isVisible() && editor.sliders[31].isVisible(); }
     static bool modVisible(const QinSynthEditor& editor)
     { return editor.sliders[30].isVisible() && editor.modTarget.isVisible(); }
+    static int modDestinationCount(const QinSynthEditor& editor)
+    { return editor.modTarget.getNumItems(); }
+    static void selectModDestination(QinSynthEditor& editor,int index)
+    { editor.modTarget.setSelectedId(index+1,juce::sendNotificationSync); }
     static bool noiseVisible(const QinSynthEditor& editor) { return editor.noiseButton.isVisible(); }
     static void enableNoise(QinSynthEditor& editor)
     { editor.noiseButton.setToggleState(true,juce::sendNotificationSync); }
@@ -157,7 +163,15 @@ struct QinSynthEditorTestAccess
     static void setTuningRoot(QinSynthEditor& editor,int root)
     { editor.tuningRoot.setValue(root,juce::sendNotificationSync); }
     static bool tuningLabel(const QinSynthEditor& editor,int degree,const juce::String& text)
-    { return editor.tuningLabels[size_t(degree)].getText()==text; }
+    { return editor.tuningSliders[size_t(degree)].getNoteName()==text; }
+    static bool tuningPianoKeys(const QinSynthEditor& editor)
+    {
+        const auto& root=editor.tuningSliders[0];
+        const auto& firstSharp=editor.tuningSliders[1];
+        return root.isRootKey() && !root.isEnabled() && std::abs(root.getValue())<1.e-6
+            && firstSharp.isBlackKey() && firstSharp.getHeight()<root.getHeight()
+            && firstSharp.getX()>root.getX();
+    }
     static bool octaveReadoutVisible(const QinSynthEditor& editor,int osc)
     { return editor.octaveDisplays[size_t(osc)].isVisible(); }
     static void setOctave(QinSynthEditor& editor,int osc,int octave)
@@ -296,16 +310,22 @@ int main(int argc,char** argv)
             if(std::abs(QinSynthTestAccess::tunedFrequency(tuned,69)-expected)>.01
                || std::abs(QinSynthTestAccess::oscillatorPhase(tuned,0,0)-expected*32/48000)>.0001)
                 throw std::runtime_error("Custom pitch-class and A4 tuning must change oscillator frequency");
-            set(tuned,"tuneRoot",2); set(tuned,"tune0",35); set(tuned,"tune9",0);
-            if(std::abs(QinSynthTestAccess::tunedFrequency(tuned,62)
-                -juce::MidiMessage::getMidiNoteInHertz(62,432.0)*std::exp2(35.0/1200.0))>.01)
-                throw std::runtime_error("Tuning root must rotate the twelve pitch-class offsets");
+            set(tuned,"tune1",35);
+            if(std::abs(QinSynthTestAccess::tunedFrequency(tuned,61)
+                -juce::MidiMessage::getMidiNoteInHertz(61,432.0)*std::exp2(35.0/1200.0))>.01)
+                throw std::runtime_error("A cent deviation must follow its degree above C");
+            set(tuned,"tuneRoot",2); set(tuned,"tune9",0);
+            if(std::abs(QinSynthTestAccess::tunedFrequency(tuned,63)
+                -juce::MidiMessage::getMidiNoteInHertz(63,432.0)*std::exp2(35.0/1200.0))>.01
+               || std::abs(QinSynthTestAccess::tunedFrequency(tuned,62)
+                -juce::MidiMessage::getMidiNoteInHertz(62,432.0))>.01)
+                throw std::runtime_error("Changing root must transpose deviations and lock the new root to zero cents");
             juce::MemoryBlock saved;
             tuned.getStateInformation(saved);
             auto restoredOwner=std::make_unique<QinSynthProcessor>();
             auto& restored=*restoredOwner;
             restored.setStateInformation(saved.getData(),int(saved.getSize()));
-            if(std::abs(QinSynthTestAccess::tunedFrequency(restored,62)-QinSynthTestAccess::tunedFrequency(tuned,62))>.01)
+            if(std::abs(QinSynthTestAccess::tunedFrequency(restored,63)-QinSynthTestAccess::tunedFrequency(tuned,63))>.01)
                 throw std::runtime_error("Custom tuning must survive project recall");
             auto fineOwner=std::make_unique<QinSynthProcessor>();
             auto& fine=*fineOwner;
@@ -1258,6 +1278,75 @@ int main(int argc,char** argv)
                 throw std::runtime_error("MOD depth ramp must reach the automated value");
         }
         {
+            auto plainOwner=std::make_unique<QinSynthProcessor>();
+            auto raisedOwner=std::make_unique<QinSynthProcessor>();
+            auto loweredOwner=std::make_unique<QinSynthProcessor>();
+            auto& plain=*plainOwner;
+            auto& raised=*raisedOwner;
+            auto& lowered=*loweredOwner;
+            for(const auto& route:qin::continuousModTargets)
+                if(plain.parameters.getParameter(route.id)==nullptr)
+                    throw std::runtime_error("Every listed continuous MOD destination must be a host parameter");
+            if(plain.parameters.getParameter("tune0")!=nullptr
+               || qin::modTargetIndex("osc1Level")<qin::legacyModTargetCount
+               || qin::modTargetIndex("output")<qin::legacyModTargetCount)
+                throw std::runtime_error("MOD routing and locked root must expose the expected parameters");
+            for(auto* instrument:{&plain,&raised,&lowered})
+            {
+                set(*instrument,"verbMix",0); set(*instrument,"filterType",0);
+                set(*instrument,"osc1Level",20); set(*instrument,"osc1Retrig",1);
+                set(*instrument,"modAttack",.001f); set(*instrument,"modSustain",100);
+                set(*instrument,"modTarget",float(qin::modTargetIndex("osc1Level")));
+                instrument->prepareToPlay(48000,256);
+            }
+            set(raised,"modDepth",80); set(lowered,"modDepth",-80);
+            juce::AudioBuffer<float> a(2,256),b(2,256),c(2,256);
+            juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,.8f),0);
+            for(int blockIndex=0;blockIndex<12;++blockIndex)
+            {
+                plain.processBlock(a,note); raised.processBlock(b,note); lowered.processBlock(c,note);
+                note.clear();
+            }
+            const auto baseline=power(a,0), louder=power(b,0), quieter=power(c,0);
+            if(!(louder>baseline*1.5 && quieter<baseline*.5)
+               || std::abs(raised.parameters.getRawParameterValue("osc1Level")->load()-20)>.1)
+                throw std::runtime_error("Positive and negative MOD routing must affect audio without rewriting the knob");
+            const auto outputTarget=qin::modTargetIndex("output");
+            set(raised,"modTarget",float(outputTarget));
+            set(raised,"output",-18);
+            set(raised,"modDepth",100);
+            for(int blockIndex=0;blockIndex<4;++blockIndex) raised.processBlock(b,note);
+            if(power(b,0)<baseline*.5 || std::abs(raised.parameters.getRawParameterValue("output")->load()+18)>.1)
+                throw std::runtime_error("MOD must reach global output gain without changing its host value");
+        }
+        {
+            auto instrumentOwner=std::make_unique<QinSynthProcessor>();
+            auto& instrument=*instrumentOwner;
+            set(instrument,"verbMix",0); set(instrument,"voiceCount",1);
+            set(instrument,"modAttack",.001f); set(instrument,"modSustain",100);
+            set(instrument,"modDepth",100);
+            set(instrument,"modTarget",float(qin::modTargetIndex("keyPan")));
+            instrument.prepareToPlay(48000,256);
+            juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,96,.8f),0);
+            for(int blockIndex=0;blockIndex<8;++blockIndex)
+            { instrument.processBlock(audio,note); note.clear(); }
+            if(QinSynthTestAccess::voicePan(instrument,0)<.4f)
+                throw std::runtime_error("MOD Key Pan must update an already sounding voice");
+            set(instrument,"modTarget",float(qin::modTargetIndex("slideTime")));
+            note.addEvent(juce::MidiMessage::noteOn(1,100,.8f),0);
+            instrument.processBlock(audio,note);
+            if(QinSynthTestAccess::glideIncrement(instrument,0)>1.f/4800.f)
+                throw std::runtime_error("MOD Slide Time must affect legato note events");
+            note.clear();
+            set(instrument,"modDepth",20);
+            set(instrument,"modTarget",float(qin::modTargetIndex("modDepth")));
+            for(int blockIndex=0;blockIndex<4;++blockIndex) instrument.processBlock(audio,note);
+            if(QinSynthTestAccess::modDepth(instrument)<.25f)
+                throw std::runtime_error("MOD Depth must also be a bounded modulation destination");
+        }
+        {
             auto pitchedOwner=std::make_unique<QinSynthProcessor>();
             auto& pitched=*pitchedOwner;
             set(pitched,"verbMix",0); set(pitched,"osc1Unison",8);
@@ -1280,6 +1369,8 @@ int main(int argc,char** argv)
             auto& preview=*previewOwner;
             QinSynthEditor editor(preview);
             if(editor.getWidth()!=920 || editor.getHeight()!=640
+               || QinSynthEditorTestAccess::modDestinationCount(editor)
+                    !=qin::legacyModTargetCount+qin::continuousModTargetCount
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
                || !QinSynthEditorTestAccess::outputSectionVisible(editor)
                || !QinSynthEditorTestAccess::compactFxKnobs(editor)
@@ -1307,6 +1398,8 @@ int main(int argc,char** argv)
             if(!QinSynthEditorTestAccess::tuningMenuVisible(editor)
                || !QinSynthEditorTestAccess::tuneButtonBesideVoices(editor))
                 throw std::runtime_error("TUNE button must open a hidden menu beside the voice count");
+            QinSynthEditorTestAccess::setTuning(editor,1,25);
+            QinSynthEditorTestAccess::setTuningRoot(editor,2);
             if(argc>6)
             {
                 const auto image=editor.createComponentSnapshot(editor.getLocalBounds());
@@ -1317,11 +1410,11 @@ int main(int argc,char** argv)
                 if(!stream.openedOk() || !png.writeImageToStream(image,stream))
                     throw std::runtime_error("TUNE menu preview could not be saved");
             }
-            QinSynthEditorTestAccess::setTuningRoot(editor,2);
-            QinSynthEditorTestAccess::setTuning(editor,0,25);
             if(!QinSynthEditorTestAccess::tuningLabel(editor,0,"D")
-               || std::abs(preview.parameters.getRawParameterValue("tune0")->load()-25)>.1)
-                throw std::runtime_error("TUNE menu must show root-relative pitch classes and update the host");
+               || !QinSynthEditorTestAccess::tuningLabel(editor,1,"D#")
+               || !QinSynthEditorTestAccess::tuningPianoKeys(editor)
+               || std::abs(preview.parameters.getRawParameterValue("tune1")->load()-25)>.1)
+                throw std::runtime_error("TUNE piano keys must transpose deviations and lock the root");
             QinSynthEditorTestAccess::closeTuningMenu(editor);
             if(QinSynthEditorTestAccess::tuningMenuVisible(editor))
                 throw std::runtime_error("TUNE menu must close from its header button");
@@ -1505,6 +1598,10 @@ int main(int argc,char** argv)
             QinSynthEditorTestAccess::envelope(editor,2);
             if(!QinSynthEditorTestAccess::modVisible(editor) || !QinSynthEditorTestAccess::timesFiveVisible(editor))
                 throw std::runtime_error("MOD tab must show destination and depth controls");
+            QinSynthEditorTestAccess::selectModDestination(editor,qin::modTargetIndex("osc1Level"));
+            if(std::abs(preview.parameters.getRawParameterValue("modTarget")->load()
+                -qin::modTargetIndex("osc1Level"))>1.e-6)
+                throw std::runtime_error("The MOD destination menu must update the host parameter");
             if(argc>4) save(argv[4]);
             QinSynthEditorTestAccess::oscillator(editor,3);
             if(argc>5) save(argv[5]);

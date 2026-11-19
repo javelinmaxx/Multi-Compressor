@@ -41,7 +41,7 @@ constexpr std::array<Control,44> controls {{
     {"modDecay","DECAY","Sets the modulation envelope decay from 1 to 5000 ms on a logarithmic scale."},
     {"modSustain","SUSTAIN","Sets the held level of effect modulation."},
     {"modRelease","RELEASE","Sets the modulation envelope release from 1 to 5000 ms on a logarithmic scale."},
-    {"modDepth","MOD DEPTH","Sets how strongly the modulation envelope affects its destination."},
+    {"modDepth","MOD DEPTH","Sets the modulation amount, with negative values moving the destination downward."},
     {"filterCutoff","FREQ","Sets the filter's base cutoff on a logarithmic frequency scale."},
     {"filterResonance","RESONANCE","Emphasizes the cutoff with finer control at high resonance."},
     {"filterKeyFollow","KEY FOLLOW","Raises the cutoff with MIDI note pitch."},
@@ -103,8 +103,51 @@ void QinTuningPanel::paint(juce::Graphics& g)
     g.setColour(stageStyle::foreground); g.setFont(juce::FontOptions(16.f).withStyle("bold"));
     g.drawText("TUNE",20,16,100,25,juce::Justification::centredLeft);
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(10.f));
-    g.drawText("Copy Logic User tuning offsets in cents, relative to the selected root.",20,45,getWidth()-40,20,
+    g.drawText("Drag keys to tune; changing ROOT transposes the pattern and locks it to 0 cents.",20,45,getWidth()-40,20,
                juce::Justification::centredLeft);
+}
+QinTuningKey::QinTuningKey()
+{
+    setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    setRange(-100,100,.1);
+    setMouseDragSensitivity(190);
+    setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+}
+void QinTuningKey::setIdentity(juce::String note,bool black,bool root)
+{
+    noteName=std::move(note); blackKey=black; rootKey=root;
+    setEnabled(!rootKey);
+    setTooltip(rootKey ? "The selected root is locked to zero cents."
+        : "Drag this piano key to adjust its pitch deviation in cents.");
+    repaint();
+}
+void QinTuningKey::paint(juce::Graphics& g)
+{
+    const auto area=getLocalBounds().toFloat().reduced(1.f);
+    const auto face=blackKey ? juce::Colour(0xff1c1d22) : juce::Colour(0xffddd8ca);
+    const auto text=blackKey ? stageStyle::foreground : juce::Colour(0xff24242a);
+    g.setColour(juce::Colours::black.withAlpha(.45f));
+    g.fillRoundedRectangle(area.translated(1.f,2.f),blackKey ? 4.f : 5.f);
+    g.setColour(face); g.fillRoundedRectangle(area,blackKey ? 4.f : 5.f);
+    g.setColour(rootKey ? accent : blackKey ? juce::Colour(0xff73757a) : juce::Colour(0xff77716a));
+    g.drawRoundedRectangle(area,blackKey ? 4.f : 5.f,rootKey ? 2.f : 1.f);
+    if(rootKey)
+    {
+        g.setColour(accent.withAlpha(.22f));
+        g.fillRoundedRectangle(area.reduced(3.f),3.f);
+    }
+    const auto cents=rootKey ? 0.0 : getValue();
+    g.setColour(rootKey ? accent : text);
+    g.setFont(juce::FontOptions(blackKey ? 10.f : 13.f).withStyle("bold"));
+    g.drawText(noteName,3,getHeight()-(blackKey ? 51 : 75),getWidth()-6,18,juce::Justification::centred);
+    g.setFont(juce::FontOptions(blackKey ? 8.f : 10.f));
+    g.drawText((cents>0 ? "+" : "")+juce::String(cents,1),2,
+        getHeight()-(blackKey ? 31 : 51),getWidth()-4,17,juce::Justification::centred);
+    if(rootKey)
+    {
+        g.setFont(juce::FontOptions(blackKey ? 7.f : 9.f).withStyle("bold"));
+        g.drawText("ROOT",2,getHeight()-(blackKey ? 15 : 30),getWidth()-4,14,juce::Justification::centred);
+    }
 }
 QinVoiceSlider::QinVoiceSlider()
 {
@@ -671,14 +714,16 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         filterType.addItem(option,filterType.getNumItems()+1);
     modTarget.addItem("Drive",1); modTarget.addItem("Spread",2);
     modTarget.addItem("Pitch",3); modTarget.addItem("Filter",4);
+    for(int index=0;index<qin::continuousModTargetCount;++index)
+        modTarget.addItem(qin::continuousModTargets[index].label,qin::legacyModTargetCount+index+1);
     filterType.setTooltip("Selects the TB-303, 18 dB Sallen-Key, or 12/24 dB digital filter model.");
-    modTarget.setTooltip("Routes the modulation envelope to Drive, Spread, Pitch, or Filter cutoff.");
+    modTarget.setTooltip("Routes the modulation envelope to any continuous synth control.");
     for(auto* box:{&filterType,&modTarget})
     { box->setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a)); box->setColour(juce::ComboBox::textColourId,stageStyle::foreground); addAndMakeVisible(*box); }
     modTargetLabel.setFont(juce::FontOptions(9.f));
     modTargetLabel.setColour(juce::Label::textColourId,stageStyle::secondary);
     addAndMakeVisible(modTargetLabel);
-    modTargetLabel.setText("MOD TARGET",juce::dontSendNotification);
+    modTargetLabel.setText("TARGET",juce::dontSendNotification);
     filterTypeAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"filterType",filterType);
     modTargetAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"modTarget",modTarget);
     filterType.onChange=[this]
@@ -688,19 +733,10 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     for(int degree=0;degree<12;++degree)
     {
         auto& slider=tuningSliders[size_t(degree)];
-        auto& label=tuningLabels[size_t(degree)];
-        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,55,16);
-        slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
-        slider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
-        slider.textFromValueFunction=[](double value) { return juce::String(value,1); };
-        label.setFont(juce::FontOptions(9.f));
-        label.setJustificationType(juce::Justification::centred);
-        label.setColour(juce::Label::textColourId,stageStyle::secondary);
-        tuningPanel.addAndMakeVisible(slider); tuningPanel.addAndMakeVisible(label);
-        tuningAttachments[size_t(degree)]=std::make_unique<State::SliderAttachment>(synth.parameters,
-            "tune"+juce::String(degree),slider);
-        editorTooltips::setHint(slider,label,"Offsets this pitch class from equal temperament in cents.");
+        tuningPanel.addAndMakeVisible(slider);
+        if(degree>0)
+            tuningAttachments[size_t(degree)]=std::make_unique<State::SliderAttachment>(synth.parameters,
+                "tune"+juce::String(degree),slider);
     }
     for(auto* slider:{&tuningRoot,&tuningA4})
     {
@@ -723,7 +759,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     tuningRootAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"tuneRoot",tuningRoot);
     tuningA4Attachment=std::make_unique<State::SliderAttachment>(synth.parameters,"tuneA4",tuningA4);
     tuningRoot.onValueChange=[this] { updateTuningLabels(); };
-    editorTooltips::setHint(tuningRoot,tuningRootLabel,"Sets the root pitch class for the twelve tuning offsets.");
+    editorTooltips::setHint(tuningRoot,tuningRootLabel,"Transposes the deviation pattern to this pitch class and locks it at zero cents.");
     editorTooltips::setHint(tuningA4,tuningA4Label,"Sets the global A4 reference pitch before pitch-class offsets.");
     updateTuningLabels();
     tuningPanel.setVisible(false);
@@ -812,9 +848,20 @@ void QinSynthEditor::updatePlayAvailability()
 void QinSynthEditor::updateTuningLabels()
 {
     constexpr std::array<const char*,12> names {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+    constexpr std::array<int,12> whiteIndex {0,-1,1,-1,2,3,-1,4,-1,5,-1,6};
+    constexpr std::array<int,12> blackAfter {0,0,1,1,2,3,3,4,4,5,5,6};
     const auto root=std::clamp(juce::roundToInt(tuningRoot.getValue()),0,11);
     for(int degree=0;degree<12;++degree)
-        tuningLabels[size_t(degree)].setText(names[size_t((root+degree)%12)],juce::dontSendNotification);
+    {
+        const auto key=(root+degree)%12;
+        const auto black=whiteIndex[size_t(key)]<0;
+        auto& slider=tuningSliders[size_t(degree)];
+        slider.setIdentity(names[size_t(key)],black,degree==0);
+        slider.setBounds(black ? 40+(blackAfter[size_t(key)]+1)*56-17 : 40+whiteIndex[size_t(key)]*56,
+            91,black ? 34 : 56,black ? 119 : 191);
+    }
+    for(int degree=0;degree<12;++degree)
+        if(tuningSliders[size_t(degree)].isBlackKey()) tuningSliders[size_t(degree)].toFront(false);
 }
 void QinSynthEditor::showOscillator(int index)
 { currentOscillator=juce::jlimit(0,3,index); for(size_t i=0;i<3;++i) oscillatorTabs[i].setToggleState(int(i)==currentOscillator,juce::dontSendNotification); updateVisibility(); repaint(); }
@@ -856,12 +903,7 @@ void QinSynthEditor::resized()
     titleHint.setBounds(18,29,360,38);
     tuneButton.setBounds(574,34,74,27);
     tuningPanel.setBounds(430,78,472,416);
-    for(int degree=0;degree<12;++degree)
-    {
-        const auto x=20+(degree%6)*72, y=88+(degree/6)*102;
-        tuningLabels[size_t(degree)].setBounds(x,y,62,15);
-        tuningSliders[size_t(degree)].setBounds(x,y+15,62,78);
-    }
+    updateTuningLabels();
     tuningRootLabel.setBounds(50,316,86,15); tuningRoot.setBounds(50,331,86,75);
     tuningA4Label.setBounds(154,316,86,15); tuningA4.setBounds(154,331,86,75);
     voiceCount.setBounds(660,34,94,27);
@@ -910,8 +952,8 @@ void QinSynthEditor::resized()
         }
     curveLabel.setBounds(631,518,42,13);
     for(auto& slider:curveSliders) slider.setBounds(631,531,42,63);
-    labels[30].setBounds(455,593,102,12); sliders[30].setBounds(455,603,102,17);
-    modTargetLabel.setBounds(561,593,108,12); modTarget.setBounds(561,603,108,17);
+    labels[30].setBounds(455,593,72,12); sliders[30].setBounds(455,603,72,17);
+    modTargetLabel.setBounds(531,593,138,12); modTarget.setBounds(531,603,138,17);
     filterType.setBounds(454,127,215,28);
     for(int index=31;index<=34;++index)
     {
