@@ -373,6 +373,9 @@ void QinSynthProcessor::retargetVoice(Voice& voice,int note,int channel,const Se
     const auto start=std::isfinite(voice.pitchNote) ? voice.pitchNote : double(voice.note);
     voice.glideStart=start;
     voice.note=note; voice.channel=channel; voice.pan=notePan(note,settings.pan);
+    // Keep the current coefficient for continuity, but retarget immediately
+    // if a new legato note arrives before the previous interpolation finishes.
+    voice.noiseCoefficientSamples=0;
     voice.keyDown=true; voice.sustained=false;
     voice.glideShape=settings.slideShape;
     if(settings.slideMs<=0.f || std::abs(start-double(note))<1.e-9)
@@ -592,29 +595,65 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         }
     }
     std::array<std::array<double,oscillatorCount>,maxVoices> baseSteps {};
-    struct NoiseCoefficients { float a1=1, a2=0, a3=0, highPass=0; };
-    std::array<NoiseCoefficients,maxVoices> noiseCoefficients {};
+    constexpr int noiseUpdateSamples=16;
+    const auto noiseActive=settings.noise && settings.noiseOscillator.level>0;
+    const auto noiseTuneRatio=noiseActive ? std::exp2(settings.noiseOscillator.tune/12.f) : 1.0;
+    const auto noiseHighPass=noiseActive ? float(1-std::exp(-twoPi
+        *std::min(double(settings.noiseOscillator.highPass),sampleRate*.44)/sampleRate)) : 0.f;
+    const auto noiseAtPitch=[&](double pitch) noexcept
+    {
+        const auto hz=440.0*std::exp2((pitch-69.0)/12.0);
+        const auto center=std::clamp(hz*noiseTuneRatio,30.0,sampleRate*.4);
+        const auto g=double(filterCoefficient(float(center)));
+        constexpr double damping=1.5;
+        const auto a1=1/(1+g*(g+damping));
+        return NoiseFilterCoefficients {float(a1),float(g*a1),float(g*g*a1),noiseHighPass};
+    };
+    std::array<std::array<std::array<qin::StereoPanGains,maxUnison>,oscillatorCount>,maxVoices> panGains {};
+    std::array<qin::StereoPanGains,maxVoices> noisePanGains {};
+    std::array<bool,maxVoices> movingPan {};
     for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
     {
-        const auto& voice=voices[voiceIndex];
+        auto& voice=voices[voiceIndex];
         if(!voice.active) continue;
         const auto base=juce::MidiMessage::getMidiNoteInHertz(voice.note);
+        movingPan[voiceIndex]=voice.glideProgress<1.f
+            || (settings.modTarget==1 && (settings.modDepth>0.f || smoothedModDepth>0.f));
         for(int osc=0;osc<oscillatorCount;++osc)
         {
             const auto& control=settings.oscillator[size_t(osc)];
             if(control.level<=0) continue;
             baseSteps[voiceIndex][size_t(osc)]=base/sampleRate;
+            if(!movingPan[voiceIndex])
+                for(int u=0;u<control.unison;++u)
+                {
+                    const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
+                    const auto pan=std::clamp(double(voice.pan)+control.pan
+                        +offset*.35*control.spread,-.98,.98);
+                    panGains[voiceIndex][size_t(osc)][size_t(u)]=qin::stereoPanLookup.evaluate(float(pan));
+                }
         }
-        if(settings.noise && settings.noiseOscillator.level>0)
+        if(noiseActive)
         {
-            const auto center=std::clamp(base*std::exp2(settings.noiseOscillator.tune/12.f),
-                                         30.0,sampleRate*.4);
-            const auto g=std::tan(juce::MathConstants<double>::pi*center/sampleRate);
-            constexpr double damping=1.5;
-            const auto a1=1/(1+g*(g+damping));
-            noiseCoefficients[voiceIndex]={float(a1),float(g*a1),float(g*g*a1),
-                float(1-std::exp(-twoPi*std::min(double(settings.noiseOscillator.highPass),sampleRate*.44)/sampleRate))};
+            if(!movingPan[voiceIndex])
+                noisePanGains[voiceIndex]=qin::stereoPanLookup.evaluate(
+                    std::clamp(voice.pan+settings.noiseOscillator.pan,-.98f,.98f));
+            if(voice.glideProgress>=1.f)
+            {
+                voice.noiseCoefficients=noiseAtPitch(voice.note);
+                voice.noiseCoefficientSamples=0;
+                voice.noiseCoefficientsReady=true;
+                voice.noiseWasGliding=false;
+            }
+            else if(!voice.noiseCoefficientsReady)
+            {
+                voice.noiseCoefficients=noiseAtPitch(voice.glideStart);
+                voice.noiseCoefficientsReady=true;
+                voice.noiseCoefficientSamples=0;
+            }
+            voice.noiseCoefficients.highPass=noiseHighPass;
         }
+        else voice.noiseCoefficientsReady=false;
     }
     for(int i=start;i<start+count;++i)
     {
@@ -662,13 +701,18 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                         std::min(.49,baseSteps[voiceIndex][size_t(osc)]
                             *detuneRatios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod))
                         *control.level/control.unison;
-                    const auto pan=std::clamp(double(voice.pan)+control.pan
-                        +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
-                    voiceLeft+=value*std::sqrt((1-pan)*.5);
-                    voiceRight+=value*std::sqrt((1+pan)*.5);
+                    auto gains=panGains[voiceIndex][size_t(osc)][size_t(u)];
+                    if(movingPan[voiceIndex])
+                    {
+                        const auto pan=std::clamp(double(voice.pan)+control.pan
+                            +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
+                        gains=qin::stereoPanLookup.evaluate(float(pan));
+                    }
+                    voiceLeft+=value*gains.left;
+                    voiceRight+=value*gains.right;
                 }
             }
-            if(settings.noise && settings.noiseOscillator.level>0)
+            if(noiseActive)
             {
                 auto& random=voice.noiseState;
                 random^=random<<13; random^=random>>17; random^=random<<5;
@@ -681,17 +725,35 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 const auto velvet=(random&1023u)<64u ? white*4.f : 0.f;
                 const auto source=settings.noiseOscillator.style==1 ? pinkSample
                     : settings.noiseOscillator.style==2 ? velvet : white;
-                auto noiseFilter=noiseCoefficients[voiceIndex];
-                if(voice.glideProgress<1.f)
+                if(gliding)
                 {
-                    const auto noteHz=440.0*std::exp2((currentPitch-69.0)/12.0);
-                    const auto center=std::clamp(noteHz*std::exp2(settings.noiseOscillator.tune/12.f),
-                                                 30.0,sampleRate*.4);
-                    const auto g=std::tan(juce::MathConstants<double>::pi*center/sampleRate);
-                    constexpr double damping=1.5;
-                    const auto a1=1/(1+g*(g+damping));
-                    noiseFilter.a1=float(a1); noiseFilter.a2=float(g*a1); noiseFilter.a3=float(g*g*a1);
+                    if(voice.noiseCoefficientSamples==0)
+                    {
+                        const auto ahead=std::min(1.f,voice.glideProgress
+                            +noiseUpdateSamples*voice.glideIncrement);
+                        const auto pitch=voice.glideStart+(double(voice.note)-voice.glideStart)
+                            *qin::legatoCurve(ahead,voice.glideShape);
+                        const auto target=noiseAtPitch(pitch);
+                        auto& step=voice.noiseCoefficientStep;
+                        const auto& current=voice.noiseCoefficients;
+                        step.a1=(target.a1-current.a1)/noiseUpdateSamples;
+                        step.a2=(target.a2-current.a2)/noiseUpdateSamples;
+                        step.a3=(target.a3-current.a3)/noiseUpdateSamples;
+                        voice.noiseCoefficientSamples=noiseUpdateSamples;
+                    }
+                    auto& current=voice.noiseCoefficients;
+                    const auto& step=voice.noiseCoefficientStep;
+                    current.a1+=step.a1; current.a2+=step.a2; current.a3+=step.a3;
+                    --voice.noiseCoefficientSamples;
+                    voice.noiseWasGliding=true;
                 }
+                else if(voice.noiseWasGliding)
+                {
+                    voice.noiseCoefficients=noiseAtPitch(currentPitch);
+                    voice.noiseCoefficientSamples=0;
+                    voice.noiseWasGliding=false;
+                }
+                const auto& noiseFilter=voice.noiseCoefficients;
                 const auto v3=source-voice.noiseLowState;
                 const auto band=noiseFilter.a1*voice.noiseBandState+noiseFilter.a2*v3;
                 const auto low=voice.noiseLowState+noiseFilter.a2*voice.noiseBandState+noiseFilter.a3*v3;
@@ -699,9 +761,11 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 voice.noiseLowState=2*low-voice.noiseLowState;
                 voice.noiseHighPassState+=noiseFilter.highPass*(band-voice.noiseHighPassState);
                 const auto noise=(band-voice.noiseHighPassState)*settings.noiseOscillator.level;
-                const auto pan=std::clamp(voice.pan+settings.noiseOscillator.pan,-.98f,.98f);
-                voiceLeft+=noise*std::sqrt((1.f-pan)*.5f);
-                voiceRight+=noise*std::sqrt((1.f+pan)*.5f);
+                const auto gains=movingPan[voiceIndex]
+                    ? qin::stereoPanLookup.evaluate(std::clamp(voice.pan+settings.noiseOscillator.pan,-.98f,.98f))
+                    : noisePanGains[voiceIndex];
+                voiceLeft+=noise*gains.left;
+                voiceRight+=noise*gains.right;
             }
             if(settings.modTarget==0 && smoothedModDepth>0)
             {

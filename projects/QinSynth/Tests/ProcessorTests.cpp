@@ -736,6 +736,17 @@ int main(int argc,char** argv)
                 throw std::runtime_error("N must generate noise independently of the tonal oscillators");
         }
         {
+            // LUT interpolation preserves equal-power pan even at the edges.
+            for(int i=0;i<=10000;++i)
+            {
+                const auto pan=-.98f+1.96f*i/10000.f;
+                const auto gains=qin::stereoPanLookup.evaluate(pan);
+                if(std::abs(gains.left-std::sqrt((1.f-pan)*.5f))>1.e-5f
+                   || std::abs(gains.right-std::sqrt((1.f+pan)*.5f))>1.e-5f)
+                    throw std::runtime_error("Cached pan gains changed the equal-power curve");
+            }
+        }
+        {
             const auto renderNoise=[](int style,float tune,float hpf,float level,float pan)
             {
                 QinSynthProcessor instrument;
@@ -779,6 +790,51 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Noise HPF must remove low-frequency output energy");
             if(energy(muted[0])>1.e-12 || energy(right[0])>.02*energy(right[1]))
                 throw std::runtime_error("Noise Level and Pan must control their independent signal path");
+        }
+        {
+            // A legato noise glide must keep its coefficient interpolation
+            // continuous when the host changes process-block boundaries.
+            const auto render=[](int blockSize)
+            {
+                QinSynthProcessor instrument;
+                for(const auto* id:{"osc1Level","osc2Level","osc3Level","verbMix","driveMix"})
+                    set(instrument,id,0);
+                set(instrument,"voiceCount",1); set(instrument,"noise",1);
+                set(instrument,"noiseLevel",100); set(instrument,"noiseTune",12);
+                set(instrument,"noiseHpf",300); set(instrument,"noisePan",25);
+                set(instrument,"keyPan",50); set(instrument,"slideTime",90);
+                instrument.prepareToPlay(48000,blockSize);
+                std::vector<float> output;
+                output.reserve(1280);
+                const auto append=[&](int samples)
+                {
+                    for(int done=0;done<samples;)
+                    {
+                        const auto count=std::min(blockSize,samples-done);
+                        juce::AudioBuffer<float> audio(2,count); juce::MidiBuffer midi;
+                        instrument.processBlock(audio,midi);
+                        for(int i=0;i<count;++i) output.push_back(audio.getSample(0,i));
+                        done+=count;
+                    }
+                };
+                QinSynthTestAccess::noteOn(instrument,60);
+                append(250);
+                QinSynthTestAccess::noteOn(instrument,72);
+                append(257);
+                QinSynthTestAccess::noteOn(instrument,55);
+                append(773);
+                return output;
+            };
+            const auto large=render(128),small=render(17);
+            double maxDifference=0;
+            for(size_t i=0;i<large.size();++i)
+            {
+                if(!std::isfinite(large[i]) || !std::isfinite(small[i]))
+                    throw std::runtime_error("Interpolated noise glide became non-finite");
+                maxDifference=std::max(maxDifference,double(std::abs(large[i]-small[i])));
+            }
+            if(maxDifference>1.e-4)
+                throw std::runtime_error("Noise glide changed across host block sizes");
         }
         {
             QinSynthProcessor early,late;

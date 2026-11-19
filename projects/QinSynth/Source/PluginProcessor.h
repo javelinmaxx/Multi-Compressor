@@ -4,6 +4,7 @@
 #include "../../RenTransformer/Source/TransformerStage.h"
 #include "DriveCircuitBank.h"
 #include "WaveBlend.h"
+#include "StereoPanLookup.h"
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
@@ -52,6 +53,7 @@ private:
     struct Subvoice { double phase=0, triangle=0; };
     struct Envelope { float value=0, progress=0, start=0; int stage=0; };
     struct FilterState { float s1=0,s2=0,t1=0,t2=0,pole=0; std::array<float,4> ladder {}; };
+    struct NoiseFilterCoefficients { float a1=1, a2=0, a3=0, highPass=0; };
     struct Voice
     {
         std::array<std::array<Subvoice,maxUnison>,oscillatorCount> oscillators {};
@@ -65,6 +67,10 @@ private:
         uint32_t noiseState=1;
         std::array<float,3> pink {};
         float noiseBandState=0, noiseLowState=0, noiseHighPassState=0;
+        NoiseFilterCoefficients noiseCoefficients {}, noiseCoefficientStep {};
+        int noiseCoefficientSamples=0;
+        bool noiseCoefficientsReady=false;
+        bool noiseWasGliding=false;
         bool keyDown=false, sustained=false, active=false;
     };
     struct HeldNote { int note=-1, channel=1, voiceIndex=-1; };
