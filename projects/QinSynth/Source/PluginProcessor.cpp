@@ -545,6 +545,16 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
                 selected->pitchNote=selected->glideStart=note;
                 selected->glideShape=settings.slideShape;
                 selected->age=++voiceAge; selected->pan=notePan(note,settings.pan);
+                // This voice has no previous filter signal to glide from. Starting at
+                // zero swept every new note up from sub-bass, even with both cutoff
+                // modulation controls disabled, and disturbed the shared filter.
+                const auto filterEnvelope=sharedEnvelopes[1].value*smoothedEnvelopeMerge[1];
+                const auto modEnvelope=sharedEnvelopes[2].value*smoothedEnvelopeMerge[2];
+                const auto octaves=settings.keyFollow*float((note-60)/12.0)
+                    +settings.filterEnv*filterEnvelope*4.f
+                    +(settings.modTarget==3 ? settings.modDepth*modEnvelope*4.f : 0.f);
+                selected->cutoff=std::clamp(settings.cutoff*std::exp2(octaves),
+                                             30.f,float(sampleRate*.44));
                 selected->noiseState=0x9e3779b9u^uint32_t(selected->age*747796405u)^(uint32_t(note)*2891336453u);
                 if(selected->noiseState==0) selected->noiseState=1;
                 for(int osc=0;osc<oscillatorCount;++osc)
@@ -960,7 +970,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         if(settings.filterType!=0)
         {
             const auto target=cutoffWeight>1.e-8 ? float(cutoffSum/cutoffWeight) : masterCutoff;
-            masterCutoff+=cutoffSmoothing*(target-masterCutoff);
+            if(masterCutoff<=0.f) masterCutoff=target;
+            else masterCutoff+=cutoffSmoothing*(target-masterCutoff);
             const auto hz=std::clamp(masterCutoff,25.f,float(sampleRate*.44));
             const auto coefficient=settings.filterType==1
                 ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)

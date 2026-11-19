@@ -31,6 +31,8 @@ struct QinSynthTestAccess
     static float effectiveEnvelope(const QinSynthProcessor& p,int voice,int envelope)
     { return p.voices[size_t(voice)].effectiveEnv[size_t(envelope)]; }
     static bool voiceActive(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].active; }
+    static float voiceCutoff(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].cutoff; }
+    static float masterCutoff(const QinSynthProcessor& p) { return p.masterCutoff; }
     static double secondPhase(const QinSynthProcessor& p,int osc)
     { return p.voices[1].oscillators[size_t(osc)][0].phase; }
     static bool allRetriggeredPhasesMatch(const QinSynthProcessor& p)
@@ -1020,6 +1022,30 @@ int main(int argc,char** argv)
             const auto filteredPower=power(audio,0)+power(audio,1);
             if(filteredPower<1.e-10 || filteredPower>=.5*(power(dry,0)+power(dry,1)))
                 throw std::runtime_error("Each filter type must attenuate a note above its cutoff");
+        }
+        {
+            auto onsetOwner=std::make_unique<QinSynthProcessor>();
+            auto& onset=*onsetOwner;
+            set(onset,"verbMix",0); set(onset,"filterType",3);
+            set(onset,"filterCutoff",4000); set(onset,"filterEnvAmount",0);
+            set(onset,"filterKeyFollow",0); set(onset,"filterMerge",100);
+            onset.prepareToPlay(48000,256);
+            QinSynthTestAccess::noteOn(onset,60);
+            if(std::abs(QinSynthTestAccess::voiceCutoff(onset,0)-4000.f)>1.f)
+                throw std::runtime_error("A new voice must start at its selected filter cutoff when envelope and key follow are zero");
+            juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer empty;
+            onset.processBlock(audio,empty);
+            if(std::abs(QinSynthTestAccess::masterCutoff(onset)-4000.f)>1.f)
+                throw std::runtime_error("The shared filter must start at its selected cutoff on the first note");
+            for(int blockIndex=1;blockIndex<20;++blockIndex) onset.processBlock(audio,empty);
+            if(std::abs(QinSynthTestAccess::masterCutoff(onset)-4000.f)>1.f)
+                throw std::runtime_error("The shared filter must settle at the selected cutoff");
+            QinSynthTestAccess::noteOn(onset,64);
+            if(std::abs(QinSynthTestAccess::voiceCutoff(onset,1)-4000.f)>1.f)
+                throw std::runtime_error("An overlapping note must not restart its filter cutoff from zero");
+            onset.processBlock(audio,empty);
+            if(std::abs(QinSynthTestAccess::masterCutoff(onset)-4000.f)>1.f)
+                throw std::runtime_error("An overlapping note must not pull the shared filter away from a fixed cutoff");
         }
         {
             auto voicesOwner=std::make_unique<QinSynthProcessor>();
