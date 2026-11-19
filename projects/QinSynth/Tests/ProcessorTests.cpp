@@ -6,6 +6,7 @@
 #include "../Source/CurveLookup.h"
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 struct QinSynthTestAccess
@@ -46,6 +47,9 @@ struct QinSynthTestAccess
     { return p.detuneRatios[size_t(oscillator)][size_t(unisonVoice)]; }
     static double oscillatorPhase(const QinSynthProcessor& p,int oscillator,int unisonVoice)
     { return p.voices[0].oscillators[size_t(oscillator)][size_t(unisonVoice)].phase; }
+    static double tunedFrequency(const QinSynthProcessor& p,int note)
+    { return p.readSettings().tuning.frequency(note); }
+    static float delayTime(const QinSynthProcessor& p) { return p.readSettings().verbTime; }
     static float modDepth(const QinSynthProcessor& p) { return p.smoothedModDepth; }
     static float coefficient(const QinSynthProcessor& p,float hz) { return p.filterCoefficient(hz); }
     static double sallenGain(QinSynthProcessor& p,float resonance)
@@ -143,6 +147,33 @@ struct QinSynthEditorTestAccess
     { return editor.noiseStyle.isVisible() && editor.noiseSliders[0].isVisible() && !editor.waves[0].isVisible(); }
     static bool fmVisible(const QinSynthEditor& editor,int osc)
     { return editor.fmAmountSliders[size_t(osc)].isVisible() && editor.fmSources[size_t(osc)].isVisible(); }
+    static bool tuningMenuVisible(const QinSynthEditor& editor) { return editor.tuningPanel.isVisible(); }
+    static void openTuningMenu(QinSynthEditor& editor)
+    { editor.tuneButton.setToggleState(true,juce::sendNotificationSync); editor.tuneButton.onClick(); }
+    static void closeTuningMenu(QinSynthEditor& editor)
+    { editor.tuneButton.setToggleState(false,juce::sendNotificationSync); editor.tuneButton.onClick(); }
+    static void setTuning(QinSynthEditor& editor,int degree,float cents)
+    { editor.tuningSliders[size_t(degree)].setValue(cents,juce::sendNotificationSync); }
+    static void setTuningRoot(QinSynthEditor& editor,int root)
+    { editor.tuningRoot.setValue(root,juce::sendNotificationSync); }
+    static bool tuningLabel(const QinSynthEditor& editor,int degree,const juce::String& text)
+    { return editor.tuningLabels[size_t(degree)].getText()==text; }
+    static bool octaveReadoutVisible(const QinSynthEditor& editor,int osc)
+    { return editor.octaveDisplays[size_t(osc)].isVisible(); }
+    static void setOctave(QinSynthEditor& editor,int osc,int octave)
+    { editor.octaveDisplays[size_t(osc)].setValue(octave,juce::sendNotificationSync); }
+    static void setFine(QinSynthEditor& editor,int osc,float cents)
+    { editor.sliders[size_t(osc*6+1)].setValue(cents,juce::sendNotificationSync); }
+    static bool tuneButtonBesideVoices(const QinSynthEditor& editor)
+    { return editor.tuneButton.getX()<editor.voiceCount.getX(); }
+    static void showDelay(QinSynthEditor& editor) { editor.showFxSection(1); }
+    static void showDrive(QinSynthEditor& editor) { editor.showFxSection(0); }
+    static void setSync(QinSynthEditor& editor,bool enabled)
+    { editor.syncButton.setToggleState(enabled,juce::sendNotificationSync); editor.updateVisibility(); }
+    static void setVerbNote(QinSynthEditor& editor,int note)
+    { editor.verbNoteSlider.setValue(note,juce::sendNotificationSync); }
+    static bool syncNoteVisible(const QinSynthEditor& editor)
+    { return editor.verbNoteSlider.isVisible() && !editor.sliders[38].isVisible(); }
     static bool fmGridLayout(const QinSynthEditor& editor)
     {
         for(int osc=0;osc<3;++osc)
@@ -240,11 +271,73 @@ static double power(const juce::AudioBuffer<float>& buffer,int channel,int first
     }
     return sum;
 }
+class QinTempoPlayHead final : public juce::AudioPlayHead
+{
+public:
+    juce::Optional<double> bpm {120.0};
+    juce::Optional<PositionInfo> getPosition() const override
+    { PositionInfo position; position.setBpm(bpm); return position; }
+};
 int main(int argc,char** argv)
 {
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        {
+            auto tunedOwner=std::make_unique<QinSynthProcessor>();
+            auto& tuned=*tunedOwner;
+            set(tuned,"tuneA4",432); set(tuned,"tune9",50);
+            set(tuned,"osc1Retrig",1); set(tuned,"verbMix",0);
+            tuned.prepareToPlay(48000,32);
+            juce::AudioBuffer<float> audio(2,32); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,69,.8f),0);
+            tuned.processBlock(audio,note);
+            const auto expected=432.0*std::exp2(50.0/1200.0);
+            if(std::abs(QinSynthTestAccess::tunedFrequency(tuned,69)-expected)>.01
+               || std::abs(QinSynthTestAccess::oscillatorPhase(tuned,0,0)-expected*32/48000)>.0001)
+                throw std::runtime_error("Custom pitch-class and A4 tuning must change oscillator frequency");
+            set(tuned,"tuneRoot",2); set(tuned,"tune0",35); set(tuned,"tune9",0);
+            if(std::abs(QinSynthTestAccess::tunedFrequency(tuned,62)
+                -juce::MidiMessage::getMidiNoteInHertz(62,432.0)*std::exp2(35.0/1200.0))>.01)
+                throw std::runtime_error("Tuning root must rotate the twelve pitch-class offsets");
+            juce::MemoryBlock saved;
+            tuned.getStateInformation(saved);
+            auto restoredOwner=std::make_unique<QinSynthProcessor>();
+            auto& restored=*restoredOwner;
+            restored.setStateInformation(saved.getData(),int(saved.getSize()));
+            if(std::abs(QinSynthTestAccess::tunedFrequency(restored,62)-QinSynthTestAccess::tunedFrequency(tuned,62))>.01)
+                throw std::runtime_error("Custom tuning must survive project recall");
+            auto fineOwner=std::make_unique<QinSynthProcessor>();
+            auto& fine=*fineOwner;
+            set(fine,"osc1Retrig",1); set(fine,"osc1Fine",1200); set(fine,"osc1Octave",-1);
+            set(fine,"verbMix",0); fine.prepareToPlay(48000,32);
+            juce::MidiBuffer fineNote; fineNote.addEvent(juce::MidiMessage::noteOn(1,69,.8f),0);
+            fine.processBlock(audio,fineNote);
+            if(std::abs(QinSynthTestAccess::oscillatorPhase(fine,0,0)-440.0*32/48000)>.0001)
+                throw std::runtime_error("Fine pitch and octave transpose must combine in cents");
+        }
+        {
+            QinTempoPlayHead host;
+            auto syncedOwner=std::make_unique<QinSynthProcessor>();
+            auto& synced=*syncedOwner;
+            synced.setPlayHead(&host);
+            set(synced,"verbSync",1); set(synced,"verbNote",13);
+            synced.prepareToPlay(48000,64);
+            juce::AudioBuffer<float> audio(2,64); juce::MidiBuffer midi;
+            host.bpm=90.0; synced.processBlock(audio,midi);
+            if(std::abs(QinSynthTestAccess::delayTime(synced)-60000.0/90.0)>.01)
+                throw std::runtime_error("Synced Delay Time must follow host quarter-note tempo");
+            host.bpm=120.0; synced.processBlock(audio,midi);
+            if(std::abs(QinSynthTestAccess::delayTime(synced)-500.0)>.01)
+                throw std::runtime_error("Synced Delay Time must follow tempo changes");
+            host.bpm=juce::Optional<double>{}; synced.processBlock(audio,midi);
+            if(std::abs(synced.getHostTempo()-120.0)>.01)
+                throw std::runtime_error("Missing host tempo must retain last valid tempo");
+            set(synced,"verbSync",0); set(synced,"time",137);
+            if(std::abs(QinSynthTestAccess::delayTime(synced)-137.0)>.01)
+                throw std::runtime_error("Delay Time must retain its free value when Sync is off");
+            synced.setPlayHead(nullptr);
+        }
         {
             const auto forward=qin::FmRouting::calculate({-1,0,1});
             const auto reverse=qin::FmRouting::calculate({2,-1,1});
@@ -256,12 +349,14 @@ int main(int argc,char** argv)
                || !cycle.delayedEdge[0] || !cycle.delayedEdge[1] || cycle.delayedEdge[2]
                || cycle.order[2]!=2 || !self.delayedEdge[0])
                 throw std::runtime_error("FM precedence must stack free-order sources and delay cycle edges");
-            QinSynthProcessor stored;
+            auto storedOwner=std::make_unique<QinSynthProcessor>();
+            auto& stored=*storedOwner;
             set(stored,"osc1FmSource",4); set(stored,"osc2FmSource",3);
             set(stored,"osc3FmSource",1); set(stored,"osc2FmAmount",73);
             juce::MemoryBlock state;
             stored.getStateInformation(state);
-            QinSynthProcessor restored;
+            auto restoredOwner=std::make_unique<QinSynthProcessor>();
+            auto& restored=*restoredOwner;
             restored.setStateInformation(state.getData(),int(state.getSize()));
             if(std::abs(restored.parameters.getRawParameterValue("osc1FmSource")->load()-4)>1.e-6
                || std::abs(restored.parameters.getRawParameterValue("osc2FmSource")->load()-3)>1.e-6
@@ -339,7 +434,8 @@ int main(int argc,char** argv)
         if(qin::waveformWindow(noiseScope).synchronized)
             throw std::runtime_error("Noise scope must not invent a waveform period");
         verifyParameterRetention<QinSynthProcessor>();
-        QinSynthProcessor synth;
+        auto synthOwner=std::make_unique<QinSynthProcessor>();
+        auto& synth=*synthOwner;
         set(synth,"osc1DetuneShape",-100.f);
         if(std::abs(QinSynthTestAccess::detuneShape(synth,0)+1.f)>1.e-6f)
             throw std::runtime_error("Detune Shape parameter must reach the oscillator settings");
@@ -411,7 +507,8 @@ int main(int argc,char** argv)
         if(QinSynthTestAccess::active(synth)!=0) throw std::runtime_error("Released notes must free their voices");
         if(QinSynthTestAccess::analysisJobs(synth)!=0)
             throw std::runtime_error("MIDI-steered reverb must not run Lan's resonance analyser");
-        QinSynthProcessor limited;
+        auto limitedOwner=std::make_unique<QinSynthProcessor>();
+        auto& limited=*limitedOwner;
         set(limited,"verbMix",0); set(limited,"voiceCount",2);
         for(const auto* id:{"osc1Retrig","osc2Retrig","osc3Retrig"}) set(limited,id,1);
         limited.prepareToPlay(48000,256);
@@ -428,7 +525,8 @@ int main(int argc,char** argv)
         QinSynthTestAccess::noteOn(limited,70);
         if(std::abs(QinSynthTestAccess::secondPhase(limited,0)-freePhase)>1.e-6)
             throw std::runtime_error("Free-running oscillator must preserve phase across stolen voices");
-        QinSynthProcessor dense;
+        auto denseOwner=std::make_unique<QinSynthProcessor>();
+        auto& dense=*denseOwner;
         set(dense,"osc1Unison",8); set(dense,"osc2Level",75); set(dense,"osc2Unison",8);
         set(dense,"osc3Level",75); set(dense,"osc3Unison",8);
         set(dense,"drive",50); set(dense,"verbMix",0);
@@ -440,8 +538,11 @@ int main(int argc,char** argv)
             throw std::runtime_error("Seventeenth note must steal one of sixteen voices");
         if(power(block,0)+power(block,1)<1.e-6) throw std::runtime_error("Three oscillators with eightfold unison must sound");
         {
-            QinSynthProcessor saw,pulse,triangle,sine,mixed;
-            std::array<QinSynthProcessor*,5> instruments {&saw,&pulse,&triangle,&sine,&mixed};
+            std::array<std::unique_ptr<QinSynthProcessor>,5> owned;
+            for(auto& processor:owned) processor=std::make_unique<QinSynthProcessor>();
+            std::array<QinSynthProcessor*,5> instruments
+                {owned[0].get(),owned[1].get(),owned[2].get(),owned[3].get(),owned[4].get()};
+            auto& mixed=*owned[4];
             constexpr std::array<qin::WavePosition,5> positions {{{0,0},{1,0},{0,1},{1,1},{.5f,.5f}}};
             for(size_t index=0;index<instruments.size();++index)
             {
@@ -474,7 +575,10 @@ int main(int argc,char** argv)
             if(error>.01 || difference<.05)
                 throw std::runtime_error("OSC pad must blend all four audible waveform signals");
         }
-        QinSynthProcessor low,high;
+        auto lowOwner=std::make_unique<QinSynthProcessor>();
+        auto& low=*lowOwner;
+        auto highOwner=std::make_unique<QinSynthProcessor>();
+        auto& high=*highOwner;
         for(auto* p:{&low,&high}) {set(*p,"keyPan",100); set(*p,"verbMix",0); p->prepareToPlay(48000,256);}
         juce::AudioBuffer<float> lowAudio(2,256),highAudio(2,256);
         juce::MidiBuffer lowMidi,highMidi;
@@ -484,7 +588,10 @@ int main(int argc,char** argv)
         {low.processBlock(lowAudio,lowMidi); high.processBlock(highAudio,highMidi); lowMidi.clear(); highMidi.clear();}
         if(power(lowAudio,0)<=power(lowAudio,1)*2 || power(highAudio,1)<=power(highAudio,0)*2)
             throw std::runtime_error("Low keys must favor left and high keys must favor right");
-        QinSynthProcessor reverseLow,reverseHigh;
+        auto reverseLowOwner=std::make_unique<QinSynthProcessor>();
+        auto& reverseLow=*reverseLowOwner;
+        auto reverseHighOwner=std::make_unique<QinSynthProcessor>();
+        auto& reverseHigh=*reverseHighOwner;
         for(auto* p:{&reverseLow,&reverseHigh})
         { set(*p,"keyPan",-100); set(*p,"verbMix",0); p->prepareToPlay(48000,256); }
         juce::AudioBuffer<float> reverseLowAudio(2,256),reverseHighAudio(2,256);
@@ -500,7 +607,12 @@ int main(int argc,char** argv)
            || power(reverseHighAudio,0)<=power(reverseHighAudio,1)*2)
             throw std::runtime_error("Negative Key Pan must send high notes left and low notes right");
         {
-            QinSynthProcessor plain, driven, dryMix;
+            auto plainOwner=std::make_unique<QinSynthProcessor>();
+            auto& plain=*plainOwner;
+            auto drivenOwner=std::make_unique<QinSynthProcessor>();
+            auto& driven=*drivenOwner;
+            auto dryMixOwner=std::make_unique<QinSynthProcessor>();
+            auto& dryMix=*dryMixOwner;
             for(auto* p:{&plain,&driven,&dryMix}) {set(*p,"verbMix",0); p->prepareToPlay(48000,256);}
             set(driven,"drive",75);
             set(dryMix,"drive",75); set(dryMix,"driveMix",0);
@@ -524,7 +636,8 @@ int main(int argc,char** argv)
             std::array<std::array<float,256>,4> outputs {};
             for(int mode=0;mode<4;++mode)
             {
-                QinSynthProcessor instrument;
+                auto instrumentOwner=std::make_unique<QinSynthProcessor>();
+                auto& instrument=*instrumentOwner;
                 set(instrument,"drive",80); set(instrument,"driveMode",float(mode));
                 set(instrument,"verbMix",0); instrument.prepareToPlay(48000,256);
                 juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer events;
@@ -545,7 +658,10 @@ int main(int argc,char** argv)
                 }
         }
         {
-            QinSynthProcessor clean,coloured;
+            auto cleanOwner=std::make_unique<QinSynthProcessor>();
+            auto& clean=*cleanOwner;
+            auto colouredOwner=std::make_unique<QinSynthProcessor>();
+            auto& coloured=*colouredOwner;
             for(auto* p:{&clean,&coloured})
             { set(*p,"verbMix",0); p->prepareToPlay(48000,256); }
             if(clean.getLatencySamples()!=ren::TransformerStage::latency
@@ -573,7 +689,8 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Transformer-off must stop the model and return to the clean path");
         }
         {
-            QinSynthProcessor mono;
+            auto monoOwner=std::make_unique<QinSynthProcessor>();
+            auto& mono=*monoOwner;
             set(mono,"voiceCount",1); set(mono,"osc1Retrig",1); set(mono,"verbMix",0);
             mono.prepareToPlay(48000,256);
             QinSynthTestAccess::noteOn(mono,60);
@@ -596,7 +713,8 @@ int main(int argc,char** argv)
             QinSynthTestAccess::noteOff(mono,60);
             if(QinSynthTestAccess::monoHeld(mono))
                 throw std::runtime_error("Mono envelope must release when no keys remain held");
-            QinSynthProcessor midiMono;
+            auto midiMonoOwner=std::make_unique<QinSynthProcessor>();
+            auto& midiMono=*midiMonoOwner;
             set(midiMono,"voiceCount",1); set(midiMono,"verbMix",0);
             midiMono.prepareToPlay(48000,256);
             juce::MidiBuffer events;
@@ -693,7 +811,8 @@ int main(int argc,char** argv)
             }
         }
         {
-            QinSynthProcessor tail;
+            auto tailOwner=std::make_unique<QinSynthProcessor>();
+            auto& tail=*tailOwner;
             set(tail,"verbMix",100); set(tail,"time",25); set(tail,"decay",2);
             tail.prepareToPlay(48000,256);
             juce::MidiBuffer note;
@@ -709,7 +828,10 @@ int main(int argc,char** argv)
             if(tailPower<1.e-6) throw std::runtime_error("Lan delay-reverb must retain an audible tail after note silence");
         }
         {
-            QinSynthProcessor left,right;
+            auto leftOwner=std::make_unique<QinSynthProcessor>();
+            auto& left=*leftOwner;
+            auto rightOwner=std::make_unique<QinSynthProcessor>();
+            auto& right=*rightOwner;
             for(auto* p:{&left,&right}) { set(*p,"keyPan",0); set(*p,"verbMix",0); p->prepareToPlay(48000,256); }
             set(left,"osc1Pan",-100); set(right,"osc1Pan",100);
             juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
@@ -721,7 +843,8 @@ int main(int argc,char** argv)
         {
             const auto renderFm=[](std::array<int,3> sources,std::array<float,3> amounts,int audible,int blockSize=256)
             {
-                QinSynthProcessor instrument;
+                auto instrumentOwner=std::make_unique<QinSynthProcessor>();
+                auto& instrument=*instrumentOwner;
                 for(const auto* id:{"osc1Level","osc2Level","osc3Level","verbMix","driveMix","keyPan"})
                     set(instrument,id,0);
                 const std::array<const char*,3> levels {"osc1Level","osc2Level","osc3Level"};
@@ -765,7 +888,8 @@ int main(int argc,char** argv)
                || difference(reversePlain,reverseStack)<1.e-4
                || difference(cycle,cycleSmallBlocks)>1.e-4)
                 throw std::runtime_error("FM must use muted modulators, stack in either order, feed back, and accept noise");
-            QinSynthProcessor stress;
+            auto stressOwner=std::make_unique<QinSynthProcessor>();
+            auto& stress=*stressOwner;
             for(int osc=1;osc<=3;++osc)
             {
                 const auto prefix="osc"+juce::String(osc);
@@ -791,7 +915,10 @@ int main(int argc,char** argv)
             }
         }
         {
-            QinSynthProcessor narrow,wide;
+            auto narrowOwner=std::make_unique<QinSynthProcessor>();
+            auto& narrow=*narrowOwner;
+            auto wideOwner=std::make_unique<QinSynthProcessor>();
+            auto& wide=*wideOwner;
             for(auto* p:{&narrow,&wide})
             { set(*p,"keyPan",0); set(*p,"verbMix",0); set(*p,"osc1Unison",8); set(*p,"osc1Detune",20); p->prepareToPlay(48000,256); }
             set(narrow,"osc1Spread",0); set(wide,"osc1Spread",100);
@@ -809,7 +936,10 @@ int main(int argc,char** argv)
         }
         for(int type=1;type<=4;++type)
         {
-            QinSynthProcessor filtered,reference;
+            auto filteredOwner=std::make_unique<QinSynthProcessor>();
+            auto& filtered=*filteredOwner;
+            auto referenceOwner=std::make_unique<QinSynthProcessor>();
+            auto& reference=*referenceOwner;
             for(auto* p:{&filtered,&reference}) { set(*p,"verbMix",0); p->prepareToPlay(48000,256); }
             set(filtered,"filterType",float(type)); set(filtered,"filterCutoff",250);
             juce::AudioBuffer<float> audio(2,256),dry(2,256); juce::MidiBuffer note;
@@ -821,7 +951,10 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Each filter type must attenuate a note above its cutoff");
         }
         {
-            QinSynthProcessor voices,master;
+            auto voicesOwner=std::make_unique<QinSynthProcessor>();
+            auto& voices=*voicesOwner;
+            auto masterOwner=std::make_unique<QinSynthProcessor>();
+            auto& master=*masterOwner;
             for(auto* p:{&voices,&master})
             {
                 set(*p,"verbMix",0); set(*p,"filterType",3); set(*p,"filterCutoff",900);
@@ -848,7 +981,10 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Full Merge must use a shared filter rather than per-voice filters");
         }
         {
-            QinSynthProcessor plain,noisy;
+            auto plainOwner=std::make_unique<QinSynthProcessor>();
+            auto& plain=*plainOwner;
+            auto noisyOwner=std::make_unique<QinSynthProcessor>();
+            auto& noisy=*noisyOwner;
             for(auto* p:{&plain,&noisy})
             {
                 set(*p,"osc1Level",0); set(*p,"osc2Level",0); set(*p,"osc3Level",0);
@@ -875,7 +1011,8 @@ int main(int argc,char** argv)
         {
             const auto renderNoise=[](int style,float tune,float hpf,float level,float pan)
             {
-                QinSynthProcessor instrument;
+                auto instrumentOwner=std::make_unique<QinSynthProcessor>();
+                auto& instrument=*instrumentOwner;
                 for(const auto* id:{"osc1Level","osc2Level","osc3Level","verbMix","keyPan"}) set(instrument,id,0);
                 set(instrument,"noise",1); set(instrument,"noiseStyle",float(style));
                 set(instrument,"noiseTune",tune); set(instrument,"noiseHpf",hpf);
@@ -922,7 +1059,8 @@ int main(int argc,char** argv)
             // continuous when the host changes process-block boundaries.
             const auto render=[](int blockSize)
             {
-                QinSynthProcessor instrument;
+                auto instrumentOwner=std::make_unique<QinSynthProcessor>();
+                auto& instrument=*instrumentOwner;
                 for(const auto* id:{"osc1Level","osc2Level","osc3Level","verbMix","driveMix"})
                     set(instrument,id,0);
                 set(instrument,"voiceCount",1); set(instrument,"noise",1);
@@ -963,7 +1101,10 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Noise glide changed across host block sizes");
         }
         {
-            QinSynthProcessor early,late;
+            auto earlyOwner=std::make_unique<QinSynthProcessor>();
+            auto& early=*earlyOwner;
+            auto lateOwner=std::make_unique<QinSynthProcessor>();
+            auto& late=*lateOwner;
             for(auto* p:{&early,&late})
             { set(*p,"verbMix",0); set(*p,"attack",.03f); p->prepareToPlay(48000,256); }
             set(early,"ampCurve",-100); set(late,"ampCurve",100);
@@ -983,7 +1124,8 @@ int main(int argc,char** argv)
                 for(const auto cutoff:{30.f,18000.f})
                     for(const auto envelopeAmount:{-100.f,100.f})
                     {
-                        QinSynthProcessor stressed;
+                        auto stressedOwner=std::make_unique<QinSynthProcessor>();
+                        auto& stressed=*stressedOwner;
                         set(stressed,"verbMix",0); set(stressed,"filterType",float(type));
                         set(stressed,"filterCutoff",cutoff); set(stressed,"filterResonance",100);
                         set(stressed,"filterEnvAmount",envelopeAmount);
@@ -1004,7 +1146,10 @@ int main(int argc,char** argv)
                         }
                     }
         {
-            QinSynthProcessor held,fading;
+            auto heldOwner=std::make_unique<QinSynthProcessor>();
+            auto& held=*heldOwner;
+            auto fadingOwner=std::make_unique<QinSynthProcessor>();
+            auto& fading=*fadingOwner;
             for(auto* p:{&held,&fading}) { set(*p,"verbMix",0); set(*p,"attack",.001f); p->prepareToPlay(48000,256); }
             set(fading,"ampSustain",0); set(fading,"ampDecay",.01f);
             juce::AudioBuffer<float> a(2,256),b(2,256); juce::MidiBuffer note;
@@ -1014,7 +1159,10 @@ int main(int argc,char** argv)
                 throw std::runtime_error("AMP decay and sustain must shape a held note");
         }
         {
-            QinSynthProcessor staticFilter,movingFilter;
+            auto staticFilterOwner=std::make_unique<QinSynthProcessor>();
+            auto& staticFilter=*staticFilterOwner;
+            auto movingFilterOwner=std::make_unique<QinSynthProcessor>();
+            auto& movingFilter=*movingFilterOwner;
             for(auto* p:{&staticFilter,&movingFilter})
             {
                 set(*p,"verbMix",0); set(*p,"filterType",3); set(*p,"filterCutoff",200);
@@ -1032,7 +1180,8 @@ int main(int argc,char** argv)
             if(difference<.1) throw std::runtime_error("FLT envelope must move the filter cutoff");
         }
         {
-            QinSynthProcessor monitored;
+            auto monitoredOwner=std::make_unique<QinSynthProcessor>();
+            auto& monitored=*monitoredOwner;
             set(monitored,"verbMix",0); set(monitored,"drive",65);
             set(monitored,"filterType",3); set(monitored,"filterCutoff",500);
             set(monitored,"filterEnvAmount",100); set(monitored,"fltAttack",500);
@@ -1065,7 +1214,10 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Drive scope must show the processed waveform");
         }
         {
-            QinSynthProcessor plain,modulated;
+            auto plainOwner=std::make_unique<QinSynthProcessor>();
+            auto& plain=*plainOwner;
+            auto modulatedOwner=std::make_unique<QinSynthProcessor>();
+            auto& modulated=*modulatedOwner;
             for(auto* p:{&plain,&modulated})
             { set(*p,"verbMix",0); set(*p,"modAttack",.001f); set(*p,"modSustain",100); p->prepareToPlay(48000,256); }
             set(modulated,"modDepth",100); set(modulated,"modTarget",0);
@@ -1081,7 +1233,10 @@ int main(int argc,char** argv)
         }
         for(const auto destination:{2,3})
         {
-            QinSynthProcessor plain,modulated;
+            auto plainOwner=std::make_unique<QinSynthProcessor>();
+            auto& plain=*plainOwner;
+            auto modulatedOwner=std::make_unique<QinSynthProcessor>();
+            auto& modulated=*modulatedOwner;
             for(auto* p:{&plain,&modulated})
             {
                 set(*p,"verbMix",0); set(*p,"modAttack",.001f); set(*p,"modSustain",100);
@@ -1103,7 +1258,8 @@ int main(int argc,char** argv)
                 throw std::runtime_error("MOD depth ramp must reach the automated value");
         }
         {
-            QinSynthProcessor pitched;
+            auto pitchedOwner=std::make_unique<QinSynthProcessor>();
+            auto& pitched=*pitchedOwner;
             set(pitched,"verbMix",0); set(pitched,"osc1Unison",8);
             set(pitched,"osc1Detune",0); set(pitched,"osc1Retrig",1); pitched.prepareToPlay(48000,256);
             set(pitched,"osc1Detune",30); set(pitched,"osc1DetuneShape",100);
@@ -1120,7 +1276,8 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Unison phase increment must ramp within the audio block");
         }
         {
-            QinSynthProcessor preview;
+            auto previewOwner=std::make_unique<QinSynthProcessor>();
+            auto& preview=*previewOwner;
             QinSynthEditor editor(preview);
             if(editor.getWidth()!=920 || editor.getHeight()!=640
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
@@ -1135,6 +1292,47 @@ int main(int argc,char** argv)
             if(!QinSynthEditorTestAccess::fmVisible(editor,0)
                || QinSynthEditorTestAccess::fmVisible(editor,1))
                 throw std::runtime_error("FM controls must follow the selected OSC tab");
+            if(!QinSynthEditorTestAccess::octaveReadoutVisible(editor,0)
+               || QinSynthEditorTestAccess::octaveReadoutVisible(editor,1)
+               || QinSynthEditorTestAccess::tuningMenuVisible(editor))
+                throw std::runtime_error("Octave readout and hidden TUNE menu must initialize correctly");
+            QinSynthEditorTestAccess::setOctave(editor,0,-2);
+            QinSynthEditorTestAccess::setFine(editor,0,650);
+            if(std::abs(preview.parameters.getRawParameterValue("osc1Octave")->load()+2)>1.e-6
+               || std::abs(preview.parameters.getRawParameterValue("osc1Fine")->load()-650)>.1)
+                throw std::runtime_error("Octave display and Fine knob must update separate host parameters");
+            QinSynthEditorTestAccess::setOctave(editor,0,0);
+            QinSynthEditorTestAccess::setFine(editor,0,0);
+            QinSynthEditorTestAccess::openTuningMenu(editor);
+            if(!QinSynthEditorTestAccess::tuningMenuVisible(editor)
+               || !QinSynthEditorTestAccess::tuneButtonBesideVoices(editor))
+                throw std::runtime_error("TUNE button must open a hidden menu beside the voice count");
+            if(argc>6)
+            {
+                const auto image=editor.createComponentSnapshot(editor.getLocalBounds());
+                const juce::File file(argv[6]);
+                file.deleteFile();
+                juce::FileOutputStream stream{file};
+                juce::PNGImageFormat png;
+                if(!stream.openedOk() || !png.writeImageToStream(image,stream))
+                    throw std::runtime_error("TUNE menu preview could not be saved");
+            }
+            QinSynthEditorTestAccess::setTuningRoot(editor,2);
+            QinSynthEditorTestAccess::setTuning(editor,0,25);
+            if(!QinSynthEditorTestAccess::tuningLabel(editor,0,"D")
+               || std::abs(preview.parameters.getRawParameterValue("tune0")->load()-25)>.1)
+                throw std::runtime_error("TUNE menu must show root-relative pitch classes and update the host");
+            QinSynthEditorTestAccess::closeTuningMenu(editor);
+            if(QinSynthEditorTestAccess::tuningMenuVisible(editor))
+                throw std::runtime_error("TUNE menu must close from its header button");
+            QinSynthEditorTestAccess::showDelay(editor);
+            QinSynthEditorTestAccess::setSync(editor,true);
+            QinSynthEditorTestAccess::setVerbNote(editor,13);
+            if(!QinSynthEditorTestAccess::syncNoteVisible(editor)
+               || std::abs(preview.parameters.getRawParameterValue("verbNote")->load()-13)>1.e-6)
+                throw std::runtime_error("Delay Sync must replace free Time with an automatable note selector");
+            QinSynthEditorTestAccess::setSync(editor,false);
+            QinSynthEditorTestAccess::showDrive(editor);
             QinSynthEditorTestAccess::selectFmSource(editor,0,5);
             QinSynthEditorTestAccess::setFmAmount(editor,0,68);
             if(std::abs(preview.parameters.getRawParameterValue("osc1FmSource")->load()-4)>1.e-6
@@ -1312,7 +1510,8 @@ int main(int argc,char** argv)
             if(argc>5) save(argv[5]);
         }
         {
-            QinSynthProcessor scaled;
+            auto scaledOwner=std::make_unique<QinSynthProcessor>();
+            auto& scaled=*scaledOwner;
             QinSynthEditor editor(scaled);
             const std::array<std::array<float,3>,3> original {
                 QinSynthTestAccess::envelopeTimes(scaled,0),

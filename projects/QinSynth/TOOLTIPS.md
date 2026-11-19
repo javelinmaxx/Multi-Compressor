@@ -5,6 +5,10 @@
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
 | OSC 1/2/3 tabs | Opens the selected oscillator in the OSC panel. |
 | Voices | Drag up or down to set the maximum number of simultaneous notes from one to sixteen. |
+| TUNE | Opens the custom tuning table and A4 reference controls. |
+| Tuning root | Selects the root pitch class for the twelve cent offsets. |
+| Tuning A4 | Sets the reference frequency for A4 from 400 to 480 Hz. |
+| Tuning degree | Offsets this pitch class by up to 100 cents in either direction. |
 | Active Voices | Shows the number of allocated voices, including release tails. |
 | Poly Legato | Enables voice matching and pitch slides when polyphony exceeds one voice. |
 | Voice Match | Closest and Farthest use pitch distance, while Upwards and Downwards prefer voices below or above the new note. |
@@ -27,6 +31,7 @@
 | Osc Wave | Drag within the square to blend the selected oscillator between saw, pulse, triangle, and sine waves. |
 | Osc Level | Sets the selected oscillator's contribution to the mix. |
 | Osc Octave | Transposes the selected oscillator by whole octaves. |
+| Osc Fine | Offsets the selected oscillator by up to 1200 cents in either direction. |
 | Osc Unison | Sets the number of copies of the selected oscillator. |
 | Osc Detune | Offsets the selected oscillator's unison copies in cents. |
 | Osc Detune Shape | Moves inner unison pitches toward center at -100% or toward the outer voices at +100%. |
@@ -63,6 +68,8 @@
 | Drive | Sets how hard the oscillator signal drives the selected circuit. |
 | Drive Mix | Blends the driven signal with the dry oscillator signal. |
 | Time | Sets Lan's delay and reverb time. |
+| Sync | Synchronizes Delay Time to the host tempo using straight, dotted, or triplet notes. |
+| Delay Note | Selects the note length for tempo-synchronized delay and reverb time. |
 | Decay | Sets how long Lan's feedback tail lasts. |
 | Scatter | Morphs Lan's delay into a diffuse reverb. |
 | Mix | Blends the Lan effect with the synth. |

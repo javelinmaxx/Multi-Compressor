@@ -12,19 +12,19 @@ const auto cyan=juce::Colour(0xff55aec7);
 struct Control { const char* id; const char* name; const char* hint; };
 constexpr std::array<Control,44> controls {{
     {"osc1Level","LEVEL","Sets oscillator one's contribution to the mix."},
-    {"osc1Octave","OCTAVE","Transposes oscillator one by whole octaves."},
+    {"osc1Fine","FINE","Offsets oscillator one by up to 1200 cents in either direction."},
     {"osc1Unison","UNISON","Sets the number of oscillator one copies."},
     {"osc1Detune","DETUNE","Offsets oscillator one's unison copies in cents."},
     {"osc1Spread","SPREAD","Sets how far oscillator one's detuned copies spread across stereo."},
     {"osc1Pan","PAN","Positions oscillator one as a whole in stereo."},
     {"osc2Level","LEVEL","Sets oscillator two's contribution to the mix."},
-    {"osc2Octave","OCTAVE","Transposes oscillator two by whole octaves."},
+    {"osc2Fine","FINE","Offsets oscillator two by up to 1200 cents in either direction."},
     {"osc2Unison","UNISON","Sets the number of oscillator two copies."},
     {"osc2Detune","DETUNE","Offsets oscillator two's unison copies in cents."},
     {"osc2Spread","SPREAD","Sets how far oscillator two's detuned copies spread across stereo."},
     {"osc2Pan","PAN","Positions oscillator two as a whole in stereo."},
     {"osc3Level","LEVEL","Sets oscillator three's contribution to the mix."},
-    {"osc3Octave","OCTAVE","Transposes oscillator three by whole octaves."},
+    {"osc3Fine","FINE","Offsets oscillator three by up to 1200 cents in either direction."},
     {"osc3Unison","UNISON","Sets the number of oscillator three copies."},
     {"osc3Detune","DETUNE","Offsets oscillator three's unison copies in cents."},
     {"osc3Spread","SPREAD","Sets how far oscillator three's detuned copies spread across stereo."},
@@ -93,6 +93,19 @@ float filterMagnitude(int type,float frequency,float cutoff,float resonance)
     return second;
 }
 }
+void QinTuningPanel::paint(juce::Graphics& g)
+{
+    g.fillAll(stageStyle::background);
+    g.setColour(stageStyle::panel);
+    g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(2),9);
+    g.setColour(juce::Colour(0xffc6b47b).withAlpha(.7f));
+    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(2),9,1.2f);
+    g.setColour(stageStyle::foreground); g.setFont(juce::FontOptions(16.f).withStyle("bold"));
+    g.drawText("TUNE",20,16,100,25,juce::Justification::centredLeft);
+    g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(10.f));
+    g.drawText("Copy Logic User tuning offsets in cents, relative to the selected root.",20,45,getWidth()-40,20,
+               juce::Justification::centredLeft);
+}
 QinVoiceSlider::QinVoiceSlider()
 {
     setSliderStyle(juce::Slider::RotaryVerticalDrag);
@@ -107,7 +120,7 @@ void QinVoiceSlider::paint(juce::Graphics& g)
     g.setColour(stageStyle::grid);
     g.drawRoundedRectangle(area,4,1);
     g.setColour(cyan); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
-    g.drawText(juce::String(juce::roundToInt(getValue()))+" VOICES",getLocalBounds(),juce::Justification::centred);
+    g.drawText(juce::String(juce::roundToInt(getValue()))+" "+suffix,getLocalBounds(),juce::Justification::centred);
 }
 QinWavePad::QinWavePad()
 {
@@ -250,6 +263,26 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     addAndMakeVisible(titleHint);
     addAndMakeVisible(voiceCount);
     voiceCountAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"voiceCount",voiceCount);
+    for(size_t i=0;i<octaveDisplays.size();++i)
+    {
+        auto& display=octaveDisplays[i];
+        display.setRange(-2,2,1);
+        display.setSuffix("OCT");
+        display.setTooltip("Drag up or down to transpose this oscillator by whole octaves.");
+        addAndMakeVisible(display);
+        octaveAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,
+            "osc"+juce::String(int(i)+1)+"Octave",display);
+    }
+    tuneButton.setClickingTogglesState(true);
+    tuneButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
+    tuneButton.setColour(juce::TextButton::buttonOnColourId,accent);
+    tuneButton.setTooltip("Opens the custom tuning table and A4 reference controls.");
+    addAndMakeVisible(tuneButton);
+    tuneButton.onClick=[this]
+    {
+        tuningPanel.setVisible(tuneButton.getToggleState());
+        if(tuningPanel.isVisible()) tuningPanel.toFront(false);
+    };
     activeVoicesLabel.setText("0 ACTIVE",juce::dontSendNotification);
     activeVoicesLabel.setFont(juce::FontOptions(11.f).withStyle("bold"));
     activeVoicesLabel.setJustificationType(juce::Justification::centred);
@@ -446,6 +479,21 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         tab.setTooltip(i==0 ? "Opens the drive controls." : "Opens Lan's delay and reverb controls.");
         tab.onClick=[this,i]{showFxSection(int(i));}; addAndMakeVisible(tab);
     }
+    syncButton.setClickingTogglesState(true);
+    syncButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
+    syncButton.setColour(juce::TextButton::buttonOnColourId,accent);
+    syncButton.setTooltip("Synchronizes Delay Time to the host tempo using straight, dotted, or triplet notes.");
+    addAndMakeVisible(syncButton);
+    syncAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"verbSync",syncButton);
+    syncButton.onClick=[this] { updateVisibility(); };
+    verbNoteSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    verbNoteSlider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,17);
+    verbNoteSlider.setTextBoxIsEditable(false);
+    verbNoteSlider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+    verbNoteSlider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+    verbNoteSlider.setTooltip("Selects the note length for tempo-synchronized delay and reverb time.");
+    addAndMakeVisible(verbNoteSlider);
+    verbNoteAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"verbNote",verbNoteSlider);
     driveMode.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     driveMode.setRange(0,3,1);
     driveMode.setTextBoxStyle(juce::Slider::TextBoxBelow,false,88,17);
@@ -504,6 +552,12 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         sliderAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,controls[i].id,slider);
         editorTooltips::setHint(slider,label,controls[i].hint);
         if(i<18 && i%6==2) slider.onValueChange=[this]{repaint();};
+    }
+    for(const auto index:{1,7,13})
+    {
+        sliders[size_t(index)].textFromValueFunction=[](double value)
+        { return juce::String(juce::roundToInt(value))+" c"; };
+        sliders[size_t(index)].updateText();
     }
     sliders[30].setSliderStyle(juce::Slider::LinearHorizontal);
     sliders[30].setTextBoxStyle(juce::Slider::TextBoxRight,false,42,18);
@@ -629,6 +683,50 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     modTargetAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"modTarget",modTarget);
     filterType.onChange=[this]
     { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,90,240,311})); };
+    tuningPanel.setOpaque(true);
+    addAndMakeVisible(tuningPanel);
+    for(int degree=0;degree<12;++degree)
+    {
+        auto& slider=tuningSliders[size_t(degree)];
+        auto& label=tuningLabels[size_t(degree)];
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,55,16);
+        slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        slider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+        slider.textFromValueFunction=[](double value) { return juce::String(value,1); };
+        label.setFont(juce::FontOptions(9.f));
+        label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId,stageStyle::secondary);
+        tuningPanel.addAndMakeVisible(slider); tuningPanel.addAndMakeVisible(label);
+        tuningAttachments[size_t(degree)]=std::make_unique<State::SliderAttachment>(synth.parameters,
+            "tune"+juce::String(degree),slider);
+        editorTooltips::setHint(slider,label,"Offsets this pitch class from equal temperament in cents.");
+    }
+    for(auto* slider:{&tuningRoot,&tuningA4})
+    {
+        slider->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider->setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,17);
+        slider->setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        slider->setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+        tuningPanel.addAndMakeVisible(*slider);
+    }
+    for(auto* label:{&tuningRootLabel,&tuningA4Label})
+    {
+        label->setFont(juce::FontOptions(9.f));
+        label->setJustificationType(juce::Justification::centred);
+        label->setColour(juce::Label::textColourId,stageStyle::secondary);
+        tuningPanel.addAndMakeVisible(*label);
+    }
+    tuningRootLabel.setText("ROOT",juce::dontSendNotification);
+    tuningA4Label.setText("A4 BASE",juce::dontSendNotification);
+    tuningRoot.setTextBoxIsEditable(false);
+    tuningRootAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"tuneRoot",tuningRoot);
+    tuningA4Attachment=std::make_unique<State::SliderAttachment>(synth.parameters,"tuneA4",tuningA4);
+    tuningRoot.onValueChange=[this] { updateTuningLabels(); };
+    editorTooltips::setHint(tuningRoot,tuningRootLabel,"Sets the root pitch class for the twelve tuning offsets.");
+    editorTooltips::setHint(tuningA4,tuningA4Label,"Sets the global A4 reference pitch before pitch-class offsets.");
+    updateTuningLabels();
+    tuningPanel.setVisible(false);
     oscillatorTabs[0].setToggleState(true,juce::dontSendNotification);
     envelopeTabs[0].setToggleState(true,juce::dontSendNotification);
     fxTabs[0].setToggleState(true,juce::dontSendNotification);
@@ -674,6 +772,7 @@ void QinSynthEditor::timerCallback()
     const auto active=juce::String(processor.getActiveVoiceCount())+" ACTIVE";
     if(activeVoicesLabel.getText()!=active) activeVoicesLabel.setText(active,juce::dontSendNotification);
     if(polyLegatoButton.getToggleState()!=lastPolyLegato) updatePlayAvailability();
+    if(syncButton.getToggleState()!=lastVerbSync) updateVisibility();
     if(const auto enabled=processor.parameters.getRawParameterValue("envTimesFive")->load()>=.5f;
        enabled!=lastTimesFive) updateEnvelopeTimePresentation();
     const auto cutoff=processor.getLiveFilterCutoff();
@@ -710,6 +809,13 @@ void QinSynthEditor::updatePlayAvailability()
     legatoRule.setEnabled(lastPolyLegato);
     legatoRuleLabel.setEnabled(lastPolyLegato);
 }
+void QinSynthEditor::updateTuningLabels()
+{
+    constexpr std::array<const char*,12> names {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+    const auto root=std::clamp(juce::roundToInt(tuningRoot.getValue()),0,11);
+    for(int degree=0;degree<12;++degree)
+        tuningLabels[size_t(degree)].setText(names[size_t((root+degree)%12)],juce::dontSendNotification);
+}
 void QinSynthEditor::showOscillator(int index)
 { currentOscillator=juce::jlimit(0,3,index); for(size_t i=0;i<3;++i) oscillatorTabs[i].setToggleState(int(i)==currentOscillator,juce::dontSendNotification); updateVisibility(); repaint(); }
 void QinSynthEditor::showEnvelope(int index)
@@ -721,6 +827,7 @@ void QinSynthEditor::updateVisibility()
     for(int osc=0;osc<3;++osc)
     {
         const auto selected=osc==currentOscillator; waves[size_t(osc)].setVisible(selected); waveLabels[size_t(osc)].setVisible(selected); retrig[size_t(osc)].setVisible(selected);
+        octaveDisplays[size_t(osc)].setVisible(selected);
         detuneShapeSliders[size_t(osc)].setVisible(selected); detuneShapeLabels[size_t(osc)].setVisible(selected);
         fmAmountSliders[size_t(osc)].setVisible(selected); fmAmountLabels[size_t(osc)].setVisible(selected);
         fmSources[size_t(osc)].setVisible(selected); fmSourceLabels[size_t(osc)].setVisible(selected);
@@ -737,12 +844,26 @@ void QinSynthEditor::updateVisibility()
     modTarget.setVisible(currentEnvelope==2); modTargetLabel.setVisible(currentEnvelope==2);
     for(size_t i=36;i<sliders.size();++i)
     { const auto selected=i==36 || (currentFxSection==0 ? i==37 : i>=38); sliders[i].setVisible(selected); labels[i].setVisible(selected && i!=36); }
+    lastVerbSync=syncButton.getToggleState();
+    syncButton.setVisible(currentFxSection==1);
+    sliders[38].setVisible(currentFxSection==1 && !lastVerbSync);
+    verbNoteSlider.setVisible(currentFxSection==1 && lastVerbSync);
     driveMode.setVisible(currentFxSection==0); driveModeLabel.setVisible(currentFxSection==0);
     driveMix.setVisible(currentFxSection==0); driveMixLabel.setVisible(currentFxSection==0);
 }
 void QinSynthEditor::resized()
 {
     titleHint.setBounds(18,29,360,38);
+    tuneButton.setBounds(574,34,74,27);
+    tuningPanel.setBounds(430,78,472,416);
+    for(int degree=0;degree<12;++degree)
+    {
+        const auto x=20+(degree%6)*72, y=88+(degree/6)*102;
+        tuningLabels[size_t(degree)].setBounds(x,y,62,15);
+        tuningSliders[size_t(degree)].setBounds(x,y+15,62,78);
+    }
+    tuningRootLabel.setBounds(50,316,86,15); tuningRoot.setBounds(50,331,86,75);
+    tuningA4Label.setBounds(154,316,86,15); tuningA4.setBounds(154,331,86,75);
     voiceCount.setBounds(660,34,94,27);
     activeVoicesLabel.setBounds(761,35,130,25);
     polyLegatoButton.setBounds(345,535,79,72);
@@ -755,6 +876,7 @@ void QinSynthEditor::resized()
         envelopeTabs[size_t(i)].setBounds(455+i*55,442,52,27);
         waveLabels[size_t(i)].setBounds(34,129,96,11); waves[size_t(i)].setBounds(34,140,96,96);
         retrig[size_t(i)].setBounds(330,139,84,78);
+        octaveDisplays[size_t(i)].setBounds(235,218,86,26);
         for(int control=0;control<6;++control)
         {
             const auto index=size_t(i*6+control);
@@ -799,6 +921,8 @@ void QinSynthEditor::resized()
     filterMergeLabel.setBounds(454,369,68,25);
     filterMergeSlider.setBounds(523,369,150,25);
     for(int i=0;i<2;++i) fxTabs[size_t(i)].setBounds(703+i*97,124,92,27);
+    syncButton.setBounds(752,157,44,18);
+    verbNoteSlider.setBounds(714,178,74,75);
     driveModeLabel.setBounds(706,165,90,14); driveMode.setBounds(706,179,90,79);
     labels[37].setBounds(802,165,90,14); sliders[37].setBounds(802,179,90,79);
     driveMixLabel.setBounds(758,261,88,14); driveMix.setBounds(758,275,88,79);
@@ -809,8 +933,12 @@ void QinSynthEditor::resized()
         const auto n=i-38,x=706+(n%2)*94,y=165+(n/2)*92;
         labels[size_t(i)].setBounds(x,y,90,14); sliders[size_t(i)].setBounds(x+8,y+13,74,75);
     }
+    labels[38].setBounds(706,165,42,14);
     const auto scale=editorScaling::transform(*this,designWidth,designHeight);
     titleHint.setTransform(scale);
+    tuneButton.setTransform(scale);
+    tuningPanel.setTransform(scale);
+    syncButton.setTransform(scale); verbNoteSlider.setTransform(scale);
     for(auto& tab:oscillatorTabs) tab.setTransform(scale);
     noiseButton.setTransform(scale);
     noiseStyle.setTransform(scale); noiseStyleLabel.setTransform(scale);
@@ -836,6 +964,7 @@ void QinSynthEditor::resized()
     for(auto& wave:waves) wave.setTransform(scale);
     for(auto& button:retrig) button.setTransform(scale);
     voiceCount.setTransform(scale);
+    for(auto& display:octaveDisplays) display.setTransform(scale);
     activeVoicesLabel.setTransform(scale);
     polyLegatoButton.setTransform(scale);
     legatoRule.setTransform(scale); legatoRuleLabel.setTransform(scale);

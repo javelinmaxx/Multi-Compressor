@@ -7,6 +7,8 @@ plus the TB-303 lookup stability probe, are in
 Qin Synth is a stereo MIDI instrument with adjustable 1–16-note polyphony, three virtual-analog oscillators per note, and up to eight unison copies per oscillator. It is version 0.7.5 in the J-Sonic suite.
 The oscillator sine and three envelope shapes use interpolated lookup curves during voice rendering; controls remain continuous under automation.
 
+The **TUNE** button beside the voice count opens a hidden twelve-note tuning table with root and A4 reference controls. It can reproduce Logic Pro's User tuning by entering the same cent offsets manually; see [Tuning in Logic Pro](TUNING.md). Each OSC tab has a draggable **Octave** readout styled like the voice count and a **Fine** pitch knob spanning −1200 to +1200 cents. In the DELAY tab, **SYNC** switches the Time control between milliseconds and tempo-linked note lengths.
+
 Each OSC tab has **FM Amt** and **FM Source** controls. Any oscillator or the
 tuned noise generator can modulate an oscillator's frequency, including when
 the source's output Level is zero. Sources are rendered before their targets so
@@ -17,6 +19,8 @@ FM Amt reaches ±100% of the carrier's base frequency, and its changes smooth
 over 5 ms. Noise can act as a modulator while its audible output is off.
 
 ![Qin Synth with OSC, ENV, FLT and tabbed FX panels at illustrative filter settings](Previews/qin-synth.png)
+
+![Qin Synth hidden TUNE menu with pitch-class offsets and A4 reference](Previews/qin-synth-tune.png)
 
 ![Qin Synth with Drive selected in FX](Previews/qin-synth-fx.png)
 
@@ -32,7 +36,7 @@ The header also shows the active voice count, including allocated voices in rele
 
 Qin follows the section hierarchy of Spire: a tabbed **OSC** sound module above **PLAY** on the left, **FLT** above **ENV** in the center, and compact tabbed **FX** above a dedicated **OUTPUT** section on the right. OSC, PLAY, FLT, ENV, and OUTPUT stay visible while FX switches between Drive and Delay. Every control remains available to host automation.
 
-Each tonal oscillator blends band-limited saw, pulse, and triangle waves with a sine wave, with Level and Octave beside the waveform pad and unison, detune, stereo spread, and whole-oscillator pan below. **Detune Shape** redistributes the pitches of the inner unison voices: −100% clusters them near the center, 0% spaces them evenly, and +100% clusters them toward the two outer voices. The outer voices stay at the Detune knob's selected limits. The **N** button enables an independent noise oscillator for each active voice and opens its control panel. Noise has its own Level, Pan, semitone Tune, and logarithmic HPF, plus a **White**, **Pink**, or sparse **Velvet** style selector. Tune moves a broad noise resonance with MIDI pitch; HPF removes low frequencies after the tuned filter. Spread positions detuned tonal copies around each oscillator's pan center. Key Pan sits with the lower OSC knobs and ranges from −100% to +100%: positive values pan higher notes right, negative values pan them left, and zero centers pitches.
+Each tonal oscillator blends band-limited saw, pulse, and triangle waves with a sine wave, with Level, Fine, and the draggable Octave readout beside the waveform pad and unison, detune, stereo spread, and whole-oscillator pan below. **Detune Shape** redistributes the pitches of the inner unison voices: −100% clusters them near the center, 0% spaces them evenly, and +100% clusters them toward the two outer voices. The outer voices stay at the Detune knob's selected limits. The **N** button enables an independent noise oscillator for each active voice and opens its control panel. Noise has its own Level, Pan, semitone Tune, and logarithmic HPF, plus a **White**, **Pink**, or sparse **Velvet** style selector. Tune moves a broad noise resonance with MIDI pitch; HPF removes low frequencies after the tuned filter. Spread positions detuned tonal copies around each oscillator's pan center. Key Pan sits with the lower OSC knobs and ranges from −100% to +100%: positive values pan higher notes right, negative values pan them left, and zero centers pitches.
 
 ENV has three independent envelopes, edited with five vertical sliders labeled A, D, S, R, and C for Attack, Decay, Sustain, Release, and Curve. Negative Curve values bring movement forward, while positive values delay it. The graph uses a labeled time scale and reflects the selected envelope's settings. Attack, Decay, and Release run from 1 to 5000 ms on logarithmic sliders in **AMP**, **FLT**, and **MOD**; FLT Sustain also has finer resolution near zero. The headerless **\*5** switch remains visible on all three tabs and multiplies every envelope's Attack, Decay, and Release by five, extending their effective range to 5–25,000 ms while preserving the underlying settings so they return when the toggle is off. Sustain is unchanged. AMP shapes voice amplitude. FLT shifts the cutoff by up to four octaves in either direction, set by the FLT panel's bipolar Env Amount. MOD routes its envelope to Drive, Spread, Pitch (up to one octave), or Filter cutoff (up to four octaves); Depth sets the amount. The compact editor is 640 pixels tall at 100% scale.
 

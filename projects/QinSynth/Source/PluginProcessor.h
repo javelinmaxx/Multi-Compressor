@@ -6,6 +6,8 @@
 #include "WaveBlend.h"
 #include "StereoPanLookup.h"
 #include "FmRouting.h"
+#include "TuningTable.h"
+#include "../../LanReverb/Source/DelayTiming.h"
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
@@ -47,6 +49,7 @@ public:
     DriveScope getDriveScope() const noexcept;
     float getLiveFilterCutoff() const noexcept { return liveFilterCutoff.load(std::memory_order_relaxed); }
     int getActiveVoiceCount() const noexcept { return activeVoiceCount.load(std::memory_order_relaxed); }
+    double getHostTempo() const noexcept { return hostTempo.load(std::memory_order_relaxed); }
     juce::AudioProcessorValueTreeState parameters;
 private:
     friend struct QinSynthTestAccess;
@@ -76,19 +79,22 @@ private:
         bool keyDown=false, sustained=false, active=false;
     };
     struct HeldNote { int note=-1, channel=1, voiceIndex=-1; };
-    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1, fmSource=-1; bool retrig=false; float level=0, detune=0, detuneShape=0, spread=.12f, pan=0, fmAmount=0; };
+    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1, fmSource=-1; bool retrig=false; float level=0, detune=0, detuneShape=0, spread=.12f, pan=0, fmAmount=0, fineCents=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
     struct Settings
     {
         std::array<OscillatorSettings,oscillatorCount> oscillator;
         NoiseSettings noiseOscillator;
+        qin::TuningTable tuning;
         std::array<EnvelopeSettings,3> env;
         float pan=0, drive=0, driveMix=1, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
         int filterType=0, modTarget=0, voiceCount=maxVoices, driveMode=1, legatoMode=0;
         bool noise=false, transformer=false, polyLegato=false;
         float slideMs=80, slideShape=.5f;
         float verbTime=180, verbDecay=3, verbScatter=.7f, verbMix=.2f;
+        bool verbSync=false;
+        int verbNote=lan::defaultNote;
         float tapMotion=.5f, phaseMotion=.5f;
     };
     Settings readSettings() const noexcept;
@@ -126,6 +132,7 @@ private:
     ren::TransformerStage transformerStage;
     uint64_t voiceAge=0, onsetCount=0;
     double sampleRate=48000;
+    std::atomic<double> hostTempo {120.0};
     float glideShapeSmoothing=.002f;
     float waveSmoothing=.002f;
     float onsetTap=0, onsetPhase=0;

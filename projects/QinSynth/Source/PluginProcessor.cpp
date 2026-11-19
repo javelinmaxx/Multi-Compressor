@@ -38,6 +38,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         add(prefix+"WaveY",title+" waveform vertical",0,100,.1f,osc==2 ? 100.f : 0.f,"%");
         add(prefix+"Level",title+" level",0,100,.1f,osc==0 ? 80.f : 0.f,"%");
         add(prefix+"Octave",title+" octave",-2,2,1,0,"oct");
+        add(prefix+"Fine",title+" fine pitch",-1200,1200,.1f,0,"cents");
         add(prefix+"Unison",title+" unison",1,8,1,1,"voices");
         add(prefix+"Detune",title+" detune",0,30,.1f,10,"cents");
         add(prefix+"DetuneShape",title+" detune shape",-100,100,.1f,0,"%");
@@ -108,6 +109,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     add("drive","Drive",0,100,.1f,0,"%");
     add("driveMix","Drive mix",0,100,.1f,100,"%");
     add("time","Delay time",25,1000,.1f,180,"ms");
+    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"verbSync",1},"Delay tempo sync",false));
+    juce::StringArray verbNotes;
+    for(const auto& note:lan::noteLengths) verbNotes.add(note.label);
+    result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"verbNote",1},
+        "Delay note length",verbNotes,lan::defaultNote));
     add("decay","Reverb decay",.3f,20,.1f,3,"s");
     add("scatter","Scatter",0,100,.1f,70,"%");
     add("verbMix","Delay-verb mix",0,100,.1f,20,"%");
@@ -117,6 +123,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"envTimesFive",1},
         "Envelope times x5",false));
     add("noiseLevel","Noise level",0,100,.1f,30,"%");
+    result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"tuneRoot",1},
+        "Tuning root",juce::StringArray{"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"},0));
+    add("tuneA4","Tuning A4 reference",400,480,.1f,440,"Hz");
+    for(int degree=0;degree<12;++degree)
+        add("tune"+juce::String(degree),"Tuning degree "+juce::String(degree),-100,100,.1f,0,"cents");
     add("noiseTune","Noise tune",-24,24,.1f,0,"st");
     juce::NormalisableRange<float> noiseHighPassRange {20.f,12000.f,
         [](float low,float high,float position) { return low*std::pow(high/low,position); },
@@ -163,6 +174,7 @@ bool QinSynthProcessor::isBusesLayoutSupported(const BusesLayout& buses) const
 void QinSynthProcessor::prepareToPlay(double rate,int)
 {
     sampleRate=std::isfinite(rate) && rate>=8000 ? rate : 48000;
+    hostTempo.store(120.0,std::memory_order_relaxed);
     glideShapeSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.01)));
     waveSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.005)));
     voices={}; heldNotes={}; heldNoteCount=0; fmWasActive=false;
@@ -176,12 +188,13 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
             parameters.getRawParameterValue(prefix+"WaveX")->load()*.01f,
             parameters.getRawParameterValue(prefix+"WaveY")->load()*.01f);
         const auto octave=juce::roundToInt(parameters.getRawParameterValue(prefix+"Octave")->load());
+        const auto fine=parameters.getRawParameterValue(prefix+"Fine")->load();
         const auto unison=juce::roundToInt(parameters.getRawParameterValue(prefix+"Unison")->load());
         const auto cents=parameters.getRawParameterValue(prefix+"Detune")->load();
         const auto shape=parameters.getRawParameterValue(prefix+"DetuneShape")->load()*.01f;
         for(int u=0;u<maxUnison;++u)
             detuneRatios[size_t(osc)][size_t(u)]=u<unison
-                ? std::ldexp(std::exp2(qin::detunePosition(u,unison,shape)*cents/1200.0),octave) : 1.0;
+                ? std::ldexp(std::exp2((qin::detunePosition(u,unison,shape)*cents+fine)/1200.0),octave) : 1.0;
     }
     for(int i=0;i<=coefficientTableSize;++i)
         coefficientTable[size_t(i)]=std::tan(juce::MathConstants<double>::pi*.44*double(i)/coefficientTableSize);
@@ -235,6 +248,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
         target.wave=qin::clampWavePosition(get(prefix+"WaveX")*.01f,get(prefix+"WaveY")*.01f);
         target.retrig=get(prefix+"Retrig")>=.5f;
         target.octave=std::clamp(juce::roundToInt(get(prefix+"Octave")),-2,2);
+        target.fineCents=std::clamp(get(prefix+"Fine"),-1200.f,1200.f);
         target.unison=std::clamp(juce::roundToInt(get(prefix+"Unison")),1,maxUnison);
         target.level=std::clamp(get(prefix+"Level")*.01f,0.f,1.f);
         target.detune=std::clamp(get(prefix+"Detune"),0.f,30.f);
@@ -271,6 +285,15 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.noiseOscillator.highPass=std::clamp(get("noiseHpf"),20.f,12000.f);
     settings.noiseOscillator.pan=std::clamp(get("noisePan")*.01f,-1.f,1.f);
     settings.noiseOscillator.style=std::clamp(juce::roundToInt(get("noiseStyle")),0,2);
+    settings.tuning.root=std::clamp(juce::roundToInt(get("tuneRoot")),0,11);
+    settings.tuning.setReferenceA4(std::clamp(get("tuneA4"),400.f,480.f));
+    settings.tuning.equalTempered=std::abs(settings.tuning.referenceA4-440.f)<1.e-6f;
+    for(int degree=0;degree<12;++degree)
+    {
+        const auto cents=std::clamp(get("tune"+juce::String(degree)),-100.f,100.f);
+        settings.tuning.cents[size_t(degree)]=cents;
+        settings.tuning.equalTempered&=std::abs(cents)<1.e-6f;
+    }
     settings.voiceCount=std::clamp(juce::roundToInt(get("voiceCount")),1,maxVoices);
     settings.pan=std::clamp(get("keyPan")*.01f,-1.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
@@ -281,7 +304,11 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
     settings.legatoMode=std::clamp(juce::roundToInt(get("legatoMode")),0,3);
     settings.slideMs=std::clamp(get("slideTime"),0.f,2000.f);
     settings.slideShape=std::clamp(get("slideShape")*.01f,0.f,1.f);
-    settings.verbTime=std::clamp(get("time"),25.f,1000.f);
+    settings.verbSync=get("verbSync")>=.5f;
+    settings.verbNote=std::clamp(juce::roundToInt(get("verbNote")),0,int(lan::noteLengths.size())-1);
+    settings.verbTime=settings.verbSync
+        ? lan::noteTimeMs(settings.verbNote,hostTempo.load(std::memory_order_relaxed))
+        : std::clamp(get("time"),25.f,1000.f);
     settings.verbDecay=std::clamp(get("decay"),.3f,20.f);
     settings.verbScatter=std::clamp(get("scatter")*.01f,0.f,1.f);
     settings.verbMix=std::clamp(get("verbMix")*.01f,0.f,1.f);
@@ -602,13 +629,14 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         for(int u=0;u<control.unison;++u)
         {
             const auto offset=qin::detunePosition(u,control.unison,control.detuneShape);
-            const auto target=std::ldexp(std::exp2(offset*control.detune/1200.0),control.octave);
+            const auto target=std::ldexp(std::exp2((offset*control.detune+control.fineCents)/1200.0),control.octave);
             auto& current=detuneRatios[size_t(osc)][size_t(u)];
             ratioIncrements[size_t(osc)][size_t(u)]=(target-current)/count;
             pitchMoving|=std::abs(target-current)>1.e-12;
         }
     }
     std::array<std::array<double,oscillatorCount>,maxVoices> baseSteps {};
+    std::array<double,maxVoices> tunedBasePitch {};
     constexpr int noiseUpdateSamples=16;
     std::array<bool,oscillatorCount> fmSourceNeeded {};
     bool noiseFmNeeded=false;
@@ -638,7 +666,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         *std::min(double(settings.noiseOscillator.highPass),sampleRate*.44)/sampleRate)) : 0.f;
     const auto noiseAtPitch=[&](double pitch) noexcept
     {
-        const auto hz=440.0*std::exp2((pitch-69.0)/12.0);
+        const auto hz=settings.tuning.frequency(pitch);
         const auto center=std::clamp(hz*noiseTuneRatio,30.0,sampleRate*.4);
         const auto g=double(filterCoefficient(float(center)));
         constexpr double damping=1.5;
@@ -652,7 +680,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     {
         auto& voice=voices[voiceIndex];
         if(!voice.active) continue;
-        const auto base=juce::MidiMessage::getMidiNoteInHertz(voice.note);
+        tunedBasePitch[voiceIndex]=settings.tuning.tunedPitch(voice.note);
+        const auto base=440.0*std::exp2((tunedBasePitch[voiceIndex]-69.0)/12.0);
         movingPan[voiceIndex]=voice.glideProgress<1.f
             || (settings.modTarget==1 && (settings.modDepth>0.f || smoothedModDepth>0.f));
         for(int osc=0;osc<oscillatorCount;++osc)
@@ -724,7 +753,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             const auto gliding=voice.glideProgress<1.f;
             const auto currentPitch=gliding ? advancePitch(voice,settings) : double(voice.note);
             const auto pitchFactor=voice.glideProgress>=1.f ? 1.0
-                : std::exp2((currentPitch-double(voice.note))/12.0);
+                : std::exp2((settings.tuning.tunedPitch(currentPitch)-tunedBasePitch[voiceIndex])/12.0);
             if(gliding) voice.pan=std::clamp(float((currentPitch-64.0)/44.0)*settings.pan,-.95f,.95f);
             double voiceLeft=0,voiceRight=0;
             const auto spreadMod=settings.modTarget==1 ? smoothedModDepth*modEnv : 0.f;
@@ -983,6 +1012,11 @@ void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffe
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
+    if(auto* transport=getPlayHead())
+        if(const auto position=transport->getPosition())
+            if(const auto bpm=position->getBpm())
+                if(std::isfinite(*bpm) && *bpm>=lan::minimumTempo && *bpm<=lan::maximumTempo)
+                    hostTempo.store(*bpm,std::memory_order_relaxed);
     const auto settings=readSettings();
     int position=0;
     for(const auto metadata:midi)

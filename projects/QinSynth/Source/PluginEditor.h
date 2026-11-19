@@ -18,6 +18,9 @@ class QinVoiceSlider final : public juce::Slider
 public:
     QinVoiceSlider();
     void paint(juce::Graphics&) override;
+    void setSuffix(juce::String value) { suffix=std::move(value); repaint(); }
+private:
+    juce::String suffix {"VOICES"};
 };
 
 class QinWavePad final : public juce::Component, public juce::SettableTooltipClient
@@ -48,6 +51,12 @@ private:
     float position=0;
 };
 
+class QinTuningPanel final : public juce::Component
+{
+public:
+    void paint(juce::Graphics&) override;
+};
+
 class QinSynthEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -66,9 +75,10 @@ private:
     void updateDrivePreview();
     void updateEnvelopeTimePresentation();
     void updatePlayAvailability();
+    void updateTuningLabels();
     QinSynthProcessor& processor;
     int currentOscillator=0, currentEnvelope=0, currentFxSection=0;
-    bool lastTimesFive=false, lastPolyLegato=false;
+    bool lastTimesFive=false, lastPolyLegato=false, lastVerbSync=false;
     float liveCutoff=0;
     uint32_t lastScopeEpoch=0;
     bool liveScopeValid=false;
@@ -85,6 +95,13 @@ private:
     juce::Slider driveMode, driveMix;
     juce::Label driveModeLabel, driveMixLabel;
     QinVoiceSlider voiceCount;
+    std::array<QinVoiceSlider,3> octaveDisplays;
+    juce::TextButton tuneButton {"TUNE"}, syncButton {"SYNC"};
+    QinTuningPanel tuningPanel;
+    std::array<juce::Slider,12> tuningSliders;
+    std::array<juce::Label,12> tuningLabels;
+    juce::Slider tuningRoot, tuningA4, verbNoteSlider;
+    juce::Label tuningRootLabel, tuningA4Label;
     juce::Label activeVoicesLabel;
     QinAnalogSwitch polyLegatoButton {"POLY LEGATO"};
     juce::Slider legatoRule;
@@ -118,6 +135,10 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>,3> curveAttachments;
     std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
     std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
+    std::array<std::unique_ptr<State::SliderAttachment>,3> octaveAttachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,12> tuningAttachments;
+    std::unique_ptr<State::SliderAttachment> tuningRootAttachment, tuningA4Attachment, verbNoteAttachment;
+    std::unique_ptr<State::ButtonAttachment> syncAttachment;
     std::unique_ptr<State::ButtonAttachment> polyLegatoAttachment;
     std::unique_ptr<State::SliderAttachment> legatoRuleAttachment;
     std::unique_ptr<State::SliderAttachment> slideTimeAttachment, slideShapeAttachment;
