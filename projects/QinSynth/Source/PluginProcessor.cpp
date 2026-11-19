@@ -475,10 +475,18 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
         const auto note=message.getNoteNumber();
         const auto velocity=message.getFloatVelocity();
         const auto overlapping=heldNoteCount>0;
-        if(!std::any_of(voices.begin(),voices.end(),[](const Voice& voice)
-           { return voice.active && (voice.keyDown || voice.sustained); }))
+        const auto firstHeld=!std::any_of(voices.begin(),voices.end(),[](const Voice& voice)
+           { return voice.active && (voice.keyDown || voice.sustained); });
+        if(firstHeld)
             for(auto& envelope:sharedEnvelopes)
             { envelope.start=envelope.value; envelope.progress=0.f; envelope.stage=0; }
+        else if(settings.voiceCount>1 && settings.envelopeMerge[0]>0.f)
+        {
+            // In polyphony the newest note takes over the shared AMP shape.
+            // Starting at its present level keeps older held notes continuous.
+            auto& envelope=sharedEnvelopes[0];
+            envelope.start=envelope.value; envelope.progress=0.f; envelope.stage=0;
+        }
         if(heldNoteCount==int(heldNotes.size()))
         {
             std::move(heldNotes.begin()+1,heldNotes.end(),heldNotes.begin());
@@ -664,6 +672,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
     const auto mergeSmoothing=float(1-std::exp(-1.0/(sampleRate*.01)));
+    const auto onsetStep=float(1.0/(sampleRate*.002));
     const auto modDepthIncrement=(settings.modDepth-smoothedModDepth)/count;
     std::array<std::array<double,maxUnison>,oscillatorCount> ratioIncrements {};
     bool pitchMoving=false;
@@ -799,16 +808,18 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             auto& voice=voices[voiceIndex];
             if(!voice.active) continue;
             const auto held=voice.keyDown || voice.sustained;
+            voice.onsetGain=std::min(1.f,voice.onsetGain+onsetStep);
+            if(!held && voice.env[0].stage!=3)
+                voice.env[0].value=voice.effectiveEnv[0];
             for(size_t env=0;env<voice.env.size();++env)
             {
                 const auto individual=advanceEnvelope(voice.env[env],settings.env[env],held,coefficients[env]);
                 voice.effectiveEnv[env]=individual+(sharedValues[env]-individual)*smoothedEnvelopeMerge[env];
             }
-            // A shared AMP shape must not hold a released note open while another key remains down.
-            const auto releaseGate=(held || !sharedHeld) ? 1.f : std::clamp(voice.env[0].value
-                /std::max(.001f,voice.env[0].start),0.f,1.f);
-            const auto amp=voice.env[0].value*(1.f-smoothedEnvelopeMerge[0])
-                +sharedValues[0]*smoothedEnvelopeMerge[0]*releaseGate;
+            // On note-off, the voice's own release starts at its last audible
+            // level. Later shared attacks cannot pull that tail back upward.
+            const auto amp=held ? voice.env[0].value*(1.f-smoothedEnvelopeMerge[0])
+                +sharedValues[0]*smoothedEnvelopeMerge[0]*voice.onsetGain : voice.env[0].value;
             voice.effectiveEnv[0]=amp;
             const auto filterEnv=voice.effectiveEnv[1];
             const auto modEnv=voice.effectiveEnv[2];

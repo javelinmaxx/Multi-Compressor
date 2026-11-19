@@ -72,7 +72,7 @@ private:
         std::array<FilterState,2> filter {};
         int note=-1, channel=1;
         uint64_t age=0;
-        float velocity=0, pan=0, cutoff=0;
+        float velocity=0, pan=0, cutoff=0, onsetGain=0;
         double pitchNote=0, glideStart=0;
         float glideProgress=1, glideIncrement=1, glideShape=.5f;
         uint32_t noiseState=1;

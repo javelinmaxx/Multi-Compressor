@@ -33,6 +33,8 @@ struct QinSynthTestAccess
     static bool voiceActive(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].active; }
     static float voiceCutoff(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].cutoff; }
     static float masterCutoff(const QinSynthProcessor& p) { return p.masterCutoff; }
+    static float sharedAmpProgress(const QinSynthProcessor& p) { return p.sharedEnvelopes[0].progress; }
+    static float sharedAmpValue(const QinSynthProcessor& p) { return p.sharedEnvelopes[0].value; }
     static double secondPhase(const QinSynthProcessor& p,int osc)
     { return p.voices[1].oscillators[size_t(osc)][0].phase; }
     static bool allRetriggeredPhasesMatch(const QinSynthProcessor& p)
@@ -1844,6 +1846,62 @@ int main(int argc,char** argv)
                 if(QinSynthTestAccess::voiceActive(merged,1) || !QinSynthTestAccess::voiceActive(merged,0))
                     throw std::runtime_error("Merged AMP must release one note while another remains held");
             }
+        }
+        {
+            auto mergedOwner=std::make_unique<QinSynthProcessor>();
+            auto& merged=*mergedOwner;
+            set(merged,"verbMix",0); set(merged,"ampMerge",100);
+            set(merged,"attack",.001f); set(merged,"ampDecay",.001f);
+            set(merged,"ampSustain",100); set(merged,"release",.2f);
+            merged.prepareToPlay(48000,256);
+            juce::AudioBuffer<float> releaseAudio(2,256),oneSample(2,1);
+            juce::MidiBuffer empty;
+            QinSynthTestAccess::noteOn(merged,60);
+            for(int i=0;i<20;++i) merged.processBlock(releaseAudio,empty);
+            QinSynthTestAccess::noteOn(merged,64);
+            merged.processBlock(oneSample,empty);
+            if(QinSynthTestAccess::effectiveEnvelope(merged,1,0)>.05f)
+                throw std::runtime_error("A new note must fade into an already loud merged AMP envelope");
+            for(int i=0;i<2;++i) merged.processBlock(releaseAudio,empty);
+            QinSynthTestAccess::noteOff(merged,60);
+            for(int i=0;i<25;++i) merged.processBlock(releaseAudio,empty);
+            const auto before=QinSynthTestAccess::effectiveEnvelope(merged,0,0);
+            if(before<.1f || before>.9f)
+                throw std::runtime_error("The first merged note must be partway through release before the last note ends");
+            QinSynthTestAccess::noteOff(merged,64);
+            merged.processBlock(oneSample,empty);
+            const auto after=QinSynthTestAccess::effectiveEnvelope(merged,0,0);
+            if(std::abs(after-before)>.02f)
+                throw std::runtime_error("The final note-off must not jump the level of a merged release tail");
+        }
+        {
+            auto mergedOwner=std::make_unique<QinSynthProcessor>();
+            auto& merged=*mergedOwner;
+            set(merged,"verbMix",0); set(merged,"ampMerge",100);
+            set(merged,"attack",.1f); set(merged,"ampDecay",.001f);
+            set(merged,"ampSustain",100); set(merged,"release",.2f);
+            merged.prepareToPlay(48000,256);
+            juce::AudioBuffer<float> audio(2,256),oneSample(2,1);
+            juce::MidiBuffer empty;
+            QinSynthTestAccess::noteOn(merged,60);
+            for(int i=0;i<12;++i) merged.processBlock(audio,empty);
+            const auto before=QinSynthTestAccess::effectiveEnvelope(merged,0,0);
+            if(QinSynthTestAccess::sharedAmpProgress(merged)<.05f)
+                throw std::runtime_error("The shared AMP attack must progress before a later note starts");
+            QinSynthTestAccess::noteOn(merged,64);
+            if(QinSynthTestAccess::sharedAmpProgress(merged)>1.e-6f
+               || std::abs(QinSynthTestAccess::sharedAmpValue(merged)-before)>.01f)
+                throw std::runtime_error("A later note must restart the shared AMP envelope from its present level");
+            merged.processBlock(oneSample,empty);
+            if(std::abs(QinSynthTestAccess::effectiveEnvelope(merged,0,0)-before)>.02f)
+                throw std::runtime_error("Restarting shared AMP must keep older held notes continuous");
+            QinSynthTestAccess::noteOff(merged,60);
+            for(int i=0;i<12;++i) merged.processBlock(audio,empty);
+            const auto tail=QinSynthTestAccess::effectiveEnvelope(merged,0,0);
+            QinSynthTestAccess::noteOn(merged,67);
+            for(int i=0;i<12;++i) merged.processBlock(audio,empty);
+            if(QinSynthTestAccess::effectiveEnvelope(merged,0,0)>tail+.01f)
+                throw std::runtime_error("A newer shared AMP onset must not pull an older released note upward");
         }
         {
             QinSynthProcessor automation;
