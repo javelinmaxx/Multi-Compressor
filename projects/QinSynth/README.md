@@ -7,6 +7,15 @@ plus the TB-303 lookup stability probe, are in
 Qin Synth is a stereo MIDI instrument with adjustable 1–16-note polyphony, three virtual-analog oscillators per note, and up to eight unison copies per oscillator. It is version 0.7.5 in the J-Sonic suite.
 The oscillator sine and three envelope shapes use interpolated lookup curves during voice rendering; controls remain continuous under automation.
 
+Each OSC tab has **FM Amt** and **FM Source** controls. Any oscillator or the
+tuned noise generator can modulate an oscillator's frequency, including when
+the source's output Level is zero. Sources are rendered before their targets so
+chains such as OSC 1 → OSC 2 → OSC 3 carry the already-modulated signal. For
+self-modulation and feedback cycles, connections within the cycle use the
+source's preceding sample; routes outside the cycle retain same-sample stacking.
+FM Amt reaches ±100% of the carrier's base frequency, and its changes smooth
+over 5 ms. Noise can act as a modulator while its audible output is off.
+
 ![Qin Synth with OSC, ENV, FLT and tabbed FX panels at illustrative filter settings](Previews/qin-synth.png)
 
 ![Qin Synth with Drive selected in FX](Previews/qin-synth-fx.png)

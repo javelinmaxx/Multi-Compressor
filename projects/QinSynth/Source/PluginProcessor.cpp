@@ -43,6 +43,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         add(prefix+"DetuneShape",title+" detune shape",-100,100,.1f,0,"%");
         add(prefix+"Spread",title+" spread",0,100,.1f,35,"%");
         add(prefix+"Pan",title+" pan",-100,100,.1f,0,"%");
+        add(prefix+"FmAmount",title+" FM amount",0,100,.1f,0,"%");
+        juce::StringArray fmSources;
+        fmSources.add("Off");
+        for(int source=0;source<oscillatorCount;++source)
+            fmSources.add("OSC "+juce::String(source+1));
+        fmSources.add("Noise");
+        result.add(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{prefix+"FmSource",1},title+" FM source",fmSources,0));
     }
     addEnvelopeTime("attack","Attack",false,.01f);
     addEnvelopeTime("release","Release",false,.3f);
@@ -157,10 +165,13 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
     sampleRate=std::isfinite(rate) && rate>=8000 ? rate : 48000;
     glideShapeSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.01)));
     waveSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.005)));
-    voices={}; heldNotes={}; heldNoteCount=0;
+    voices={}; heldNotes={}; heldNoteCount=0; fmWasActive=false;
     for(int osc=0;osc<oscillatorCount;++osc)
     {
         const juce::String prefix(prefixes[size_t(osc)]);
+        fmAmounts[size_t(osc)].reset(sampleRate,.005);
+        fmAmounts[size_t(osc)].setCurrentAndTargetValue(std::clamp(
+            parameters.getRawParameterValue(prefix+"FmAmount")->load()*.01f,0.f,1.f));
         smoothedWaves[size_t(osc)]=qin::clampWavePosition(
             parameters.getRawParameterValue(prefix+"WaveX")->load()*.01f,
             parameters.getRawParameterValue(prefix+"WaveY")->load()*.01f);
@@ -230,6 +241,9 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings() const noexcept
         target.detuneShape=std::clamp(get(prefix+"DetuneShape")*.01f,-1.f,1.f);
         target.spread=std::clamp(get(prefix+"Spread")*.01f,0.f,1.f);
         target.pan=std::clamp(get(prefix+"Pan")*.01f,-1.f,1.f);
+        target.fmAmount=std::clamp(get(prefix+"FmAmount")*.01f,0.f,1.f);
+        const auto selection=std::clamp(juce::roundToInt(get(prefix+"FmSource")),0,oscillatorCount+1);
+        target.fmSource=selection-1;
     }
     const auto timeMultiplier=get("envTimesFive")>=.5f ? 5.f : 1.f;
     settings.env[0]={std::clamp(get("attack")*timeMultiplier,.001f,25.f),std::clamp(get("ampDecay")*timeMultiplier,.001f,25.f),
@@ -596,7 +610,29 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     std::array<std::array<double,oscillatorCount>,maxVoices> baseSteps {};
     constexpr int noiseUpdateSamples=16;
-    const auto noiseActive=settings.noise && settings.noiseOscillator.level>0;
+    std::array<bool,oscillatorCount> fmSourceNeeded {};
+    bool noiseFmNeeded=false;
+    std::array<int,oscillatorCount> fmSources {};
+    bool anyFmActive=false;
+    for(int osc=0;osc<oscillatorCount;++osc)
+    {
+        const auto& control=settings.oscillator[size_t(osc)];
+        fmSources[size_t(osc)]=-1;
+        auto& amount=fmAmounts[size_t(osc)];
+        amount.setTargetValue(control.fmAmount);
+        if(control.fmAmount<=0.f && amount.getCurrentValue()<=0.f) continue;
+        fmSources[size_t(osc)]=control.fmSource;
+        anyFmActive|=control.fmSource>=0;
+        if(control.fmSource>=0 && control.fmSource<oscillatorCount)
+            fmSourceNeeded[size_t(control.fmSource)]=true;
+        else if(control.fmSource==oscillatorCount) noiseFmNeeded=true;
+    }
+    const auto fmRouting=qin::FmRouting::calculate(fmSources);
+    if(anyFmActive && !fmWasActive)
+        for(auto& voice:voices) voice.previousFmOutput={};
+    fmWasActive=anyFmActive;
+    const auto noiseOutputActive=settings.noise && settings.noiseOscillator.level>0;
+    const auto noiseActive=noiseOutputActive || noiseFmNeeded;
     const auto noiseTuneRatio=noiseActive ? std::exp2(settings.noiseOscillator.tune/12.f) : 1.0;
     const auto noiseHighPass=noiseActive ? float(1-std::exp(-twoPi
         *std::min(double(settings.noiseOscillator.highPass),sampleRate*.44)/sampleRate)) : 0.f;
@@ -622,9 +658,9 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         for(int osc=0;osc<oscillatorCount;++osc)
         {
             const auto& control=settings.oscillator[size_t(osc)];
-            if(control.level<=0) continue;
+            if(control.level<=0 && !fmSourceNeeded[size_t(osc)]) continue;
             baseSteps[voiceIndex][size_t(osc)]=base/sampleRate;
-            if(!movingPan[voiceIndex])
+            if(control.level>0 && !movingPan[voiceIndex])
                 for(int u=0;u<control.unison;++u)
                 {
                     const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
@@ -658,6 +694,9 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     for(int i=start;i<start+count;++i)
     {
         smoothedModDepth+=modDepthIncrement;
+        std::array<float,oscillatorCount> fmDepth {};
+        for(int osc=0;osc<oscillatorCount;++osc)
+            fmDepth[size_t(osc)]=fmAmounts[size_t(osc)].getNextValue();
         if(pitchMoving)
             for(int osc=0;osc<oscillatorCount;++osc)
                 for(int u=0;u<settings.oscillator[size_t(osc)].unison;++u)
@@ -690,28 +729,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             double voiceLeft=0,voiceRight=0;
             const auto spreadMod=settings.modTarget==1 ? smoothedModDepth*modEnv : 0.f;
             const auto pitchMod=settings.modTarget==2 ? std::exp2(double(smoothedModDepth*modEnv)) : 1.0;
-            for(int osc=0;osc<oscillatorCount;++osc)
-            {
-                const auto& control=settings.oscillator[size_t(osc)];
-                if(control.level<=0) continue;
-                for(int u=0;u<control.unison;++u)
-                {
-                    const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
-                    const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],waveMixes[size_t(osc)],
-                        std::min(.49,baseSteps[voiceIndex][size_t(osc)]
-                            *detuneRatios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod))
-                        *control.level/control.unison;
-                    auto gains=panGains[voiceIndex][size_t(osc)][size_t(u)];
-                    if(movingPan[voiceIndex])
-                    {
-                        const auto pan=std::clamp(double(voice.pan)+control.pan
-                            +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
-                        gains=qin::stereoPanLookup.evaluate(float(pan));
-                    }
-                    voiceLeft+=value*gains.left;
-                    voiceRight+=value*gains.right;
-                }
-            }
+            float noiseRaw=0;
             if(noiseActive)
             {
                 auto& random=voice.noiseState;
@@ -760,12 +778,82 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 voice.noiseBandState=2*band-voice.noiseBandState;
                 voice.noiseLowState=2*low-voice.noiseLowState;
                 voice.noiseHighPassState+=noiseFilter.highPass*(band-voice.noiseHighPassState);
-                const auto noise=(band-voice.noiseHighPassState)*settings.noiseOscillator.level;
+                noiseRaw=band-voice.noiseHighPassState;
+            }
+            if(!anyFmActive)
+            {
+                for(int osc=0;osc<oscillatorCount;++osc)
+                {
+                    const auto& control=settings.oscillator[size_t(osc)];
+                    if(control.level<=0) continue;
+                    for(int u=0;u<control.unison;++u)
+                    {
+                        const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
+                        const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],waveMixes[size_t(osc)],
+                            std::min(.49,baseSteps[voiceIndex][size_t(osc)]
+                                *detuneRatios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod))
+                            *control.level/control.unison;
+                        auto gains=panGains[voiceIndex][size_t(osc)][size_t(u)];
+                        if(movingPan[voiceIndex])
+                        {
+                            const auto pan=std::clamp(double(voice.pan)+control.pan
+                                +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
+                            gains=qin::stereoPanLookup.evaluate(float(pan));
+                        }
+                        voiceLeft+=value*gains.left;
+                        voiceRight+=value*gains.right;
+                    }
+                }
+            }
+            else
+            {
+                // Process a source before its targets. An edge within a feedback
+                // cycle reads the source's previous sample instead of recursing.
+                std::array<float,oscillatorCount> fmOutput {};
+                for(int position=0;position<oscillatorCount;++position)
+                {
+                    const auto osc=fmRouting.order[size_t(position)];
+                    const auto& control=settings.oscillator[size_t(osc)];
+                    if(control.level<=0 && !fmSourceNeeded[size_t(osc)]) continue;
+                    float source=0;
+                    const auto sourceIndex=fmSources[size_t(osc)];
+                    if(sourceIndex==oscillatorCount) source=noiseRaw;
+                    else if(sourceIndex>=0 && sourceIndex<oscillatorCount)
+                        source=fmRouting.delayedEdge[size_t(osc)]
+                            ? voice.previousFmOutput[size_t(sourceIndex)]
+                            : fmOutput[size_t(sourceIndex)];
+                    const auto frequencyScale=1.0+fmDepth[size_t(osc)]*std::clamp(source,-1.f,1.f);
+                    double sum=0;
+                    for(int u=0;u<control.unison;++u)
+                    {
+                        const auto raw=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],waveMixes[size_t(osc)],
+                            std::clamp(baseSteps[voiceIndex][size_t(osc)]
+                                *detuneRatios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod*frequencyScale,1.e-7,.49));
+                        sum+=raw;
+                        if(control.level<=0) continue;
+                        const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
+                        const auto value=raw*control.level/control.unison;
+                        auto gains=panGains[voiceIndex][size_t(osc)][size_t(u)];
+                        if(movingPan[voiceIndex])
+                        {
+                            const auto pan=std::clamp(double(voice.pan)+control.pan
+                                +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
+                            gains=qin::stereoPanLookup.evaluate(float(pan));
+                        }
+                        voiceLeft+=value*gains.left;
+                        voiceRight+=value*gains.right;
+                    }
+                    fmOutput[size_t(osc)]=std::clamp(float(sum/control.unison),-1.f,1.f);
+                }
+                voice.previousFmOutput=fmOutput;
+            }
+            if(noiseOutputActive)
+            {
                 const auto gains=movingPan[voiceIndex]
                     ? qin::stereoPanLookup.evaluate(std::clamp(voice.pan+settings.noiseOscillator.pan,-.98f,.98f))
                     : noisePanGains[voiceIndex];
-                voiceLeft+=noise*gains.left;
-                voiceRight+=noise*gains.right;
+                voiceLeft+=noiseRaw*settings.noiseOscillator.level*gains.left;
+                voiceRight+=noiseRaw*settings.noiseOscillator.level*gains.right;
             }
             if(settings.modTarget==0 && smoothedModDepth>0)
             {

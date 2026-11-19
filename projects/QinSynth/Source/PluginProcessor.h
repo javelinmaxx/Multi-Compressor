@@ -5,6 +5,7 @@
 #include "DriveCircuitBank.h"
 #include "WaveBlend.h"
 #include "StereoPanLookup.h"
+#include "FmRouting.h"
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
@@ -57,6 +58,7 @@ private:
     struct Voice
     {
         std::array<std::array<Subvoice,maxUnison>,oscillatorCount> oscillators {};
+        std::array<float,oscillatorCount> previousFmOutput {};
         std::array<Envelope,3> env {};
         std::array<FilterState,2> filter {};
         int note=-1, channel=1;
@@ -74,7 +76,7 @@ private:
         bool keyDown=false, sustained=false, active=false;
     };
     struct HeldNote { int note=-1, channel=1, voiceIndex=-1; };
-    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1; bool retrig=false; float level=0, detune=0, detuneShape=0, spread=.12f, pan=0; };
+    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1, fmSource=-1; bool retrig=false; float level=0, detune=0, detuneShape=0, spread=.12f, pan=0, fmAmount=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
     struct Settings
@@ -104,6 +106,8 @@ private:
     std::array<Voice,maxVoices> voices {};
     std::array<qin::WavePosition,oscillatorCount> smoothedWaves {};
     std::array<std::array<double,maxUnison>,oscillatorCount> detuneRatios {};
+    std::array<juce::SmoothedValue<float>,oscillatorCount> fmAmounts {};
+    bool fmWasActive=false;
     static constexpr int coefficientTableSize=8192;
     std::array<float,coefficientTableSize+1> coefficientTable {};
     std::array<HeldNote,128> heldNotes {};

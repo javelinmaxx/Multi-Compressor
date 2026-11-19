@@ -32,6 +32,8 @@
 | Osc Detune Shape | Moves inner unison pitches toward center at -100% or toward the outer voices at +100%. |
 | Osc Spread | Sets how far the selected oscillator's detuned copies spread across stereo. |
 | Osc Pan | Positions the selected oscillator as a whole in stereo. |
+| FM Amt | Sets this oscillator's bipolar frequency deviation up to its base frequency. |
+| FM Source | Selects an oscillator or noise as the FM source, using the prior sample for feedback cycles. |
 | AMP Attack | Sets the amplitude envelope rise from 1 to 5000 ms on a logarithmic scale. |
 | AMP Decay | Sets the amplitude envelope decay from 1 to 5000 ms on a logarithmic scale. |
 | AMP Sustain | Sets amplitude while the key remains held. |

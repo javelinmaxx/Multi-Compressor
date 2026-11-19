@@ -141,6 +141,12 @@ struct QinSynthEditorTestAccess
     { editor.noiseButton.setToggleState(true,juce::sendNotificationSync); }
     static bool noisePanelVisible(const QinSynthEditor& editor)
     { return editor.noiseStyle.isVisible() && editor.noiseSliders[0].isVisible() && !editor.waves[0].isVisible(); }
+    static bool fmVisible(const QinSynthEditor& editor,int osc)
+    { return editor.fmAmountSliders[size_t(osc)].isVisible() && editor.fmSources[size_t(osc)].isVisible(); }
+    static void setFmAmount(QinSynthEditor& editor,int osc,float amount)
+    { editor.fmAmountSliders[size_t(osc)].setValue(amount,juce::sendNotificationSync); }
+    static void selectFmSource(QinSynthEditor& editor,int osc,int item)
+    { editor.fmSources[size_t(osc)].setSelectedId(item,juce::sendNotificationSync); }
     static int noiseStyleCount(const QinSynthEditor& editor) { return editor.noiseStyle.getNumItems(); }
     static void selectNoiseStyle(QinSynthEditor& editor,int style)
     { editor.noiseStyle.setSelectedId(style,juce::sendNotificationSync); }
@@ -215,6 +221,30 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        {
+            const auto forward=qin::FmRouting::calculate({-1,0,1});
+            const auto reverse=qin::FmRouting::calculate({2,-1,1});
+            const auto cycle=qin::FmRouting::calculate({1,0,1});
+            const auto self=qin::FmRouting::calculate({0,-1,-1});
+            if(forward.order!=std::array<int,3>{0,1,2}
+               || reverse.order!=std::array<int,3>{1,2,0}
+               || forward.delayedEdge[0] || forward.delayedEdge[1] || forward.delayedEdge[2]
+               || !cycle.delayedEdge[0] || !cycle.delayedEdge[1] || cycle.delayedEdge[2]
+               || cycle.order[2]!=2 || !self.delayedEdge[0])
+                throw std::runtime_error("FM precedence must stack free-order sources and delay cycle edges");
+            QinSynthProcessor stored;
+            set(stored,"osc1FmSource",4); set(stored,"osc2FmSource",3);
+            set(stored,"osc3FmSource",1); set(stored,"osc2FmAmount",73);
+            juce::MemoryBlock state;
+            stored.getStateInformation(state);
+            QinSynthProcessor restored;
+            restored.setStateInformation(state.getData(),int(state.getSize()));
+            if(std::abs(restored.parameters.getRawParameterValue("osc1FmSource")->load()-4)>1.e-6
+               || std::abs(restored.parameters.getRawParameterValue("osc2FmSource")->load()-3)>1.e-6
+               || std::abs(restored.parameters.getRawParameterValue("osc3FmSource")->load()-1)>1.e-6
+               || std::abs(restored.parameters.getRawParameterValue("osc2FmAmount")->load()-73)>.1)
+                throw std::runtime_error("FM sources and amount must survive host state recall");
+        }
         for(int c=-100;c<=100;c+=5)
             for(int i=0;i<=1000;++i)
             {
@@ -665,6 +695,78 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Per-oscillator pan must place the whole oscillator in stereo");
         }
         {
+            const auto renderFm=[](std::array<int,3> sources,std::array<float,3> amounts,int audible,int blockSize=256)
+            {
+                QinSynthProcessor instrument;
+                for(const auto* id:{"osc1Level","osc2Level","osc3Level","verbMix","driveMix","keyPan"})
+                    set(instrument,id,0);
+                const std::array<const char*,3> levels {"osc1Level","osc2Level","osc3Level"};
+                const std::array<const char*,3> sourceIds {"osc1FmSource","osc2FmSource","osc3FmSource"};
+                const std::array<const char*,3> amountIds {"osc1FmAmount","osc2FmAmount","osc3FmAmount"};
+                set(instrument,levels[size_t(audible)],100);
+                for(size_t osc=0;osc<3;++osc)
+                { set(instrument,sourceIds[osc],float(sources[osc])); set(instrument,amountIds[osc],amounts[osc]); }
+                instrument.prepareToPlay(48000,blockSize);
+                juce::MidiBuffer events;
+                events.addEvent(juce::MidiMessage::noteOn(1,60,.8f),0);
+                std::vector<float> output;
+                for(int done=0;done<3072;)
+                {
+                    const auto count=std::min(blockSize,3072-done);
+                    juce::AudioBuffer<float> audio(2,count);
+                    instrument.processBlock(audio,events); events.clear();
+                    power(audio,0); power(audio,1);
+                    for(int sample=0;sample<audio.getNumSamples();++sample)
+                        output.push_back(audio.getSample(0,sample));
+                    done+=count;
+                }
+                return output;
+            };
+            const auto difference=[](const auto& left,const auto& right)
+            {
+                double total=0;
+                for(size_t i=0;i<left.size();++i) total+=std::abs(left[i]-right[i]);
+                return total/left.size();
+            };
+            const auto plain=renderFm({0,0,0},{0,0,0},2);
+            const auto direct=renderFm({0,0,2},{0,0,100},2);
+            const auto stacked=renderFm({0,1,2},{0,100,100},2);
+            const auto noise=renderFm({0,0,4},{0,0,100},2);
+            const auto cycle=renderFm({2,1,2},{100,100,100},2);
+            const auto cycleSmallBlocks=renderFm({2,1,2},{100,100,100},2,17);
+            const auto reversePlain=renderFm({0,0,0},{0,0,0},0);
+            const auto reverseStack=renderFm({3,0,2},{100,0,100},0);
+            if(difference(plain,direct)<1.e-4 || difference(direct,stacked)<1.e-4
+               || difference(plain,noise)<1.e-4 || difference(direct,cycle)<1.e-4
+               || difference(reversePlain,reverseStack)<1.e-4
+               || difference(cycle,cycleSmallBlocks)>1.e-4)
+                throw std::runtime_error("FM must use muted modulators, stack in either order, feed back, and accept noise");
+            QinSynthProcessor stress;
+            for(int osc=1;osc<=3;++osc)
+            {
+                const auto prefix="osc"+juce::String(osc);
+                auto* source=stress.parameters.getParameter(prefix+"FmSource");
+                auto* amount=stress.parameters.getParameter(prefix+"FmAmount");
+                auto* unison=stress.parameters.getParameter(prefix+"Unison");
+                source->setValueNotifyingHost(source->convertTo0to1(float(osc%3+1)));
+                amount->setValueNotifyingHost(amount->convertTo0to1(100.f));
+                unison->setValueNotifyingHost(unison->convertTo0to1(8.f));
+            }
+            set(stress,"osc2Level",100); set(stress,"osc3Level",100);
+            set(stress,"filterType",1); set(stress,"filterResonance",100);
+            set(stress,"filterCutoff",18000); set(stress,"verbMix",0);
+            stress.prepareToPlay(96000,128);
+            juce::AudioBuffer<float> stressedAudio(2,128); juce::MidiBuffer stressedMidi;
+            stressedMidi.addEvent(juce::MidiMessage::noteOn(1,108,1.f),0);
+            for(int blockIndex=0;blockIndex<20;++blockIndex)
+            {
+                stress.processBlock(stressedAudio,stressedMidi); stressedMidi.clear();
+                power(stressedAudio,0); power(stressedAudio,1);
+                if(!QinSynthTestAccess::stableFilters(stress))
+                    throw std::runtime_error("Full-depth FM feedback must keep high-resonance filter state finite");
+            }
+        }
+        {
             QinSynthProcessor narrow,wide;
             for(auto* p:{&narrow,&wide})
             { set(*p,"keyPan",0); set(*p,"verbMix",0); set(*p,"osc1Unison",8); set(*p,"osc1Detune",20); p->prepareToPlay(48000,256); }
@@ -1005,6 +1107,19 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,2)
                || !QinSynthEditorTestAccess::oscillatorLayout(editor))
                 throw std::runtime_error("Polyphony readout and oscillator pads must be available");
+            if(!QinSynthEditorTestAccess::fmVisible(editor,0)
+               || QinSynthEditorTestAccess::fmVisible(editor,1))
+                throw std::runtime_error("FM controls must follow the selected OSC tab");
+            QinSynthEditorTestAccess::selectFmSource(editor,0,5);
+            QinSynthEditorTestAccess::setFmAmount(editor,0,68);
+            if(std::abs(preview.parameters.getRawParameterValue("osc1FmSource")->load()-4)>1.e-6
+               || std::abs(preview.parameters.getRawParameterValue("osc1FmAmount")->load()-68)>.1)
+                throw std::runtime_error("FM source and amount controls must update host parameters");
+            QinSynthEditorTestAccess::oscillator(editor,2);
+            if(!QinSynthEditorTestAccess::fmVisible(editor,2)
+               || QinSynthEditorTestAccess::fmVisible(editor,0))
+                throw std::runtime_error("FM controls must switch with OSC tabs");
+            QinSynthEditorTestAccess::oscillator(editor,0);
             QinSynthEditorTestAccess::setDetuneShape(editor,0,75.f);
             if(std::abs(preview.parameters.getRawParameterValue("osc1DetuneShape")->load()-75.f)>.1f)
                 throw std::runtime_error("Detune Shape knob must update the host parameter");

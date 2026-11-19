@@ -376,6 +376,40 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         editorTooltips::setHint(slider,label,
             "Moves inner unison pitches toward center at -100% or toward the outer voices at +100%.");
     }
+    for(size_t i=0;i<fmAmountSliders.size();++i)
+    {
+        const auto prefix="osc"+juce::String(int(i)+1);
+        auto& amount=fmAmountSliders[i];
+        auto& amountLabel=fmAmountLabels[i];
+        amount.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        amount.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,17);
+        amount.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        amount.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+        amountLabel.setText("FM AMT",juce::dontSendNotification);
+        amountLabel.setJustificationType(juce::Justification::centred);
+        amountLabel.setFont(juce::FontOptions(9.f));
+        amountLabel.setColour(juce::Label::textColourId,stageStyle::secondary);
+        addAndMakeVisible(amount); addAndMakeVisible(amountLabel);
+        fmAmountAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,prefix+"FmAmount",amount);
+        editorTooltips::setHint(amount,amountLabel,
+            "Sets this oscillator's bipolar frequency deviation up to its base frequency.");
+
+        auto& source=fmSources[i];
+        auto& sourceLabel=fmSourceLabels[i];
+        source.addItem("Off",1);
+        for(int osc=0;osc<3;++osc) source.addItem("OSC "+juce::String(osc+1),osc+2);
+        source.addItem("Noise",5);
+        source.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a));
+        source.setColour(juce::ComboBox::textColourId,stageStyle::foreground);
+        sourceLabel.setText("FM SOURCE",juce::dontSendNotification);
+        sourceLabel.setJustificationType(juce::Justification::centred);
+        sourceLabel.setFont(juce::FontOptions(9.f));
+        sourceLabel.setColour(juce::Label::textColourId,stageStyle::secondary);
+        addAndMakeVisible(source); addAndMakeVisible(sourceLabel);
+        fmSourceAttachments[i]=std::make_unique<State::ComboBoxAttachment>(synth.parameters,prefix+"FmSource",source);
+        const auto sourceHint="Selects an oscillator or noise as the FM source, using the prior sample for feedback cycles.";
+        source.setTooltip(sourceHint); sourceLabel.setTooltip(sourceHint);
+    }
     timesFiveButton.setClickingTogglesState(true);
     timesFiveButton.setTooltip("Multiplies Attack, Decay, and Release of all three envelopes by five while enabled, up to 25000 ms.");
     addAndMakeVisible(timesFiveButton);
@@ -682,6 +716,8 @@ void QinSynthEditor::updateVisibility()
     {
         const auto selected=osc==currentOscillator; waves[size_t(osc)].setVisible(selected); waveLabels[size_t(osc)].setVisible(selected); retrig[size_t(osc)].setVisible(selected);
         detuneShapeSliders[size_t(osc)].setVisible(selected); detuneShapeLabels[size_t(osc)].setVisible(selected);
+        fmAmountSliders[size_t(osc)].setVisible(selected); fmAmountLabels[size_t(osc)].setVisible(selected);
+        fmSources[size_t(osc)].setVisible(selected); fmSourceLabels[size_t(osc)].setVisible(selected);
         for(int control=0;control<6;++control) { const auto i=size_t(osc*6+control); sliders[i].setVisible(selected); labels[i].setVisible(selected); }
     }
     noiseStyle.setVisible(currentOscillator==3); noiseStyleLabel.setVisible(currentOscillator==3);
@@ -723,6 +759,10 @@ void QinSynthEditor::resized()
         }
         detuneShapeLabels[size_t(i)].setBounds(299,314,103,15);
         detuneShapeSliders[size_t(i)].setBounds(299,329,103,65);
+        fmSourceLabels[size_t(i)].setBounds(299,218,103,10);
+        fmSources[size_t(i)].setBounds(299,228,103,18);
+        fmAmountLabels[size_t(i)].setBounds(299,394,103,15);
+        fmAmountSliders[size_t(i)].setBounds(299,409,103,65);
     }
     noiseButton.setBounds(363,101,55,27);
     noiseStyleLabel.setBounds(34,146,118,15); noiseStyle.setBounds(34,162,154,27);
@@ -772,6 +812,10 @@ void QinSynthEditor::resized()
     for(auto& label:noiseLabels) label.setTransform(scale);
     for(auto& slider:detuneShapeSliders) slider.setTransform(scale);
     for(auto& label:detuneShapeLabels) label.setTransform(scale);
+    for(auto& slider:fmAmountSliders) slider.setTransform(scale);
+    for(auto& label:fmAmountLabels) label.setTransform(scale);
+    for(auto& source:fmSources) source.setTransform(scale);
+    for(auto& label:fmSourceLabels) label.setTransform(scale);
     timesFiveButton.setTransform(scale);
     filterMergeSlider.setTransform(scale); filterMergeLabel.setTransform(scale);
     for(auto& tab:envelopeTabs) tab.setTransform(scale);
