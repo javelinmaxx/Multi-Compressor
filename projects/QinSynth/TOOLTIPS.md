@@ -30,7 +30,7 @@
 | Transformer | Adds Ren's transformer to the output and saves CPU when off. |
 | DELAY tab | Opens Lan's delay and reverb controls. |
 | Osc Wave | Drag within the square to blend the selected oscillator between saw, pulse, triangle, and sine waves. |
-| Osc Level | Sets the selected oscillator's contribution to the mix. |
+| Osc Level | Drag to set this oscillator's level from zero to 100 percent; double-click to reset. |
 | Osc Octave | Transposes the selected oscillator by whole octaves. |
 | Osc Fine | Drag to shift this oscillator by up to 1200 cents in either direction; double-click to reset. |
 | Osc Unison | Sets the number of copies of the selected oscillator. |
@@ -49,7 +49,10 @@
 | FLT Decay | Sets the filter envelope decay from 1 to 5000 ms with logarithmic control. |
 | FLT Sustain | Sets the held filter-envelope level with finer control near zero. |
 | FLT Release | Sets the filter envelope release from 1 to 5000 ms with logarithmic control. |
-| *5 | Multiplies Attack, Decay, and Release of all three envelopes by five while enabled, up to 25000 ms. |
+| *5 | Multiplies Attack, Decay, and Release of the selected envelope by five while enabled, up to 25000 ms. |
+| AMP Merge | Blends each note's amplitude envelope with one shared envelope, from separate at zero to merged at 100 percent. |
+| FLT Envelope Merge | Blends each note's filter envelope with one shared envelope, from separate at zero to merged at 100 percent. |
+| MOD Merge | Blends each note's modulation envelope with one shared envelope, from separate at zero to merged at 100 percent. |
 | FLT Curve | Negative curve values act sooner, while positive values delay attack, decay, and release movement. |
 | MOD Attack | Sets the modulation envelope rise from 1 to 5000 ms on a logarithmic scale. |
 | MOD Decay | Sets the modulation envelope decay from 1 to 5000 ms on a logarithmic scale. |

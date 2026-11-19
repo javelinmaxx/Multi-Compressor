@@ -39,7 +39,7 @@ public:
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override
-    { return parameters.getRawParameterValue("envTimesFive")->load()>=.5f ? 150.0 : 40.0; }
+    { return parameters.getRawParameterValue("ampTimesFive")->load()>=.5f ? 150.0 : 40.0; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}
@@ -50,6 +50,9 @@ public:
     DriveScope getDriveScope() const noexcept;
     float getLiveFilterCutoff() const noexcept { return liveFilterCutoff.load(std::memory_order_relaxed); }
     float getLiveFilterResonance() const noexcept { return liveFilterResonance.load(std::memory_order_relaxed); }
+    struct LiveModulation { int target=-1; float normalized=0; };
+    LiveModulation getLiveModulation() const noexcept
+    { return {liveModTarget.load(std::memory_order_acquire),liveModNormalized.load(std::memory_order_relaxed)}; }
     int getActiveVoiceCount() const noexcept { return activeVoiceCount.load(std::memory_order_relaxed); }
     double getHostTempo() const noexcept { return hostTempo.load(std::memory_order_relaxed); }
     juce::AudioProcessorValueTreeState parameters;
@@ -65,6 +68,7 @@ private:
         std::array<std::array<Subvoice,maxUnison>,oscillatorCount> oscillators {};
         std::array<float,oscillatorCount> previousFmOutput {};
         std::array<Envelope,3> env {};
+        std::array<float,3> effectiveEnv {};
         std::array<FilterState,2> filter {};
         int note=-1, channel=1;
         uint64_t age=0;
@@ -90,6 +94,7 @@ private:
         NoiseSettings noiseOscillator;
         qin::TuningTable tuning;
         std::array<EnvelopeSettings,3> env;
+        std::array<float,3> envelopeMerge {};
         float pan=0, drive=0, driveMix=1, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
         int filterType=0, modTarget=0, voiceCount=maxVoices, driveMode=1, legatoMode=0;
         bool noise=false, transformer=false, polyLegato=false;
@@ -112,6 +117,8 @@ private:
     float filterSample(FilterState&,float,float,float,float,int) const noexcept;
     float filterCoefficient(float hz) const noexcept;
     std::array<Voice,maxVoices> voices {};
+    std::array<Envelope,3> sharedEnvelopes {};
+    std::array<float,3> smoothedEnvelopeMerge {};
     std::array<qin::WavePosition,oscillatorCount> smoothedWaves {};
     std::array<std::array<double,maxUnison>,oscillatorCount> detuneRatios {};
     std::array<juce::SmoothedValue<float>,oscillatorCount> fmAmounts {};
@@ -129,6 +136,8 @@ private:
     std::atomic<uint32_t> driveScopeEpoch {0};
     std::atomic<float> liveFilterCutoff {0};
     std::atomic<float> liveFilterResonance {0};
+    std::atomic<int> liveModTarget {-1};
+    std::atomic<float> liveModNormalized {0};
     std::atomic<int> activeVoiceCount {0};
     uint32_t driveScopeWrite=0, driveScopeCounter=0;
     lan::ReverbEngine reverb;

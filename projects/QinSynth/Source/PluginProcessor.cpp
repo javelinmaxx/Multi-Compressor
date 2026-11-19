@@ -58,6 +58,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     addEnvelopeTime("ampDecay","Amp decay",false,.2f);
     add("ampSustain","Amp sustain",0,100,.1f,100,"%");
     add("ampCurve","Amp curve",-100,100,.1f,0,"%");
+    add("ampMerge","Amp envelope merge",0,100,.1f,0,"%");
     for(const char* prefix:{"flt","mod"})
     {
         const juce::String id(prefix);
@@ -81,6 +82,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
             addEnvelopeTime(id+"Release",id+" release",false,.3f);
         }
         add(id+"Curve",id+" curve",-100,100,.1f,0,"%");
+        add(id+"Merge",id+" envelope merge",0,100,.1f,0,"%");
     }
     add("modDepth","Mod depth",-100,100,.1f,0,"%");
     juce::StringArray modTargets {"Drive","Spread","Pitch","Filter"};
@@ -122,8 +124,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     add("tapMotion","Onset tap",0,100,.1f,50,"%");
     add("phaseMotion","Onset phase",0,100,.1f,50,"%");
     add("output","Output",-24,12,.1f,0,"dB");
-    result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"envTimesFive",1},
-        "Envelope times x5",false));
+    for(const auto* id:{"ampTimesFive","fltTimesFive","modTimesFive"})
+        result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{id,1},
+            juce::String(id).replace("TimesFive"," envelope times x5"),false));
     add("noiseLevel","Noise level",0,100,.1f,30,"%");
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"tuneRoot",1},
         "Tuning root",juce::StringArray{"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"},0));
@@ -179,7 +182,7 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
     hostTempo.store(120.0,std::memory_order_relaxed);
     glideShapeSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.01)));
     waveSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.005)));
-    voices={}; heldNotes={}; heldNoteCount=0; fmWasActive=false;
+    voices={}; sharedEnvelopes={}; smoothedEnvelopeMerge={}; heldNotes={}; heldNoteCount=0; fmWasActive=false;
     for(int osc=0;osc<oscillatorCount;++osc)
     {
         const juce::String prefix(prefixes[size_t(osc)]);
@@ -217,6 +220,7 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
     liveFilterCutoff.store(0,std::memory_order_relaxed);
     liveFilterResonance.store(parameters.getRawParameterValue("filterResonance")->load()*.01f,
                               std::memory_order_relaxed);
+    liveModTarget.store(-1,std::memory_order_relaxed);
     // The MIDI onset is the only source of tap/phase motion. Lan's spectral
     // resonance analyser and tame filters remain dormant in this instrument.
     reverb.prepare(sampleRate,false);
@@ -267,19 +271,22 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings(const char* override
         const auto selection=std::clamp(juce::roundToInt(get(prefix+"FmSource")),0,oscillatorCount+1);
         target.fmSource=selection-1;
     }
-    const auto timeMultiplier=get("envTimesFive")>=.5f ? 5.f : 1.f;
-    settings.env[0]={std::clamp(get("attack")*timeMultiplier,.001f,25.f),std::clamp(get("ampDecay")*timeMultiplier,.001f,25.f),
-        std::clamp(get("ampSustain")*.01f,0.f,1.f),std::clamp(get("release")*timeMultiplier,.001f,25.f),
+    const auto ampTimeMultiplier=get("ampTimesFive")>=.5f ? 5.f : 1.f;
+    settings.env[0]={std::clamp(get("attack")*ampTimeMultiplier,.001f,25.f),std::clamp(get("ampDecay")*ampTimeMultiplier,.001f,25.f),
+        std::clamp(get("ampSustain")*.01f,0.f,1.f),std::clamp(get("release")*ampTimeMultiplier,.001f,25.f),
         std::clamp(get("ampCurve")*.01f,-1.f,1.f)};
     for(int index=1;index<3;++index)
     {
         const juce::String prefix(index==1 ? "flt" : "mod");
-        const auto scale=index==1 ? .001f*timeMultiplier : timeMultiplier;
+        const auto scale=(index==1 ? .001f : 1.f)
+            *(get(index==1 ? "fltTimesFive" : "modTimesFive")>=.5f ? 5.f : 1.f);
         settings.env[size_t(index)]={std::clamp(get(prefix+"Attack")*scale,.001f,25.f),
             std::clamp(get(prefix+"Decay")*scale,.001f,25.f),std::clamp(get(prefix+"Sustain")*.01f,0.f,1.f),
             std::clamp(get(prefix+"Release")*scale,.001f,25.f),std::clamp(get(prefix+"Curve")*.01f,-1.f,1.f)};
     }
     settings.modDepth=std::clamp(get("modDepth")*.01f,-1.f,1.f);
+    for(int index=0;index<3;++index)
+        settings.envelopeMerge[size_t(index)]=std::clamp(get(index==0 ? "ampMerge" : index==1 ? "fltMerge" : "modMerge")*.01f,0.f,1.f);
     settings.modTarget=std::clamp(juce::roundToInt(get("modTarget")),0,
         qin::legacyModTargetCount+qin::continuousModTargetCount-1);
     settings.cutoff=std::clamp(get("filterCutoff"),30.f,18000.f);
@@ -455,6 +462,10 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
         const auto note=message.getNoteNumber();
         const auto velocity=message.getFloatVelocity();
         const auto overlapping=heldNoteCount>0;
+        if(!std::any_of(voices.begin(),voices.end(),[](const Voice& voice)
+           { return voice.active && (voice.keyDown || voice.sustained); }))
+            for(auto& envelope:sharedEnvelopes)
+            { envelope.start=envelope.value; envelope.progress=0.f; envelope.stage=0; }
         if(heldNoteCount==int(heldNotes.size()))
         {
             std::move(heldNotes.begin()+1,heldNotes.end(),heldNotes.begin());
@@ -629,6 +640,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             coefficients[env][stage]=float(1.0/(sampleRate*std::max(.001f,times[stage])));
     }
     const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
+    const auto mergeSmoothing=float(1-std::exp(-1.0/(sampleRate*.01)));
     const auto modDepthIncrement=(settings.modDepth-smoothedModDepth)/count;
     std::array<std::array<double,maxUnison>,oscillatorCount> ratioIncrements {};
     bool pitchMoving=false;
@@ -732,6 +744,14 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     }
     for(int i=start;i<start+count;++i)
     {
+        const auto sharedHeld=std::any_of(voices.begin(),voices.end(),[](const Voice& voice)
+        { return voice.active && (voice.keyDown || voice.sustained); });
+        std::array<float,3> sharedValues {};
+        for(size_t env=0;env<sharedEnvelopes.size();++env)
+        {
+            sharedValues[env]=advanceEnvelope(sharedEnvelopes[env],settings.env[env],sharedHeld,coefficients[env]);
+            smoothedEnvelopeMerge[env]+=mergeSmoothing*(settings.envelopeMerge[env]-smoothedEnvelopeMerge[env]);
+        }
         smoothedModDepth+=modDepthIncrement;
         std::array<float,oscillatorCount> fmDepth {};
         for(int osc=0;osc<oscillatorCount;++osc)
@@ -756,9 +776,19 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             auto& voice=voices[voiceIndex];
             if(!voice.active) continue;
             const auto held=voice.keyDown || voice.sustained;
-            const auto amp=advanceEnvelope(voice.env[0],settings.env[0],held,coefficients[0]);
-            const auto filterEnv=advanceEnvelope(voice.env[1],settings.env[1],held,coefficients[1]);
-            const auto modEnv=advanceEnvelope(voice.env[2],settings.env[2],held,coefficients[2]);
+            for(size_t env=0;env<voice.env.size();++env)
+            {
+                const auto individual=advanceEnvelope(voice.env[env],settings.env[env],held,coefficients[env]);
+                voice.effectiveEnv[env]=individual+(sharedValues[env]-individual)*smoothedEnvelopeMerge[env];
+            }
+            // A shared AMP shape must not hold a released note open while another key remains down.
+            const auto releaseGate=(held || !sharedHeld) ? 1.f : std::clamp(voice.env[0].value
+                /std::max(.001f,voice.env[0].start),0.f,1.f);
+            const auto amp=voice.env[0].value*(1.f-smoothedEnvelopeMerge[0])
+                +sharedValues[0]*smoothedEnvelopeMerge[0]*releaseGate;
+            voice.effectiveEnv[0]=amp;
+            const auto filterEnv=voice.effectiveEnv[1];
+            const auto modEnv=voice.effectiveEnv[2];
             if(!held && amp<1.e-4f) { voice.active=false; continue; }
             const auto gliding=voice.glideProgress<1.f;
             const auto currentPitch=gliding ? advancePitch(voice,settings) : double(voice.note);
@@ -953,7 +983,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         for(const auto& voice:voices)
             if(voice.active && voice.cutoff>0)
             {
-                const auto weight=double(voice.velocity)*voice.env[0].value;
+                const auto weight=double(voice.velocity)*voice.effectiveEnv[0];
                 cutoffLogSum+=weight*std::log(voice.cutoff); cutoffWeight+=weight;
             }
     const auto voiceCutoff=cutoffWeight>1.e-5 ? float(std::exp(cutoffLogSum/cutoffWeight)) : 0.f;
@@ -1033,6 +1063,7 @@ void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffe
                 if(std::isfinite(*bpm) && *bpm>=lan::minimumTempo && *bpm<=lan::maximumTempo)
                     hostTempo.store(*bpm,std::memory_order_relaxed);
     const auto settings=readSettings();
+    liveModTarget.store(-1,std::memory_order_release);
     const auto render=[this,&buffer,&settings,bypass](int start,int count)
     {
         if(count<=0) return;
@@ -1046,6 +1077,11 @@ void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffe
         if(parameter==nullptr || raw==nullptr)
         { renderSegment(buffer,start,count,settings,bypass); return; }
         const auto baseline=parameter->convertTo0to1(raw->load(std::memory_order_relaxed));
+        const auto publish=[this,&settings](float normalized)
+        {
+            liveModNormalized.store(std::clamp(normalized,0.f,1.f),std::memory_order_relaxed);
+            liveModTarget.store(settings.modTarget,std::memory_order_release);
+        };
         const auto stableSustain=std::abs(smoothedModDepth-settings.modDepth)<1.e-6f
             && settings.modTarget!=qin::modTargetIndex("modSustain")
             && settings.modTarget!=qin::modTargetIndex("modDepth")
@@ -1055,12 +1091,14 @@ void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffe
         {
             float envelope=0;
             for(const auto& voice:voices)
-                if(voice.active) envelope=std::max(envelope,voice.env[2].value);
+                if(voice.active) envelope=std::max(envelope,voice.effectiveEnv[2]);
             const auto shift=std::clamp(smoothedModDepth*envelope,-1.f,1.f);
-            if(std::abs(shift)<1.e-6f) renderSegment(buffer,start,count,settings,bypass);
+            if(std::abs(shift)<1.e-6f)
+            { publish(baseline); renderSegment(buffer,start,count,settings,bypass); }
             else
             {
                 const auto value=parameter->convertFrom0to1(std::clamp(baseline+shift,0.f,1.f));
+                publish(parameter->convertTo0to1(value));
                 renderSegment(buffer,start,count,readSettings(route.id,value),bypass);
             }
             return;
@@ -1070,14 +1108,18 @@ void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffe
         {
             float envelope=0;
             for(const auto& voice:voices)
-                if(voice.active) envelope=std::max(envelope,voice.env[2].value);
+                if(voice.active) envelope=std::max(envelope,voice.effectiveEnv[2]);
             const auto shift=std::clamp(smoothedModDepth*envelope,-1.f,1.f);
             const auto size=std::min(modulationSlice,count-offset);
             if(std::abs(shift)<1.e-6f)
+            {
+                publish(baseline);
                 renderSegment(buffer,start+offset,size,settings,bypass);
+            }
             else
             {
                 const auto value=parameter->convertFrom0to1(std::clamp(baseline+shift,0.f,1.f));
+                publish(parameter->convertTo0to1(value));
                 auto modulated=readSettings(route.id,value);
                 renderSegment(buffer,start+offset,size,modulated,bypass);
             }
@@ -1096,7 +1138,7 @@ void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffe
             auto* raw=parameters.getRawParameterValue(route.id);
             float envelope=0;
             for(const auto& voice:voices)
-                if(voice.active) envelope=std::max(envelope,voice.env[2].value);
+                if(voice.active) envelope=std::max(envelope,voice.effectiveEnv[2]);
             if(parameter!=nullptr && raw!=nullptr && envelope>0)
             {
                 const auto baseline=parameter->convertTo0to1(raw->load(std::memory_order_relaxed));

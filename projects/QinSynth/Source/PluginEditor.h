@@ -89,6 +89,20 @@ private:
     bool active=false;
 };
 
+class QinModulationOverlay final : public juce::Component
+{
+public:
+    enum class Shape { horizontal, vertical, rotary, readout, pad, key };
+    QinModulationOverlay() { setInterceptsMouseClicks(false,false); }
+    void setDisplay(juce::Rectangle<int> area,float x,float y,Shape nextShape,bool enabled);
+    void paint(juce::Graphics&) override;
+    bool isAnimating() const noexcept { return active; }
+private:
+    float positionX=0,positionY=0;
+    Shape shape=Shape::rotary;
+    bool active=false;
+};
+
 class QinSynthEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -128,6 +142,7 @@ private:
     juce::Slider driveMode, driveMix;
     juce::Label driveModeLabel, driveMixLabel;
     QinVoiceSlider voiceCount;
+    std::array<QinVoiceSlider,3> levelDisplays;
     std::array<QinVoiceSlider,3> octaveDisplays;
     std::array<QinVoiceSlider,3> fineDisplays;
     juce::TextButton tuneButton {"TUNE"}, syncButton {"SYNC"};
@@ -150,17 +165,21 @@ private:
     std::array<juce::Label,3> fmSourceLabels;
     juce::ComboBox noiseStyle;
     juce::Label noiseStyleLabel;
-    QinAnalogSwitch timesFiveButton {"*5"};
+    std::array<QinAnalogSwitch,3> timesFiveButtons
+        {QinAnalogSwitch{"*5"},QinAnalogSwitch{"*5"},QinAnalogSwitch{"*5"}};
+    std::array<juce::Slider,3> envelopeMergeSliders;
+    juce::Label envelopeMergeLabel;
     juce::Slider filterMergeSlider;
     juce::Label filterMergeLabel;
     QinResonanceIndicator resonanceIndicator;
+    QinModulationOverlay modulationOverlay;
     std::array<juce::Slider,44> sliders;
     std::array<juce::Label,44> labels;
     std::array<juce::Slider,3> curveSliders;
     juce::Label curveLabel;
     std::array<QinWavePad,3> waves;
     std::array<juce::RangedAudioParameter*,3> waveXParameters {}, waveYParameters {};
-    std::array<QinAnalogSwitch,3> retrig;
+    std::array<juce::TextButton,3> retrig;
     std::array<juce::Label,3> waveLabels;
     juce::ComboBox filterType, modTarget;
     juce::Label modTargetLabel;
@@ -169,6 +188,7 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>,3> curveAttachments;
     std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
     std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
+    std::array<std::unique_ptr<State::SliderAttachment>,3> levelAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> octaveAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> fineAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,12> tuningAttachments;
@@ -180,7 +200,9 @@ private:
     std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
     std::unique_ptr<State::SliderAttachment> driveModeAttachment, driveMixAttachment;
     std::unique_ptr<State::ButtonAttachment> transformerAttachment;
-    std::unique_ptr<State::ButtonAttachment> noiseAttachment, timesFiveAttachment;
+    std::unique_ptr<State::ButtonAttachment> noiseAttachment;
+    std::array<std::unique_ptr<State::ButtonAttachment>,3> timesFiveAttachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,3> envelopeMergeAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,4> noiseSliderAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> detuneShapeAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> fmAmountAttachments;

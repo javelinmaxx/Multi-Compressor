@@ -28,6 +28,9 @@ struct QinSynthTestAccess
     static bool monoHeld(const QinSynthProcessor& p) { return p.voices[0].keyDown; }
     static double monoPhase(const QinSynthProcessor& p) { return p.voices[0].oscillators[0][0].phase; }
     static float monoEnvelope(const QinSynthProcessor& p) { return p.voices[0].env[0].value; }
+    static float effectiveEnvelope(const QinSynthProcessor& p,int voice,int envelope)
+    { return p.voices[size_t(voice)].effectiveEnv[size_t(envelope)]; }
+    static bool voiceActive(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].active; }
     static double secondPhase(const QinSynthProcessor& p,int osc)
     { return p.voices[1].oscillators[size_t(osc)][0].phase; }
     static bool allRetriggeredPhasesMatch(const QinSynthProcessor& p)
@@ -91,14 +94,15 @@ struct QinSynthEditorTestAccess
     static void fxSection(QinSynthEditor& editor,int index) { editor.showFxSection(index); }
     static bool oscillatorVisible(const QinSynthEditor& editor,int index)
     { return editor.waves[size_t(index)].isVisible() && editor.retrig[size_t(index)].isVisible()
-        && editor.sliders[size_t(index*6)].isVisible(); }
+        && editor.levelDisplays[size_t(index)].isVisible(); }
     static bool voiceDragEnabled(const QinSynthEditor& editor)
     { return editor.voiceCount.isVisible()
         && editor.voiceCount.getSliderStyle()==juce::Slider::RotaryVerticalDrag
         && std::abs(editor.voiceCount.getMinimum()-1)<1.e-6
         && std::abs(editor.voiceCount.getMaximum()-16)<1.e-6; }
     static bool wavePadEnabled(const QinSynthEditor& editor,int index)
-    { return editor.waves[size_t(index)].getWidth()==96 && editor.waves[size_t(index)].getHeight()==96; }
+    { return editor.waves[size_t(index)].getWidth()==96 && editor.waves[size_t(index)].getHeight()==96
+        && editor.waves[size_t(index)].getX()>304; }
     static void setVoiceCount(QinSynthEditor& editor,int count)
     { editor.voiceCount.setValue(count,juce::sendNotificationSync); }
     static void setWave(QinSynthEditor& editor,int index,qin::WavePosition position)
@@ -110,10 +114,13 @@ struct QinSynthEditorTestAccess
     static void setDetuneShape(QinSynthEditor& editor,int index,float shape)
     { editor.detuneShapeSliders[size_t(index)].setValue(shape,juce::sendNotificationSync); }
     static bool oscillatorLayout(const QinSynthEditor& editor)
-    { return editor.sliders[0].getY()<editor.sliders[2].getY()
+    { return editor.levelDisplays[0].getY()<editor.sliders[2].getY()
         && editor.fineDisplays[0].getY()<editor.sliders[2].getY()
         && editor.sliders[35].getY()>editor.sliders[2].getY()
-        && editor.detuneShapeSliders[0].isVisible(); }
+        && editor.detuneShapeSliders[0].isVisible()
+        && editor.levelDisplays[0].getRight()<editor.fineDisplays[0].getX()
+        && editor.retrig[0].getButtonText()=="RETRIG"
+        && editor.retrig[0].getHeight()<=30; }
     static bool fineReadoutLayout(const QinSynthEditor& editor,int osc)
     {
         const auto& fine=editor.fineDisplays[size_t(osc)];
@@ -153,6 +160,12 @@ struct QinSynthEditorTestAccess
     { editor.transformerButton.setToggleState(on,juce::sendNotificationSync); }
     static bool envelopeVisible(const QinSynthEditor& editor,int index)
     { return editor.sliders[size_t(18+index*4)].isVisible(); }
+    static bool envelopeMergeVisible(const QinSynthEditor& editor,int index)
+    { return editor.envelopeMergeSliders[size_t(index)].isVisible()
+        && editor.envelopeMergeSliders[size_t(index)].getWidth()>150
+        && editor.envelopeMergeSliders[size_t(index)].getY()>editor.sliders[size_t(18+index*4)].getY(); }
+    static void setEnvelopeMerge(QinSynthEditor& editor,int index,float value)
+    { editor.envelopeMergeSliders[size_t(index)].setValue(value,juce::sendNotificationSync); }
     static bool filterVisible(const QinSynthEditor& editor)
     { return editor.filterType.isVisible() && editor.sliders[31].isVisible(); }
     static bool modVisible(const QinSynthEditor& editor)
@@ -189,6 +202,13 @@ struct QinSynthEditorTestAccess
     }
     static bool octaveReadoutVisible(const QinSynthEditor& editor,int osc)
     { return editor.octaveDisplays[size_t(osc)].isVisible(); }
+    static void setLevel(QinSynthEditor& editor,int osc,float value)
+    { editor.levelDisplays[size_t(osc)].setValue(value,juce::sendNotificationSync); }
+    static bool levelReadoutVisible(const QinSynthEditor& editor,int osc)
+    { return editor.levelDisplays[size_t(osc)].isVisible()
+        && !editor.sliders[size_t(osc*6)].isVisible(); }
+    static bool levelShows(const QinSynthEditor& editor,int osc,const juce::String& text)
+    { return editor.levelDisplays[size_t(osc)].getReadoutText()==text; }
     static void setOctave(QinSynthEditor& editor,int osc,int octave)
     { editor.octaveDisplays[size_t(osc)].setValue(octave,juce::sendNotificationSync); }
     static void setFine(QinSynthEditor& editor,int osc,float cents)
@@ -197,6 +217,11 @@ struct QinSynthEditorTestAccess
     { return editor.fineDisplays[size_t(osc)].getReadoutText()==text; }
     static bool resonanceIndicatorActive(const QinSynthEditor& editor)
     { return editor.resonanceIndicator.isAnimating(); }
+    static bool modulationOverlayActive(const QinSynthEditor& editor)
+    { return editor.modulationOverlay.isAnimating(); }
+    static bool modulationOverlayOnLevel(const QinSynthEditor& editor)
+    { return editor.modulationOverlay.isAnimating()
+        && editor.modulationOverlay.getBounds()==editor.levelDisplays[0].getBounds(); }
     static bool tuneButtonBesideVoices(const QinSynthEditor& editor)
     { return editor.tuneButton.getX()<editor.voiceCount.getX(); }
     static void showDelay(QinSynthEditor& editor) { editor.showFxSection(1); }
@@ -243,9 +268,16 @@ struct QinSynthEditorTestAccess
     static bool mergeVisible(const QinSynthEditor& editor)
     { return editor.filterMergeSlider.isVisible(); }
     static bool timesFiveVisible(const QinSynthEditor& editor)
-    { return editor.timesFiveButton.isVisible(); }
+    {
+        for(size_t index=0;index<editor.timesFiveButtons.size();++index)
+            if(editor.timesFiveButtons[index].isVisible()!=(int(index)==editor.currentEnvelope)) return false;
+        return true;
+    }
     static void timesFive(QinSynthEditor& editor)
-    { editor.timesFiveButton.setToggleState(!editor.timesFiveButton.getToggleState(),juce::sendNotificationSync); }
+    {
+        auto& button=editor.timesFiveButtons[size_t(editor.currentEnvelope)];
+        button.setToggleState(!button.getToggleState(),juce::sendNotificationSync);
+    }
     static void tick(QinSynthEditor& editor) { editor.timerCallback(); }
     static bool playVisible(const QinSynthEditor& editor)
     { return editor.polyLegatoButton.isVisible() && editor.legatoRule.isVisible()
@@ -1269,13 +1301,22 @@ int main(int argc,char** argv)
                     resonancePixels+=baselineResonance.getPixelAt(x,y)!=activeResonance.getPixelAt(x,y);
             if(monitored.getLiveFilterResonance()<earlyResonance+.01f
                || !QinSynthEditorTestAccess::resonanceIndicatorActive(editor)
+               || !QinSynthEditorTestAccess::modulationOverlayActive(editor)
                || resonancePixels<20
                || std::abs(monitored.parameters.getRawParameterValue("filterResonance")->load()-30)>.1f)
                 throw std::runtime_error("MOD resonance must animate its slider marker and filter curve without changing the host value");
             set(monitored,"modDepth",0); monitored.processBlock(audio,note);
             QinSynthEditorTestAccess::tick(editor);
-            if(QinSynthEditorTestAccess::resonanceIndicatorActive(editor))
+            if(QinSynthEditorTestAccess::resonanceIndicatorActive(editor)
+                || QinSynthEditorTestAccess::modulationOverlayActive(editor))
                 throw std::runtime_error("The resonance modulation marker must clear when MOD depth is zero");
+            set(monitored,"modTarget",float(qin::modTargetIndex("osc1Level")));
+            set(monitored,"modDepth",80);
+            monitored.processBlock(audio,note); QinSynthEditorTestAccess::tick(editor);
+            if(monitored.getLiveModulation().target!=qin::modTargetIndex("osc1Level")
+               || !QinSynthEditorTestAccess::modulationOverlayOnLevel(editor)
+               || std::abs(monitored.parameters.getRawParameterValue("osc1Level")->load()-80.f)>.1f)
+                throw std::runtime_error("Direct MOD destinations must animate their effective value without changing the host control");
         }
         {
             auto plainOwner=std::make_unique<QinSynthProcessor>();
@@ -1429,18 +1470,23 @@ int main(int argc,char** argv)
                || QinSynthEditorTestAccess::fmVisible(editor,1))
                 throw std::runtime_error("FM controls must follow the selected OSC tab");
             if(!QinSynthEditorTestAccess::octaveReadoutVisible(editor,0)
+               || !QinSynthEditorTestAccess::levelReadoutVisible(editor,0)
                || !QinSynthEditorTestAccess::fineReadoutLayout(editor,0)
                || QinSynthEditorTestAccess::octaveReadoutVisible(editor,1)
                || QinSynthEditorTestAccess::tuningMenuVisible(editor))
                 throw std::runtime_error("Octave readout and hidden TUNE menu must initialize correctly");
             QinSynthEditorTestAccess::setOctave(editor,0,-2);
             QinSynthEditorTestAccess::setFine(editor,0,650);
+            QinSynthEditorTestAccess::setLevel(editor,0,65);
             if(std::abs(preview.parameters.getRawParameterValue("osc1Octave")->load()+2)>1.e-6
                || std::abs(preview.parameters.getRawParameterValue("osc1Fine")->load()-650)>.1
+               || std::abs(preview.parameters.getRawParameterValue("osc1Level")->load()-65)>.1
+               || !QinSynthEditorTestAccess::levelShows(editor,0,"LEVEL 65.0%")
                || !QinSynthEditorTestAccess::fineShowsCents(editor,0,"FINE +650.0c"))
-                throw std::runtime_error("Octave and Fine readouts must update separate host parameters");
+                throw std::runtime_error("Level, Octave, and Fine readouts must update separate host parameters");
             QinSynthEditorTestAccess::setOctave(editor,0,0);
             QinSynthEditorTestAccess::setFine(editor,0,0);
+            QinSynthEditorTestAccess::setLevel(editor,0,80);
             QinSynthEditorTestAccess::openTuningMenu(editor);
             if(!QinSynthEditorTestAccess::tuningMenuVisible(editor)
                || !QinSynthEditorTestAccess::tuneButtonBesideVoices(editor))
@@ -1560,7 +1606,7 @@ int main(int argc,char** argv)
                         different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
                 return different;
             };
-            if(changes({34,246,384,64},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
+            if(changes({34,198,270,54},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
                 throw std::runtime_error("OSC waveform plot must follow the square pad");
             QinSynthEditorTestAccess::setWave(editor,0,{0.f,0.f});
             QinSynthEditorTestAccess::setSlide(editor,80,0);
@@ -1667,24 +1713,39 @@ int main(int argc,char** argv)
                 QinSynthTestAccess::envelopeTimes(scaled,0),
                 QinSynthTestAccess::envelopeTimes(scaled,1),
                 QinSynthTestAccess::envelopeTimes(scaled,2) };
-            QinSynthEditorTestAccess::timesFive(editor);
-            if(scaled.parameters.getRawParameterValue("envTimesFive")->load()<.5f)
-                throw std::runtime_error("The time multiplier button must update its host parameter");
-            for(int env=0;env<3;++env)
+            constexpr std::array<const char*,3> ids {"ampTimesFive","fltTimesFive","modTimesFive"};
+            for(int selected=0;selected<3;++selected)
             {
-                const auto expanded=QinSynthTestAccess::envelopeTimes(scaled,env);
-                for(int stage=0;stage<3;++stage)
-                    if(std::abs(expanded[size_t(stage)]-5.f*original[size_t(env)][size_t(stage)])>.001f)
-                        throw std::runtime_error("The time multiplier must affect all three ADSR time controls in every envelope");
+                QinSynthEditorTestAccess::envelope(editor,selected);
+                QinSynthEditorTestAccess::timesFive(editor);
+                for(int env=0;env<3;++env)
+                {
+                    const auto actual=QinSynthTestAccess::envelopeTimes(scaled,env);
+                    const auto multiplier=env==selected ? 5.f : 1.f;
+                    if(!QinSynthEditorTestAccess::timesFiveVisible(editor)
+                       || std::abs(scaled.parameters.getRawParameterValue(ids[size_t(env)])->load()
+                           -(env==selected ? 1.f : 0.f))>.01f)
+                        throw std::runtime_error("Each envelope must retain its own times-five switch state");
+                    for(int stage=0;stage<3;++stage)
+                        if(std::abs(actual[size_t(stage)]-multiplier*original[size_t(env)][size_t(stage)])>.001f)
+                            throw std::runtime_error("Times-five must affect only the selected envelope");
+                }
+                QinSynthEditorTestAccess::timesFive(editor);
             }
+            QinSynthEditorTestAccess::envelope(editor,1);
+            QinSynthEditorTestAccess::timesFive(editor);
             set(scaled,"fltRelease",5000.f);
-            if(std::abs(QinSynthTestAccess::envelopeTimes(scaled,1)[2]-25.f)>.001f
-               || scaled.getTailLengthSeconds()<125.)
-                throw std::runtime_error("The time multiplier must extend a 5000 ms release to 25 seconds and report its tail");
+            if(std::abs(QinSynthTestAccess::envelopeTimes(scaled,1)[2]-25.f)>.001f)
+                throw std::runtime_error("The FLT time multiplier must extend a 5000 ms release to 25 seconds");
             set(scaled,"fltRelease",300.f);
             if(std::abs(scaled.parameters.getRawParameterValue("fltAttack")->load()-10.f)>.1f
                || std::abs(scaled.parameters.getRawParameterValue("attack")->load()-.01f)>.0001f)
                 throw std::runtime_error("The time multiplier must preserve the underlying envelope values");
+            QinSynthEditorTestAccess::timesFive(editor);
+            QinSynthEditorTestAccess::envelope(editor,0);
+            QinSynthEditorTestAccess::timesFive(editor);
+            if(scaled.getTailLengthSeconds()<125.)
+                throw std::runtime_error("The AMP time multiplier must report its extended audio tail");
             QinSynthEditorTestAccess::timesFive(editor);
             for(int env=0;env<3;++env)
             {
@@ -1695,6 +1756,68 @@ int main(int argc,char** argv)
             }
             if(std::abs(scaled.parameters.getRawParameterValue("fltSustain")->load())>1.e-6f)
                 throw std::runtime_error("The time multiplier must leave Sustain unchanged");
+        }
+        for(int envelope=0;envelope<3;++envelope)
+        {
+            auto separateOwner=std::make_unique<QinSynthProcessor>();
+            auto mergedOwner=std::make_unique<QinSynthProcessor>();
+            auto& separate=*separateOwner; auto& merged=*mergedOwner;
+            for(auto* instrument:{&separate,&merged})
+            {
+                set(*instrument,"verbMix",0);
+                set(*instrument,"attack",.2f); set(*instrument,"fltAttack",200.f);
+                set(*instrument,"modAttack",.2f);
+                set(*instrument,"ampSustain",100); set(*instrument,"fltSustain",100);
+                set(*instrument,"modSustain",100);
+                instrument->prepareToPlay(48000,256);
+            }
+            constexpr std::array<const char*,3> mergeIds {"ampMerge","fltMerge","modMerge"};
+            set(merged,mergeIds[size_t(envelope)],100);
+            juce::AudioBuffer<float> dry(2,256),wet(2,256);
+            juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            separate.processBlock(dry,note); merged.processBlock(wet,note); note.clear();
+            for(int blockIndex=0;blockIndex<10;++blockIndex)
+            { separate.processBlock(dry,note); merged.processBlock(wet,note); }
+            note.addEvent(juce::MidiMessage::noteOn(1,64,1.f),0);
+            separate.processBlock(dry,note); merged.processBlock(wet,note);
+            if(QinSynthTestAccess::effectiveEnvelope(merged,1,envelope)
+                  <=QinSynthTestAccess::effectiveEnvelope(separate,1,envelope)+.03f)
+                throw std::runtime_error("Envelope Merge must give a new overlapping note the shared envelope level");
+            const auto other=(envelope+1)%3;
+            if(std::abs(QinSynthTestAccess::effectiveEnvelope(merged,1,other)
+                 -QinSynthTestAccess::effectiveEnvelope(separate,1,other))>.01f)
+                throw std::runtime_error("Envelope Merge must affect only the selected envelope");
+            if(envelope==0)
+            {
+                set(merged,"release",.01f);
+                note.clear(); note.addEvent(juce::MidiMessage::noteOff(1,64),0);
+                for(int blockIndex=0;blockIndex<50;++blockIndex)
+                { merged.processBlock(wet,note); note.clear(); }
+                if(QinSynthTestAccess::voiceActive(merged,1) || !QinSynthTestAccess::voiceActive(merged,0))
+                    throw std::runtime_error("Merged AMP must release one note while another remains held");
+            }
+        }
+        {
+            QinSynthProcessor automation;
+            QinSynthEditor editor(automation);
+            constexpr std::array<const char*,3> ids {"ampMerge","fltMerge","modMerge"};
+            for(int env=0;env<3;++env)
+            {
+                QinSynthEditorTestAccess::envelope(editor,env);
+                if(!QinSynthEditorTestAccess::envelopeMergeVisible(editor,env))
+                    throw std::runtime_error("Each ENV tab needs its horizontal Merge slider below ADSRC");
+                QinSynthEditorTestAccess::setEnvelopeMerge(editor,env,25.f*(env+1));
+                if(std::abs(automation.parameters.getRawParameterValue(ids[size_t(env)])->load()-25.f*(env+1))>.1f)
+                    throw std::runtime_error("Each envelope Merge slider must retain its own host value");
+            }
+            juce::MemoryBlock state;
+            automation.getStateInformation(state);
+            QinSynthProcessor restored;
+            restored.setStateInformation(state.getData(),int(state.getSize()));
+            for(int env=0;env<3;++env)
+                if(std::abs(restored.parameters.getRawParameterValue(ids[size_t(env)])->load()-25.f*(env+1))>.1f)
+                    throw std::runtime_error("The three Merge controls must survive host state restoration");
         }
         std::cout<<"Qin Synth processor checks passed\n";
         return 0;
