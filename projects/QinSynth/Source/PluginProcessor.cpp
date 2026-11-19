@@ -20,6 +20,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id,1},name,
             juce::NormalisableRange<float>{lo,hi,step},initial,juce::AudioParameterFloatAttributes().withLabel(unit)));
     };
+    const auto addGainLevel=[&result](const juce::String& id,const juce::String& name,float initial)
+    {
+        const auto attributes=juce::AudioParameterFloatAttributes().withLabel("dB")
+            .withStringFromValueFunction([](float percent,int)
+            { return percent<=0.f ? juce::String("-INF") : juce::String(20.f*std::log10(percent*.01f),1); })
+            .withValueFromStringFunction([](const juce::String& text)
+            {
+                if(text.containsIgnoreCase("inf")) return 0.f;
+                return std::clamp(100.f*std::pow(10.f,text.getFloatValue()/20.f),0.f,100.f);
+            });
+        result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{id,1},name,
+            juce::NormalisableRange<float>{0.f,100.f,.1f},initial,attributes));
+    };
     const auto addEnvelopeTime=[&result](const juce::String& id,const juce::String& name,bool milliseconds,float initial)
     {
         const auto low=milliseconds ? 1.f : .001f;
@@ -36,7 +49,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         const juce::String prefix(prefixes[size_t(osc)]), title="Oscillator "+juce::String(osc+1);
         add(prefix+"WaveX",title+" waveform horizontal",0,100,.1f,osc==1 ? 100.f : 0.f,"%");
         add(prefix+"WaveY",title+" waveform vertical",0,100,.1f,osc==2 ? 100.f : 0.f,"%");
-        add(prefix+"Level",title+" level",0,100,.1f,osc==0 ? 80.f : 0.f,"%");
+        addGainLevel(prefix+"Level",title+" level",osc==0 ? 80.f : 0.f);
         add(prefix+"Octave",title+" octave",-2,2,1,0,"oct");
         add(prefix+"Fine",title+" fine pitch",-1200,1200,.1f,0,"cents");
         add(prefix+"Unison",title+" unison",1,8,1,1,"voices");
@@ -127,7 +140,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     for(const auto* id:{"ampTimesFive","fltTimesFive","modTimesFive"})
         result.add(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{id,1},
             juce::String(id).replace("TimesFive"," envelope times x5"),false));
-    add("noiseLevel","Noise level",0,100,.1f,30,"%");
+    addGainLevel("noiseLevel","Noise level",30.f);
     result.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"tuneRoot",1},
         "Tuning root",juce::StringArray{"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"},0));
     add("tuneA4","Tuning A4 reference",400,480,.1f,440,"Hz");

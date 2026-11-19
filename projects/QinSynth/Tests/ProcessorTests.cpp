@@ -211,6 +211,10 @@ struct QinSynthEditorTestAccess
         && !editor.sliders[size_t(osc*6)].isVisible(); }
     static bool levelShows(const QinSynthEditor& editor,int osc,const juce::String& text)
     { return editor.levelDisplays[size_t(osc)].getReadoutText()==text; }
+    static juce::String noiseLevelText(const QinSynthEditor& editor,double value)
+    { return editor.noiseSliders[0].textFromValueFunction(value); }
+    static double noiseLevelFromText(const QinSynthEditor& editor,const juce::String& text)
+    { return editor.noiseSliders[0].valueFromTextFunction(text); }
     static void setOctave(QinSynthEditor& editor,int osc,int octave)
     { editor.octaveDisplays[size_t(osc)].setValue(octave,juce::sendNotificationSync); }
     static void setFine(QinSynthEditor& editor,int osc,float cents)
@@ -1507,12 +1511,29 @@ int main(int argc,char** argv)
             if(std::abs(preview.parameters.getRawParameterValue("osc1Octave")->load()+2)>1.e-6
                || std::abs(preview.parameters.getRawParameterValue("osc1Fine")->load()-650)>.1
                || std::abs(preview.parameters.getRawParameterValue("osc1Level")->load()-65)>.1
-               || !QinSynthEditorTestAccess::levelShows(editor,0,"LEVEL 65.0%")
+               || !QinSynthEditorTestAccess::levelShows(editor,0,"LEVEL -3.7 dB")
                || !QinSynthEditorTestAccess::fineShowsCents(editor,0,"FINE +650.0c"))
                 throw std::runtime_error("Level, Octave, and Fine readouts must update separate host parameters");
             QinSynthEditorTestAccess::setOctave(editor,0,0);
             QinSynthEditorTestAccess::setFine(editor,0,0);
             QinSynthEditorTestAccess::setLevel(editor,0,80);
+            QinSynthEditorTestAccess::setLevel(editor,1,100);
+            QinSynthEditorTestAccess::setLevel(editor,2,0);
+            if(!QinSynthEditorTestAccess::levelShows(editor,0,"LEVEL -1.9 dB")
+               || !QinSynthEditorTestAccess::levelShows(editor,1,"LEVEL 0.0 dB")
+               || !QinSynthEditorTestAccess::levelShows(editor,2,"LEVEL -INF dB")
+               || QinSynthEditorTestAccess::noiseLevelText(editor,50)!="-6.0 dB"
+               || QinSynthEditorTestAccess::noiseLevelText(editor,0)!="-INF dB"
+               || std::abs(QinSynthEditorTestAccess::noiseLevelFromText(editor,"-6 dB")-50.1187)>0.1)
+                throw std::runtime_error("Oscillator and noise Levels must show dB while keeping linear gain values");
+            for(const auto* id:{"osc1Level","osc2Level","osc3Level","noiseLevel"})
+            {
+                auto* parameter=preview.parameters.getParameter(id);
+                if(parameter==nullptr || parameter->getLabel()!="dB"
+                   || parameter->getText(parameter->convertTo0to1(50.f),16)!="-6.0"
+                   || std::abs(parameter->convertFrom0to1(parameter->getValueForText("-6 dB"))-50.1187f)>.15f)
+                    throw std::runtime_error("Level host readouts must use dB without changing their saved gain range");
+            }
             QinSynthEditorTestAccess::openTuningMenu(editor);
             if(!QinSynthEditorTestAccess::tuningMenuVisible(editor)
                || !QinSynthEditorTestAccess::tuneButtonBesideVoices(editor))

@@ -18,7 +18,7 @@
 | Retrig | Restarts this oscillator's waveform phase at each note onset when enabled. |
 | N | Enables the noise oscillator and opens its tuning, filter, and style controls. |
 | Noise Style | Selects white, pink, or sparse velvet noise before the tuned filter. |
-| Noise Level | Sets the noise oscillator level independently of the three tonal oscillators. |
+| Noise Level | Sets the noise oscillator level, shown in dB from silence to 0 dB. |
 | Noise Tune | Shifts the note-tracked noise resonance by up to two octaves in semitones. |
 | Noise HPF | Removes noise below the selected high-pass frequency. |
 | Noise Pan | Positions the noise oscillator independently in stereo. |
@@ -30,7 +30,7 @@
 | Transformer | Adds Ren's transformer to the output and saves CPU when off. |
 | DELAY tab | Opens Lan's delay and reverb controls. |
 | Osc Wave | Drag within the square to blend the selected oscillator between saw, pulse, triangle, and sine waves. |
-| Osc Level | Drag to set this oscillator's level from zero to 100 percent; double-click to reset. |
+| Osc Level | Drag to set this oscillator's level from silence to 0 dB; double-click to reset. |
 | Osc Octave | Transposes the selected oscillator by whole octaves. |
 | Osc Fine | Drag to shift this oscillator by up to 1200 cents in either direction; double-click to reset. |
 | Osc Unison | Sets the number of copies of the selected oscillator. |

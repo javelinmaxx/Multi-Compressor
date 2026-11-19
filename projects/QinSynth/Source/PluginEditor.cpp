@@ -57,11 +57,15 @@ constexpr std::array<Control,44> controls {{
     {"phaseMotion","PHASE MOTION","Sets how strongly note onsets change Lan's phase scatter."}
 }};
 constexpr std::array<Control,4> noiseControls {{
-    {"noiseLevel","LEVEL","Sets the noise oscillator level independently of the three tonal oscillators."},
+    {"noiseLevel","LEVEL","Sets the noise oscillator level, shown in dB from silence to 0 dB."},
     {"noiseTune","TUNE","Shifts the note-tracked noise resonance by up to two octaves in semitones."},
     {"noiseHpf","HPF","Removes noise below the selected high-pass frequency."},
     {"noisePan","PAN","Positions the noise oscillator independently in stereo."}
 }};
+juce::String gainDecibels(double percent)
+{
+    return percent<=0.0 ? "-INF dB" : juce::String(20.0*std::log10(percent*.01),1)+" dB";
+}
 void styleTab(juce::TextButton& button,const juce::String& title,int group)
 {
     button.setButtonText(title); button.setClickingTogglesState(true); button.setRadioGroupId(group);
@@ -211,6 +215,7 @@ QinVoiceSlider::QinVoiceSlider()
 }
 juce::String QinVoiceSlider::getReadoutText() const
 {
+    if(prefix=="LEVEL") return prefix+" "+gainDecibels(getValue());
     auto number=decimalPlaces>0 ? juce::String(getValue(),decimalPlaces)
         : juce::String(juce::roundToInt(getValue()));
     if(showPositiveSign && getValue()>0) number="+"+number;
@@ -370,11 +375,11 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     {
         auto& level=levelDisplays[i];
         level.setRange(0,100,.1);
-        level.setSuffix("%");
+        level.setSuffix("dB");
         level.setReadoutFormat("LEVEL",1,false);
         level.setMouseDragSensitivity(180);
         level.setDoubleClickReturnValue(true,i==0 ? 80.0 : 0.0);
-        level.setTooltip("Drag to set this oscillator's level from zero to 100 percent; double-click to reset.");
+        level.setTooltip("Drag to set this oscillator's level from silence to 0 dB; double-click to reset.");
         level.setComponentID("osc"+juce::String(int(i)+1)+"Level");
         addAndMakeVisible(level);
         levelAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,
@@ -519,7 +524,13 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     { return (value>0 ? "+" : "")+juce::String(value,1)+" st"; };
     noiseSliders[2].textFromValueFunction=[](double value)
     { return juce::String(juce::roundToInt(value))+" Hz"; };
-    noiseSliders[1].updateText(); noiseSliders[2].updateText();
+    noiseSliders[0].textFromValueFunction=gainDecibels;
+    noiseSliders[0].valueFromTextFunction=[](const juce::String& text)
+    {
+        if(text.containsIgnoreCase("inf")) return 0.0;
+        return std::clamp(100.0*std::pow(10.0,text.getDoubleValue()/20.0),0.0,100.0);
+    };
+    noiseSliders[0].updateText(); noiseSliders[1].updateText(); noiseSliders[2].updateText();
     for(size_t i=0;i<detuneShapeSliders.size();++i)
     {
         auto& slider=detuneShapeSliders[i]; auto& label=detuneShapeLabels[i];
