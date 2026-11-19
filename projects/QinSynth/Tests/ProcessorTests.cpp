@@ -143,10 +143,34 @@ struct QinSynthEditorTestAccess
     { return editor.noiseStyle.isVisible() && editor.noiseSliders[0].isVisible() && !editor.waves[0].isVisible(); }
     static bool fmVisible(const QinSynthEditor& editor,int osc)
     { return editor.fmAmountSliders[size_t(osc)].isVisible() && editor.fmSources[size_t(osc)].isVisible(); }
+    static bool fmGridLayout(const QinSynthEditor& editor)
+    {
+        for(int osc=0;osc<3;++osc)
+        {
+            const auto& source=editor.fmSources[size_t(osc)];
+            const auto& amount=editor.fmAmountSliders[size_t(osc)];
+            const auto& shape=editor.detuneShapeSliders[size_t(osc)];
+            if(source.getSliderStyle()!=juce::Slider::RotaryHorizontalVerticalDrag
+               || source.getY()!=shape.getY() || amount.getY()!=editor.sliders[35].getY()
+               || source.getX()<=shape.getX() || amount.getX()<=editor.sliders[35].getX()
+               || amount.getBounds().intersects(editor.sliders[35].getBounds())) return false;
+            const std::array<juce::Rectangle<int>,8> controls {
+                editor.sliders[size_t(osc*6+2)].getBounds(),
+                editor.sliders[size_t(osc*6+3)].getBounds(),
+                shape.getBounds(),source.getBounds(),
+                editor.sliders[size_t(osc*6+4)].getBounds(),
+                editor.sliders[size_t(osc*6+5)].getBounds(),
+                editor.sliders[35].getBounds(),amount.getBounds()};
+            for(size_t i=0;i<controls.size();++i)
+                for(size_t j=i+1;j<controls.size();++j)
+                    if(controls[i].intersects(controls[j])) return false;
+        }
+        return true;
+    }
     static void setFmAmount(QinSynthEditor& editor,int osc,float amount)
     { editor.fmAmountSliders[size_t(osc)].setValue(amount,juce::sendNotificationSync); }
     static void selectFmSource(QinSynthEditor& editor,int osc,int item)
-    { editor.fmSources[size_t(osc)].setSelectedId(item,juce::sendNotificationSync); }
+    { editor.fmSources[size_t(osc)].setValue(item-1,juce::sendNotificationSync); }
     static int noiseStyleCount(const QinSynthEditor& editor) { return editor.noiseStyle.getNumItems(); }
     static void selectNoiseStyle(QinSynthEditor& editor,int style)
     { editor.noiseStyle.setSelectedId(style,juce::sendNotificationSync); }
@@ -1105,7 +1129,8 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,0)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,2)
-               || !QinSynthEditorTestAccess::oscillatorLayout(editor))
+               || !QinSynthEditorTestAccess::oscillatorLayout(editor)
+               || !QinSynthEditorTestAccess::fmGridLayout(editor))
                 throw std::runtime_error("Polyphony readout and oscillator pads must be available");
             if(!QinSynthEditorTestAccess::fmVisible(editor,0)
                || QinSynthEditorTestAccess::fmVisible(editor,1))

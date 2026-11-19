@@ -396,17 +396,23 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
 
         auto& source=fmSources[i];
         auto& sourceLabel=fmSourceLabels[i];
-        source.addItem("Off",1);
-        for(int osc=0;osc<3;++osc) source.addItem("OSC "+juce::String(osc+1),osc+2);
-        source.addItem("Noise",5);
-        source.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a));
-        source.setColour(juce::ComboBox::textColourId,stageStyle::foreground);
+        source.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        source.setTextBoxStyle(juce::Slider::TextBoxBelow,false,82,17);
+        source.setTextBoxIsEditable(false);
+        source.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        source.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+        source.textFromValueFunction=[](double value)
+        {
+            constexpr std::array<const char*,5> names {"OFF","OSC 1","OSC 2","OSC 3","NOISE"};
+            return juce::String(names[size_t(std::clamp(juce::roundToInt(value),0,4))]);
+        };
         sourceLabel.setText("FM SOURCE",juce::dontSendNotification);
         sourceLabel.setJustificationType(juce::Justification::centred);
         sourceLabel.setFont(juce::FontOptions(9.f));
         sourceLabel.setColour(juce::Label::textColourId,stageStyle::secondary);
         addAndMakeVisible(source); addAndMakeVisible(sourceLabel);
-        fmSourceAttachments[i]=std::make_unique<State::ComboBoxAttachment>(synth.parameters,prefix+"FmSource",source);
+        fmSourceAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,prefix+"FmSource",source);
+        source.updateText();
         const auto sourceHint="Selects an oscillator or noise as the FM source, using the prior sample for feedback cycles.";
         source.setTooltip(sourceHint); sourceLabel.setTooltip(sourceHint);
     }
@@ -752,17 +758,17 @@ void QinSynthEditor::resized()
         for(int control=0;control<6;++control)
         {
             const auto index=size_t(i*6+control);
-            const auto x=control<2 ? 138+control*97 : 35+((control-2)%2)*132;
+            const auto x=control<2 ? 138+control*97 : 35+((control-2)%2)*96;
             const auto y=control<2 ? 139 : 314+((control-2)/2)*80;
-            const auto width=control<2 ? 86 : 103;
+            const auto width=86;
             labels[index].setBounds(x,y,width,15); sliders[index].setBounds(x,y+15,width,65);
         }
-        detuneShapeLabels[size_t(i)].setBounds(299,314,103,15);
-        detuneShapeSliders[size_t(i)].setBounds(299,329,103,65);
-        fmSourceLabels[size_t(i)].setBounds(299,218,103,10);
-        fmSources[size_t(i)].setBounds(299,228,103,18);
-        fmAmountLabels[size_t(i)].setBounds(299,394,103,15);
-        fmAmountSliders[size_t(i)].setBounds(299,409,103,65);
+        detuneShapeLabels[size_t(i)].setBounds(227,314,86,15);
+        detuneShapeSliders[size_t(i)].setBounds(227,329,86,65);
+        fmSourceLabels[size_t(i)].setBounds(323,314,86,15);
+        fmSources[size_t(i)].setBounds(323,329,86,65);
+        fmAmountLabels[size_t(i)].setBounds(323,394,86,15);
+        fmAmountSliders[size_t(i)].setBounds(323,409,86,65);
     }
     noiseButton.setBounds(363,101,55,27);
     noiseStyleLabel.setBounds(34,146,118,15); noiseStyle.setBounds(34,162,154,27);
@@ -772,7 +778,7 @@ void QinSynthEditor::resized()
         noiseLabels[i].setBounds(x,y,103,15); noiseSliders[i].setBounds(x,y+15,103,65);
     }
     timesFiveButton.setBounds(622,414,50,49);
-    labels[35].setBounds(299,394,103,15); sliders[35].setBounds(299,409,103,65);
+    labels[35].setBounds(227,394,86,15); sliders[35].setBounds(227,409,86,65);
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control)
         {

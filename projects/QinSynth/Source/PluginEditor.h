@@ -96,7 +96,7 @@ private:
     std::array<juce::Label,3> detuneShapeLabels;
     std::array<juce::Slider,3> fmAmountSliders;
     std::array<juce::Label,3> fmAmountLabels;
-    std::array<juce::ComboBox,3> fmSources;
+    std::array<juce::Slider,3> fmSources;
     std::array<juce::Label,3> fmSourceLabels;
     juce::ComboBox noiseStyle;
     juce::Label noiseStyleLabel;
@@ -128,7 +128,7 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>,4> noiseSliderAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> detuneShapeAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> fmAmountAttachments;
-    std::array<std::unique_ptr<State::ComboBoxAttachment>,3> fmSourceAttachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,3> fmSourceAttachments;
     std::unique_ptr<State::ComboBoxAttachment> noiseStyleAttachment;
     std::unique_ptr<State::SliderAttachment> filterMergeAttachment;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(QinSynthEditor)
