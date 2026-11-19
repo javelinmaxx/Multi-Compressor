@@ -49,6 +49,7 @@ public:
     void setStateInformation(const void*,int) override;
     DriveScope getDriveScope() const noexcept;
     float getLiveFilterCutoff() const noexcept { return liveFilterCutoff.load(std::memory_order_relaxed); }
+    float getLiveFilterResonance() const noexcept { return liveFilterResonance.load(std::memory_order_relaxed); }
     int getActiveVoiceCount() const noexcept { return activeVoiceCount.load(std::memory_order_relaxed); }
     double getHostTempo() const noexcept { return hostTempo.load(std::memory_order_relaxed); }
     juce::AudioProcessorValueTreeState parameters;
@@ -127,6 +128,7 @@ private:
     std::array<std::atomic<float>,driveScopeCapturePoints> driveScopeInput {}, driveScopeOutput {};
     std::atomic<uint32_t> driveScopeEpoch {0};
     std::atomic<float> liveFilterCutoff {0};
+    std::atomic<float> liveFilterResonance {0};
     std::atomic<int> activeVoiceCount {0};
     uint32_t driveScopeWrite=0, driveScopeCounter=0;
     lan::ReverbEngine reverb;

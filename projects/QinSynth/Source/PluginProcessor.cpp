@@ -215,6 +215,8 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
     for(auto& point:driveScopeOutput) point.store(0,std::memory_order_relaxed);
     driveScopeWrite=driveScopeCounter=0; driveScopeEpoch.store(0,std::memory_order_relaxed);
     liveFilterCutoff.store(0,std::memory_order_relaxed);
+    liveFilterResonance.store(parameters.getRawParameterValue("filterResonance")->load()*.01f,
+                              std::memory_order_relaxed);
     // The MIDI onset is the only source of tap/phase motion. Lan's spectral
     // resonance analyser and tame filters remain dormant in this instrument.
     reverb.prepare(sampleRate,false);
@@ -957,6 +959,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
     const auto voiceCutoff=cutoffWeight>1.e-5 ? float(std::exp(cutoffLogSum/cutoffWeight)) : 0.f;
     liveFilterCutoff.store(voiceCutoff>0 ? voiceCutoff+(masterCutoff-voiceCutoff)*smoothedFilterMerge : 0.f,
                            std::memory_order_relaxed);
+    liveFilterResonance.store(settings.resonance,std::memory_order_relaxed);
     if(settings.driveMode!=lastDriveMode)
     {
         if(driveWeights[size_t(settings.driveMode)].getCurrentValue()<=0.f)

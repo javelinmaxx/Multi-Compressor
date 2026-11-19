@@ -32,7 +32,7 @@
 | Osc Wave | Drag within the square to blend the selected oscillator between saw, pulse, triangle, and sine waves. |
 | Osc Level | Sets the selected oscillator's contribution to the mix. |
 | Osc Octave | Transposes the selected oscillator by whole octaves. |
-| Osc Fine | Offsets the selected oscillator by up to 1200 cents in either direction. |
+| Osc Fine | Drag to shift this oscillator by up to 1200 cents in either direction; double-click to reset. |
 | Osc Unison | Sets the number of copies of the selected oscillator. |
 | Osc Detune | Offsets the selected oscillator's unison copies in cents. |
 | Osc Detune Shape | Moves inner unison pitches toward center at -100% or toward the outer voices at +100%. |
@@ -60,7 +60,7 @@
 | MOD Target | Routes the modulation envelope to any continuous synth control. |
 | FLT Type | Selects the TB-303, 18 dB Sallen-Key, or 12/24 dB digital filter model. |
 | FLT Freq | Sets the filter's base cutoff on a logarithmic frequency scale. |
-| FLT Resonance | Emphasizes the cutoff with finer control at high resonance. |
+| FLT Resonance | Emphasizes the cutoff while a cyan marker shows the MOD envelope’s effective resonance. |
 | FLT Key Follow | Raises the cutoff with MIDI note pitch. |
 | FLT Env Amount | Sets how far the filter envelope moves the cutoff. |
 | FLT Merge | Blends per-voice filters into one shared master filter at 100%. |

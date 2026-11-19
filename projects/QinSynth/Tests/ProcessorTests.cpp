@@ -111,9 +111,24 @@ struct QinSynthEditorTestAccess
     { editor.detuneShapeSliders[size_t(index)].setValue(shape,juce::sendNotificationSync); }
     static bool oscillatorLayout(const QinSynthEditor& editor)
     { return editor.sliders[0].getY()<editor.sliders[2].getY()
-        && editor.sliders[1].getY()<editor.sliders[2].getY()
+        && editor.fineDisplays[0].getY()<editor.sliders[2].getY()
         && editor.sliders[35].getY()>editor.sliders[2].getY()
         && editor.detuneShapeSliders[0].isVisible(); }
+    static bool fineReadoutLayout(const QinSynthEditor& editor,int osc)
+    {
+        const auto& fine=editor.fineDisplays[size_t(osc)];
+        const auto& octave=editor.octaveDisplays[size_t(osc)];
+        return fine.isVisible() && fine.getRight()<octave.getX()
+            && fine.getY()==octave.getY() && fine.getReadoutText().startsWith("FINE ")
+            && !editor.sliders[size_t(osc*6+1)].isVisible();
+    }
+    static bool compactHeaderLayout(const QinSynthEditor& editor)
+    {
+        return editor.filterType.getY()<120 && editor.fxTabs[0].getY()<120
+            && editor.envelopeTabs[0].getY()<435
+            && editor.sliders[31].getWidth()>200
+            && editor.filterMergeSlider.getWidth()>200;
+    }
     static bool voiceFxVisible(const QinSynthEditor& editor)
     { return editor.sliders[37].isVisible() && editor.sliders[36].isVisible(); }
     static bool delayFxVisible(const QinSynthEditor& editor)
@@ -177,7 +192,11 @@ struct QinSynthEditorTestAccess
     static void setOctave(QinSynthEditor& editor,int osc,int octave)
     { editor.octaveDisplays[size_t(osc)].setValue(octave,juce::sendNotificationSync); }
     static void setFine(QinSynthEditor& editor,int osc,float cents)
-    { editor.sliders[size_t(osc*6+1)].setValue(cents,juce::sendNotificationSync); }
+    { editor.fineDisplays[size_t(osc)].setValue(cents,juce::sendNotificationSync); }
+    static bool fineShowsCents(const QinSynthEditor& editor,int osc,const juce::String& text)
+    { return editor.fineDisplays[size_t(osc)].getReadoutText()==text; }
+    static bool resonanceIndicatorActive(const QinSynthEditor& editor)
+    { return editor.resonanceIndicator.isAnimating(); }
     static bool tuneButtonBesideVoices(const QinSynthEditor& editor)
     { return editor.tuneButton.getX()<editor.voiceCount.getX(); }
     static void showDelay(QinSynthEditor& editor) { editor.showFxSection(1); }
@@ -1205,7 +1224,9 @@ int main(int argc,char** argv)
             set(monitored,"verbMix",0); set(monitored,"drive",65);
             set(monitored,"filterType",3); set(monitored,"filterCutoff",500);
             set(monitored,"filterEnvAmount",100); set(monitored,"fltAttack",500);
-            set(monitored,"fltSustain",100); monitored.prepareToPlay(48000,256);
+            set(monitored,"fltSustain",100);
+            set(monitored,"modAttack",.5f); set(monitored,"modSustain",100);
+            monitored.prepareToPlay(48000,256);
             QinSynthEditor editor(monitored);
             juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer note;
             note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
@@ -1214,11 +1235,11 @@ int main(int argc,char** argv)
             if(QinSynthEditorTestAccess::activeLabel(editor)!="1 ACTIVE")
                 throw std::runtime_error("Active voice display must follow the audio processor");
             const auto firstCutoff=QinSynthEditorTestAccess::liveCutoff(editor);
-            const auto firstPlot=editor.createComponentSnapshot({455,166,218,90});
+            const auto firstPlot=editor.createComponentSnapshot({455,140,218,85});
             for(int blockIndex=0;blockIndex<24;++blockIndex) monitored.processBlock(audio,note);
             QinSynthEditorTestAccess::tick(editor);
             const auto lateCutoff=QinSynthEditorTestAccess::liveCutoff(editor);
-            const auto latePlot=editor.createComponentSnapshot({455,166,218,90});
+            const auto latePlot=editor.createComponentSnapshot({455,140,218,85});
             if(lateCutoff<firstCutoff*1.5f || !QinSynthEditorTestAccess::liveScope(editor))
                 throw std::runtime_error("Filter response and drive scope must follow active audio");
             int changed=0;
@@ -1232,6 +1253,29 @@ int main(int argc,char** argv)
                 driveDifference+=std::abs(scope.input[index]-scope.output[index]);
             if(scope.epoch==0 || driveDifference<.01)
                 throw std::runtime_error("Drive scope must show the processed waveform");
+            set(monitored,"filterResonance",30);
+            monitored.processBlock(audio,note); QinSynthEditorTestAccess::tick(editor);
+            const auto baselineResonance=editor.createComponentSnapshot({455,140,218,85});
+            set(monitored,"modTarget",float(qin::modTargetIndex("filterResonance")));
+            set(monitored,"modDepth",80);
+            monitored.processBlock(audio,note);
+            const auto earlyResonance=monitored.getLiveFilterResonance();
+            for(int blockIndex=0;blockIndex<4;++blockIndex) monitored.processBlock(audio,note);
+            QinSynthEditorTestAccess::tick(editor);
+            const auto activeResonance=editor.createComponentSnapshot({455,140,218,85});
+            int resonancePixels=0;
+            for(int y=0;y<baselineResonance.getHeight();y+=2)
+                for(int x=0;x<baselineResonance.getWidth();x+=2)
+                    resonancePixels+=baselineResonance.getPixelAt(x,y)!=activeResonance.getPixelAt(x,y);
+            if(monitored.getLiveFilterResonance()<earlyResonance+.01f
+               || !QinSynthEditorTestAccess::resonanceIndicatorActive(editor)
+               || resonancePixels<20
+               || std::abs(monitored.parameters.getRawParameterValue("filterResonance")->load()-30)>.1f)
+                throw std::runtime_error("MOD resonance must animate its slider marker and filter curve without changing the host value");
+            set(monitored,"modDepth",0); monitored.processBlock(audio,note);
+            QinSynthEditorTestAccess::tick(editor);
+            if(QinSynthEditorTestAccess::resonanceIndicatorActive(editor))
+                throw std::runtime_error("The resonance modulation marker must clear when MOD depth is zero");
         }
         {
             auto plainOwner=std::make_unique<QinSynthProcessor>();
@@ -1374,6 +1418,7 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
                || !QinSynthEditorTestAccess::outputSectionVisible(editor)
                || !QinSynthEditorTestAccess::compactFxKnobs(editor)
+               || !QinSynthEditorTestAccess::compactHeaderLayout(editor)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,0)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,2)
@@ -1384,14 +1429,16 @@ int main(int argc,char** argv)
                || QinSynthEditorTestAccess::fmVisible(editor,1))
                 throw std::runtime_error("FM controls must follow the selected OSC tab");
             if(!QinSynthEditorTestAccess::octaveReadoutVisible(editor,0)
+               || !QinSynthEditorTestAccess::fineReadoutLayout(editor,0)
                || QinSynthEditorTestAccess::octaveReadoutVisible(editor,1)
                || QinSynthEditorTestAccess::tuningMenuVisible(editor))
                 throw std::runtime_error("Octave readout and hidden TUNE menu must initialize correctly");
             QinSynthEditorTestAccess::setOctave(editor,0,-2);
             QinSynthEditorTestAccess::setFine(editor,0,650);
             if(std::abs(preview.parameters.getRawParameterValue("osc1Octave")->load()+2)>1.e-6
-               || std::abs(preview.parameters.getRawParameterValue("osc1Fine")->load()-650)>.1)
-                throw std::runtime_error("Octave display and Fine knob must update separate host parameters");
+               || std::abs(preview.parameters.getRawParameterValue("osc1Fine")->load()-650)>.1
+               || !QinSynthEditorTestAccess::fineShowsCents(editor,0,"FINE +650.0c"))
+                throw std::runtime_error("Octave and Fine readouts must update separate host parameters");
             QinSynthEditorTestAccess::setOctave(editor,0,0);
             QinSynthEditorTestAccess::setFine(editor,0,0);
             QinSynthEditorTestAccess::openTuningMenu(editor);
@@ -1433,8 +1480,14 @@ int main(int argc,char** argv)
                 throw std::runtime_error("FM source and amount controls must update host parameters");
             QinSynthEditorTestAccess::oscillator(editor,2);
             if(!QinSynthEditorTestAccess::fmVisible(editor,2)
-               || QinSynthEditorTestAccess::fmVisible(editor,0))
-                throw std::runtime_error("FM controls must switch with OSC tabs");
+               || QinSynthEditorTestAccess::fmVisible(editor,0)
+               || !QinSynthEditorTestAccess::fineReadoutLayout(editor,2))
+                throw std::runtime_error("FM and Fine controls must switch with OSC tabs");
+            QinSynthEditorTestAccess::setFine(editor,2,-1200);
+            if(std::abs(preview.parameters.getRawParameterValue("osc3Fine")->load()+1200)>.1
+               || !QinSynthEditorTestAccess::fineShowsCents(editor,2,"FINE -1200.0c"))
+                throw std::runtime_error("The third oscillator Fine readout must retain its full cent range");
+            QinSynthEditorTestAccess::setFine(editor,2,0);
             QinSynthEditorTestAccess::oscillator(editor,0);
             QinSynthEditorTestAccess::setDetuneShape(editor,0,75.f);
             if(std::abs(preview.parameters.getRawParameterValue("osc1DetuneShape")->load()-75.f)>.1f)
@@ -1515,15 +1568,15 @@ int main(int argc,char** argv)
                || changes({297,554,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
                 throw std::runtime_error("Legato curve preview must follow the Shape knob");
             QinSynthEditorTestAccess::setSlide(editor,80,50);
-            if(changes({455,471,218,46},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
+            if(changes({455,448,218,45},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
                 throw std::runtime_error("Envelope plot must respond to sustain changes");
             QinSynthEditorTestAccess::previewValue(editor,20,100);
-            if(changes({455,471,218,46},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
+            if(changes({455,448,218,45},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
                 throw std::runtime_error("Envelope plot must respond to curve changes");
             QinSynthEditorTestAccess::previewCurve(editor,0,0);
             QinSynthEditorTestAccess::previewFilter(editor,4);
             QinSynthEditorTestAccess::previewValue(editor,31,200);
-            if(changes({455,166,218,90},[&]{QinSynthEditorTestAccess::previewValue(editor,31,5000);})<20)
+            if(changes({455,140,218,85},[&]{QinSynthEditorTestAccess::previewValue(editor,31,5000);})<20)
                 throw std::runtime_error("Filter plot must respond to cutoff changes");
             QinSynthEditorTestAccess::previewValue(editor,31,2500);
             QinSynthEditorTestAccess::previewValue(editor,32,95);
@@ -1565,7 +1618,7 @@ int main(int argc,char** argv)
                || std::abs(preview.parameters.getRawParameterValue("driveMix")->load()-45)>1.e-3
                || preview.parameters.getRawParameterValue("transformer")->load()<.5f)
                 throw std::runtime_error("Drive circuit, mix, and transformer controls must update host parameters");
-            if(changes({707,354,182,133},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
+            if(changes({707,334,182,133},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
                 throw std::runtime_error("Drive preview must follow the selected circuit");
             QinSynthEditorTestAccess::selectDriveMode(editor,2);
             QinSynthEditorTestAccess::setTransformer(editor,false);

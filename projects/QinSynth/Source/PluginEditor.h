@@ -19,8 +19,14 @@ public:
     QinVoiceSlider();
     void paint(juce::Graphics&) override;
     void setSuffix(juce::String value) { suffix=std::move(value); repaint(); }
+    void setReadoutFormat(juce::String caption,int decimals,bool positiveSign)
+    { prefix=std::move(caption); decimalPlaces=decimals; showPositiveSign=positiveSign; repaint(); }
+    juce::String getReadoutText() const;
 private:
     juce::String suffix {"VOICES"};
+    juce::String prefix;
+    int decimalPlaces=0;
+    bool showPositiveSign=false;
 };
 
 class QinWavePad final : public juce::Component, public juce::SettableTooltipClient
@@ -71,6 +77,18 @@ private:
     bool blackKey=false, rootKey=false;
 };
 
+class QinResonanceIndicator final : public juce::Component
+{
+public:
+    QinResonanceIndicator() { setInterceptsMouseClicks(false,false); }
+    void setPosition(float normalized,bool enabled);
+    void paint(juce::Graphics&) override;
+    bool isAnimating() const noexcept { return active; }
+private:
+    float position=0;
+    bool active=false;
+};
+
 class QinSynthEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -93,7 +111,8 @@ private:
     QinSynthProcessor& processor;
     int currentOscillator=0, currentEnvelope=0, currentFxSection=0;
     bool lastTimesFive=false, lastPolyLegato=false, lastVerbSync=false;
-    float liveCutoff=0;
+    bool resonanceModulated=false;
+    float liveCutoff=0, liveResonance=0;
     uint32_t lastScopeEpoch=0;
     bool liveScopeValid=false;
     QinSynthProcessor::DriveScope liveScope;
@@ -110,6 +129,7 @@ private:
     juce::Label driveModeLabel, driveMixLabel;
     QinVoiceSlider voiceCount;
     std::array<QinVoiceSlider,3> octaveDisplays;
+    std::array<QinVoiceSlider,3> fineDisplays;
     juce::TextButton tuneButton {"TUNE"}, syncButton {"SYNC"};
     QinTuningPanel tuningPanel;
     std::array<QinTuningKey,12> tuningSliders;
@@ -133,6 +153,7 @@ private:
     QinAnalogSwitch timesFiveButton {"*5"};
     juce::Slider filterMergeSlider;
     juce::Label filterMergeLabel;
+    QinResonanceIndicator resonanceIndicator;
     std::array<juce::Slider,44> sliders;
     std::array<juce::Label,44> labels;
     std::array<juce::Slider,3> curveSliders;
@@ -149,6 +170,7 @@ private:
     std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
     std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
     std::array<std::unique_ptr<State::SliderAttachment>,3> octaveAttachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,3> fineAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,12> tuningAttachments;
     std::unique_ptr<State::SliderAttachment> tuningRootAttachment, tuningA4Attachment, verbNoteAttachment;
     std::unique_ptr<State::ButtonAttachment> syncAttachment;
