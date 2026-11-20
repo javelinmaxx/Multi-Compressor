@@ -227,7 +227,7 @@ void QinVoiceSlider::paint(juce::Graphics& g)
     const auto area=getLocalBounds().toFloat().reduced(1);
     g.setColour(stageStyle::grid);
     g.drawRoundedRectangle(area,4,1);
-    g.setColour(cyan); g.setFont(juce::FontOptions(prefix.isEmpty() ? 12.f : 10.f).withStyle("bold"));
+    g.setColour(cyan); g.setFont(juce::FontOptions(prefix.isEmpty() ? 12.f : prefix=="LEVEL" ? 11.f : 10.f).withStyle("bold"));
     g.drawText(getReadoutText(),getLocalBounds(),juce::Justification::centred);
 }
 QinWavePad::QinWavePad()
@@ -476,7 +476,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     };
     slideTime.updateText(); slideShape.updateText();
     slideShape.onValueChange=[this]
-    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{297,554,49,55})); };
+    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{297,545,49,55})); };
     updatePlayAvailability();
     for(size_t i=0;i<oscillatorTabs.size();++i)
     {
@@ -728,7 +728,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         addAndMakeVisible(slider);
         curveAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,curveIds[i],slider);
         slider.onValueChange=[this]
-        { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,409,240,211})); };
+        { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,409,240,221})); };
     }
     envelopeMergeLabel.setText("MERGE",juce::dontSendNotification);
     envelopeMergeLabel.setFont(juce::FontOptions(9.f));
@@ -769,7 +769,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         slider.setColour(juce::Slider::thumbColourId,accent);
         slider.onValueChange=[this,i]
         {
-            const auto area=i<30 ? juce::Rectangle<int>(444,409,240,211) : juce::Rectangle<int>(444,90,240,311);
+            const auto area=i<30 ? juce::Rectangle<int>(444,409,240,221) : juce::Rectangle<int>(444,90,240,311);
             repaint(editorScaling::repaintArea(*this,designWidth,designHeight,area));
             if(i==24) repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,90,240,311}));
         };
@@ -915,7 +915,7 @@ void QinSynthEditor::updateEnvelopeTimePresentation()
     constexpr std::array<const char*,3> timeIds {"ampTimesFive","fltTimesFive","modTimesFive"};
     lastTimesFive=processor.parameters.getRawParameterValue(timeIds[size_t(currentEnvelope)])->load()>=.5f;
     for(const auto index:{18,19,21,22,23,25,26,27,29}) sliders[size_t(index)].updateText();
-    repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,409,240,211}));
+    repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{444,409,240,221}));
 }
 void QinSynthEditor::updateDrivePreview()
 {
@@ -1118,56 +1118,56 @@ void QinSynthEditor::resized()
     tuningA4Label.setBounds(154,316,86,15); tuningA4.setBounds(154,331,86,75);
     voiceCount.setBounds(660,34,94,27);
     activeVoicesLabel.setBounds(761,35,130,25);
-    polyLegatoButton.setBounds(345,535,79,72);
-    legatoRuleLabel.setBounds(30,531,83,13); legatoRule.setBounds(30,544,83,70);
-    slideTimeLabel.setBounds(119,531,83,13); slideTime.setBounds(119,544,83,70);
-    slideShapeLabel.setBounds(208,531,83,13); slideShape.setBounds(208,544,83,70);
+    polyLegatoButton.setBounds(345,526,79,72);
+    legatoRuleLabel.setBounds(30,522,83,13); legatoRule.setBounds(30,535,83,70);
+    slideTimeLabel.setBounds(119,522,83,13); slideTime.setBounds(119,535,83,70);
+    slideShapeLabel.setBounds(208,522,83,13); slideShape.setBounds(208,535,83,70);
     for(int i=0;i<3;++i)
     {
         oscillatorTabs[size_t(i)].setBounds(31+i*109,101,103,27);
-        envelopeTabs[size_t(i)].setBounds(455+i*55,418,52,27);
+        envelopeTabs[size_t(i)].setBounds(455+i*55,413,52,27);
         waveLabels[size_t(i)].setBounds(318,164,96,11); waves[size_t(i)].setBounds(318,175,96,96);
-        retrig[size_t(i)].setBounds(332,139,86,26);
-        levelDisplays[size_t(i)].setBounds(34,139,90,26);
-        fineDisplays[size_t(i)].setBounds(128,139,112,26);
-        octaveDisplays[size_t(i)].setBounds(244,139,82,26);
+        retrig[size_t(i)].setBounds(333,139,85,26);
+        levelDisplays[size_t(i)].setBounds(34,139,105,26);
+        fineDisplays[size_t(i)].setBounds(143,139,102,26);
+        octaveDisplays[size_t(i)].setBounds(249,139,78,26);
         for(int control=0;control<6;++control)
         {
             const auto index=size_t(i*6+control);
-            const auto x=control==0 ? 185 : control<2 ? 235 : 35+((control-2)%2)*96;
-            const auto y=control<2 ? 139 : 314+((control-2)/2)*80;
+            const auto x=control==0 ? 185 : control<2 ? 235 : 39+((control-2)%2)*96;
+            const auto y=control<2 ? 139 : 296+((control-2)/2)*80;
             const auto width=86;
             labels[index].setBounds(x,y,width,15); sliders[index].setBounds(x,y+15,width,65);
         }
-        detuneShapeLabels[size_t(i)].setBounds(227,314,86,15);
-        detuneShapeSliders[size_t(i)].setBounds(227,329,86,65);
-        fmSourceLabels[size_t(i)].setBounds(323,314,86,15);
-        fmSources[size_t(i)].setBounds(323,329,86,65);
-        fmAmountLabels[size_t(i)].setBounds(323,394,86,15);
-        fmAmountSliders[size_t(i)].setBounds(323,409,86,65);
+        detuneShapeLabels[size_t(i)].setBounds(231,296,86,15);
+        detuneShapeSliders[size_t(i)].setBounds(231,311,86,65);
+        fmSourceLabels[size_t(i)].setBounds(327,296,86,15);
+        fmSources[size_t(i)].setBounds(327,311,86,65);
+        fmAmountLabels[size_t(i)].setBounds(327,376,86,15);
+        fmAmountSliders[size_t(i)].setBounds(327,391,86,65);
     }
     noiseButton.setBounds(363,101,55,27);
     noiseStyleLabel.setBounds(34,146,118,15); noiseStyle.setBounds(34,162,154,27);
     for(size_t i=0;i<noiseSliders.size();++i)
     {
-        const auto x=35+int(i%3)*132, y=314+int(i/3)*80;
+        const auto x=43+int(i%3)*132, y=296+int(i/3)*80;
         noiseLabels[i].setBounds(x,y,103,15); noiseSliders[i].setBounds(x,y+15,103,65);
     }
     for(auto& button:timesFiveButtons) button.setBounds(622,414,50,49);
-    labels[35].setBounds(227,394,86,15); sliders[35].setBounds(227,409,86,65);
+    labels[35].setBounds(231,376,86,15); sliders[35].setBounds(231,391,86,65);
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control)
         {
             const auto index=size_t(18+env*4+control);
             const auto x=455+control*44;
-            labels[index].setBounds(x,490,42,12); sliders[index].setBounds(x,502,42,67);
+            labels[index].setBounds(x,495,42,12); sliders[index].setBounds(x,507,42,63);
         }
-    curveLabel.setBounds(631,490,42,12);
-    for(auto& slider:curveSliders) slider.setBounds(631,502,42,67);
-    envelopeMergeLabel.setBounds(455,573,50,14);
-    for(auto& slider:envelopeMergeSliders) slider.setBounds(505,571,168,20);
-    labels[30].setBounds(455,594,72,10); sliders[30].setBounds(455,603,72,17);
-    modTargetLabel.setBounds(531,594,138,10); modTarget.setBounds(531,603,138,17);
+    curveLabel.setBounds(631,495,42,12);
+    for(auto& slider:curveSliders) slider.setBounds(631,507,42,63);
+    envelopeMergeLabel.setBounds(455,578,50,14);
+    for(auto& slider:envelopeMergeSliders) slider.setBounds(505,575,168,20);
+    labels[30].setBounds(455,599,72,10); sliders[30].setBounds(455,609,72,17);
+    modTargetLabel.setBounds(531,599,138,10); modTarget.setBounds(531,609,138,17);
     filterType.setBounds(454,103,215,28);
     for(int index=31;index<=34;++index)
     {
@@ -1253,15 +1253,15 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(650,30,252,35),5);
     g.setColour(cyan); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     const auto panel=juce::Colour(0xff27272c);
-    stageStyle::drawPanel(g,{16,90,420,410},panel);
-    stageStyle::drawPanel(g,{16,510,420,110},panel);
+    stageStyle::drawPanel(g,{16,90,420,392},panel);
+    stageStyle::drawPanel(g,{16,492,420,138},panel);
     stageStyle::drawPanel(g,{444,90,240,311},panel);
-    stageStyle::drawPanel(g,{444,409,240,211},panel);
+    stageStyle::drawPanel(g,{444,409,240,221},panel);
     stageStyle::drawPanel(g,{692,90,212,400},panel);
-    stageStyle::drawPanel(g,{692,500,212,120},panel);
+    stageStyle::drawPanel(g,{692,500,212,130},panel);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
-    g.drawText("PLAY",30,510,120,20,juce::Justification::centredLeft);
-    const juce::Rectangle<float> glidePlot(297,554,44,55);
+    g.drawText("PLAY",30,492,120,20,juce::Justification::centredLeft);
+    const juce::Rectangle<float> glidePlot(297,545,44,55);
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(9.f));
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(glidePlot,5);
     const auto curveLeft=glidePlot.getX()+5.f, curveRight=glidePlot.getRight()-5.f;
@@ -1282,7 +1282,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(cyan.withAlpha(.18f)); g.strokePath(glidePath,juce::PathStrokeType(4.f));
     g.setColour(cyan); g.strokePath(glidePath,juce::PathStrokeType(1.8f));
     g.drawText("OUTPUT",703,503,120,20,juce::Justification::centredLeft);
-    const juce::Rectangle<float> filterPlot(455,140,218,85), envelopePlot(455,448,218,45);
+    const juce::Rectangle<float> filterPlot(455,140,218,85), envelopePlot(455,442,218,45);
     for(const auto plot:{filterPlot,envelopePlot})
     {
         g.setColour(stageStyle::inset); g.fillRoundedRectangle(plot,4);
@@ -1330,9 +1330,9 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(cyan.withAlpha(.15f)); g.fillPath(envelopeFill);
     g.setColour(cyan); g.strokePath(envelopePath,juce::PathStrokeType(1.7f));
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
-    g.drawText("0",459,482,28,10,juce::Justification::centredLeft);
-    g.drawText(juce::String(total*.5f,1)+"s",536,482,56,10,juce::Justification::centred);
-    g.drawText(juce::String(total,1)+"s",617,482,51,10,juce::Justification::centredRight);
+    g.drawText("0",459,476,28,10,juce::Justification::centredLeft);
+    g.drawText(juce::String(total*.5f,1)+"s",536,476,56,10,juce::Justification::centred);
+    g.drawText(juce::String(total,1)+"s",617,476,51,10,juce::Justification::centredRight);
     const auto filterMode=std::max(0,filterType.getSelectedId()-1);
     const auto baseCutoff=float(sliders[31].getValue());
     const auto resonance=resonanceModulated ? liveResonance

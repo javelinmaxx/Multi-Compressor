@@ -1659,14 +1659,14 @@ int main(int argc,char** argv)
                 throw std::runtime_error("OSC waveform plot must follow the square pad");
             QinSynthEditorTestAccess::setWave(editor,0,{0.f,0.f});
             QinSynthEditorTestAccess::setSlide(editor,80,0);
-            if(changes({297,554,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
-               || changes({297,554,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
+            if(changes({297,545,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
+               || changes({297,545,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
                 throw std::runtime_error("Legato curve preview must follow the Shape knob");
             QinSynthEditorTestAccess::setSlide(editor,80,50);
-            if(changes({455,448,218,45},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
+            if(changes({455,442,218,45},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)
                 throw std::runtime_error("Envelope plot must respond to sustain changes");
             QinSynthEditorTestAccess::previewValue(editor,20,100);
-            if(changes({455,448,218,45},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
+            if(changes({455,442,218,45},[&]{QinSynthEditorTestAccess::previewCurve(editor,0,100);})<20)
                 throw std::runtime_error("Envelope plot must respond to curve changes");
             QinSynthEditorTestAccess::previewCurve(editor,0,0);
             QinSynthEditorTestAccess::previewFilter(editor,4);
