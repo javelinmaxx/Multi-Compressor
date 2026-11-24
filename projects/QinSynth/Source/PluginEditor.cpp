@@ -9,7 +9,7 @@ namespace
 {
 const auto panelGranite=juce::Colour(0xff93989b);
 const auto panelInk=juce::Colour(0xff192b3b);
-const auto backgroundGreen=juce::Colour(0xff0c211c);
+const auto backgroundRed=juce::Colour(0xff2a1018);
 const auto secondaryRed=juce::Colour(0xff40101e);
 const auto plotRed=juce::Colour(0xfff3aab0);
 const auto curveBlue=juce::Colour(0xff87c9ed);
@@ -108,7 +108,7 @@ float filterMagnitude(int type,float frequency,float cutoff,float resonance)
 }
 void QinTuningPanel::paint(juce::Graphics& g)
 {
-    g.fillAll(backgroundGreen);
+    g.fillAll(backgroundRed);
     g.setColour(panelGranite);
     g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(2),9);
     g.setColour(secondaryRed.withAlpha(.7f));
@@ -1486,9 +1486,9 @@ void QinSynthEditor::resized()
 }
 void QinSynthEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(backgroundGreen); g.saveState(); g.addTransform(editorScaling::transform(*this,designWidth,designHeight));
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff1d3b32),0,0,
-                                           backgroundGreen,0,designHeight,false));
+    g.fillAll(backgroundRed); g.saveState(); g.addTransform(editorScaling::transform(*this,designWidth,designHeight));
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff5a2632),0,0,
+                                           backgroundRed,0,designHeight,false));
     g.fillRect(0,0,designWidth,designHeight);
     g.setColour(plotRed); g.setFont(juce::FontOptions(10.f));
     g.drawText("J-SONIC / VIRTUAL ANALOG INSTRUMENT",18,12,500,16,juce::Justification::centredLeft);
