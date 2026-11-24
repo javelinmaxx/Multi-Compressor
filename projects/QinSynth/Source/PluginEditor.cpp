@@ -7,12 +7,12 @@
 
 namespace
 {
-const auto panelBlack=juce::Colour(0xff111215);
+const auto panelRed=juce::Colour(0xff4a1d29);
 const auto panelInk=juce::Colour(0xffe3e9ec);
 const auto buttonInk=juce::Colour(0xff192b3b);
 const auto keyInk=juce::Colour(0xff192b3b);
 const auto keyRootRed=juce::Colour(0xff82313d);
-const auto backgroundRed=juce::Colour(0xff2a1018);
+const auto backgroundBlack=juce::Colour(0xff111215);
 const auto secondaryRed=juce::Colour(0xffe99daa);
 const auto plotRed=juce::Colour(0xfff3aab0);
 const auto curveBlue=juce::Colour(0xff87c9ed);
@@ -111,8 +111,8 @@ float filterMagnitude(int type,float frequency,float cutoff,float resonance)
 }
 void QinTuningPanel::paint(juce::Graphics& g)
 {
-    g.fillAll(backgroundRed);
-    g.setColour(panelBlack);
+    g.fillAll(backgroundBlack);
+    g.setColour(panelRed);
     g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(2),9);
     g.setColour(secondaryRed.withAlpha(.7f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(2),9,1.2f);
@@ -1489,9 +1489,9 @@ void QinSynthEditor::resized()
 }
 void QinSynthEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(backgroundRed); g.saveState(); g.addTransform(editorScaling::transform(*this,designWidth,designHeight));
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff5a2632),0,0,
-                                           backgroundRed,0,designHeight,false));
+    g.fillAll(backgroundBlack); g.saveState(); g.addTransform(editorScaling::transform(*this,designWidth,designHeight));
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff282a2c),0,0,
+                                           backgroundBlack,0,designHeight,false));
     g.fillRect(0,0,designWidth,designHeight);
     g.setColour(plotRed); g.setFont(juce::FontOptions(10.f));
     g.drawText("J-SONIC / VIRTUAL ANALOG INSTRUMENT",18,12,500,16,juce::Justification::centredLeft);
@@ -1499,12 +1499,12 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.drawText("QIN SYNTH",18,30,360,38,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(650,30,252,35),5);
     g.setColour(highlightRed); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
-    stageStyle::drawPanel(g,{16,90,420,392},panelBlack);
-    stageStyle::drawPanel(g,{16,492,420,138},panelBlack);
-    stageStyle::drawPanel(g,{444,90,240,311},panelBlack);
-    stageStyle::drawPanel(g,{444,409,240,221},panelBlack);
-    stageStyle::drawPanel(g,{692,90,212,400},panelBlack);
-    stageStyle::drawPanel(g,{692,500,212,130},panelBlack);
+    stageStyle::drawPanel(g,{16,90,420,392},panelRed);
+    stageStyle::drawPanel(g,{16,492,420,138},panelRed);
+    stageStyle::drawPanel(g,{444,90,240,311},panelRed);
+    stageStyle::drawPanel(g,{444,409,240,221},panelRed);
+    stageStyle::drawPanel(g,{692,90,212,400},panelRed);
+    stageStyle::drawPanel(g,{692,500,212,130},panelRed);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("PLAY",30,492,120,20,juce::Justification::centredLeft);
     const juce::Rectangle<float> glidePlot(297,545,44,55);
