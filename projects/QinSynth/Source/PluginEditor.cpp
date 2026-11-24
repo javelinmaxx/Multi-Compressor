@@ -7,10 +7,10 @@
 
 namespace
 {
-const auto panelSilver=juce::Colour(0xffbcc4cc);
+const auto panelGranite=juce::Colour(0xff93989b);
 const auto panelInk=juce::Colour(0xff192b3b);
 const auto backgroundGreen=juce::Colour(0xff0c211c);
-const auto secondaryRed=juce::Colour(0xff82313d);
+const auto secondaryRed=juce::Colour(0xff40101e);
 const auto plotRed=juce::Colour(0xfff3aab0);
 const auto curveBlue=juce::Colour(0xff87c9ed);
 const auto accent=juce::Colour(0xffbd4e60);
@@ -109,7 +109,7 @@ float filterMagnitude(int type,float frequency,float cutoff,float resonance)
 void QinTuningPanel::paint(juce::Graphics& g)
 {
     g.fillAll(backgroundGreen);
-    g.setColour(panelSilver);
+    g.setColour(panelGranite);
     g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(2),9);
     g.setColour(secondaryRed.withAlpha(.7f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(2),9,1.2f);
@@ -1496,12 +1496,12 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.drawText("QIN SYNTH",18,30,360,38,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(650,30,252,35),5);
     g.setColour(highlightRed); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
-    stageStyle::drawPanel(g,{16,90,420,392},panelSilver);
-    stageStyle::drawPanel(g,{16,492,420,138},panelSilver);
-    stageStyle::drawPanel(g,{444,90,240,311},panelSilver);
-    stageStyle::drawPanel(g,{444,409,240,221},panelSilver);
-    stageStyle::drawPanel(g,{692,90,212,400},panelSilver);
-    stageStyle::drawPanel(g,{692,500,212,130},panelSilver);
+    stageStyle::drawPanel(g,{16,90,420,392},panelGranite);
+    stageStyle::drawPanel(g,{16,492,420,138},panelGranite);
+    stageStyle::drawPanel(g,{444,90,240,311},panelGranite);
+    stageStyle::drawPanel(g,{444,409,240,221},panelGranite);
+    stageStyle::drawPanel(g,{692,90,212,400},panelGranite);
+    stageStyle::drawPanel(g,{692,500,212,130},panelGranite);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("PLAY",30,492,120,20,juce::Justification::centredLeft);
     const juce::Rectangle<float> glidePlot(297,545,44,55);
