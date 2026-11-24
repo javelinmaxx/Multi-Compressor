@@ -153,6 +153,11 @@ struct QinSynthEditorTestAccess
         && editor.transformerButton.getY()>=500 && editor.sliders[36].getY()>=500; }
     static bool compactFxKnobs(const QinSynthEditor& editor)
     { return editor.sliders[37].getHeight()<80 && editor.sliders[38].getHeight()<80; }
+    static bool compactDriveLayout(const QinSynthEditor& editor)
+    { return editor.driveMix.getRight()<=QinSynthEditor::driveScopeX
+        && editor.driveMix.getY()<QinSynthEditor::driveScopeY+QinSynthEditor::driveScopeHeight
+        && editor.driveMix.getBottom()>QinSynthEditor::driveScopeY
+        && QinSynthEditor::driveScopeWidth<=100 && QinSynthEditor::driveScopeHeight<=100; }
     static int driveModeCount(const QinSynthEditor& editor)
     { return editor.driveMode.getSliderStyle()==juce::Slider::RotaryHorizontalVerticalDrag
         ? juce::roundToInt(editor.driveMode.getMaximum()-editor.driveMode.getMinimum())+1 : 0; }
@@ -1491,6 +1496,7 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
                || !QinSynthEditorTestAccess::outputSectionVisible(editor)
                || !QinSynthEditorTestAccess::compactFxKnobs(editor)
+               || !QinSynthEditorTestAccess::compactDriveLayout(editor)
                || !QinSynthEditorTestAccess::compactHeaderLayout(editor)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,0)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
@@ -1713,7 +1719,7 @@ int main(int argc,char** argv)
                || std::abs(preview.parameters.getRawParameterValue("driveMix")->load()-45)>1.e-3
                || preview.parameters.getRawParameterValue("transformer")->load()<.5f)
                 throw std::runtime_error("Drive circuit, mix, and transformer controls must update host parameters");
-            if(changes({707,334,182,133},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
+            if(changes({800,245,92,89},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
                 throw std::runtime_error("Drive preview must follow the selected circuit");
             QinSynthEditorTestAccess::selectDriveMode(editor,2);
             QinSynthEditorTestAccess::setTransformer(editor,false);

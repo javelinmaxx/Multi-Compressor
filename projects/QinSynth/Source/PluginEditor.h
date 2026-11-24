@@ -113,6 +113,7 @@ public:
 private:
     friend struct QinSynthEditorTestAccess;
     static constexpr int designWidth=920, designHeight=640;
+    static constexpr int driveScopeX=800, driveScopeY=245, driveScopeWidth=92, driveScopeHeight=89;
     void showOscillator(int oscillator);
     void showEnvelope(int envelope);
     void showFxSection(int section);

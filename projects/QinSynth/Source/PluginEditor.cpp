@@ -666,7 +666,8 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     driveMode.onValueChange=[this]
     {
         updateDrivePreview();
-        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{707,334,182,133}));
+        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
+            {driveScopeX,driveScopeY,driveScopeWidth,driveScopeHeight}));
     };
     driveMix.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     driveMix.setComponentID("driveMix");
@@ -683,7 +684,8 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     driveMix.onValueChange=[this]
     {
         updateDrivePreview();
-        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{707,334,182,133}));
+        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
+            {driveScopeX,driveScopeY,driveScopeWidth,driveScopeHeight}));
     };
     addAndMakeVisible(transformerButton);
     transformerAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"transformer",transformerButton);
@@ -807,7 +809,8 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     sliders[37].onValueChange=[this]
     {
         updateDrivePreview();
-        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{707,334,182,133}));
+        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
+            {driveScopeX,driveScopeY,driveScopeWidth,driveScopeHeight}));
     };
     for(size_t i=0;i<waves.size();++i)
     {
@@ -1029,7 +1032,8 @@ void QinSynthEditor::timerCallback()
                 if(std::abs(next.input[index])>1.e-4f || std::abs(next.output[index])>1.e-4f)
                 { liveScopeValid=true; break; }
             liveScope=std::move(next);
-            repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{707,334,182,133}));
+            repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
+                {driveScopeX,driveScopeY,driveScopeWidth,driveScopeHeight}));
         }
     }
     for(size_t i=0;i<waves.size();++i)
@@ -1184,7 +1188,7 @@ void QinSynthEditor::resized()
     verbNoteSlider.setBounds(714,158,74,75);
     driveModeLabel.setBounds(706,145,90,14); driveMode.setBounds(706,159,90,79);
     labels[37].setBounds(802,145,90,14); sliders[37].setBounds(802,159,90,79);
-    driveMixLabel.setBounds(758,241,88,14); driveMix.setBounds(758,255,88,79);
+    driveMixLabel.setBounds(707,241,88,14); driveMix.setBounds(707,255,88,79);
     transformerButton.setBounds(805,524,90,78);
     labels[36].setBounds(712,522,82,13); sliders[36].setBounds(712,535,82,73);
     for(int i=38;i<44;++i)
@@ -1414,13 +1418,14 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(10.f));
     if(currentFxSection==0)
     {
-        const juce::Rectangle<float> scope(707,334,182,133);
+        const juce::Rectangle<float> scope{float(driveScopeX),float(driveScopeY),
+            float(driveScopeWidth),float(driveScopeHeight)};
         g.setColour(stageStyle::inset); g.fillRoundedRectangle(scope,5);
-        g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(8.f));
-        g.drawText("DRIVE WAVEFORM",714,338,105,12,juce::Justification::centredLeft);
-        g.setColour(cyan); g.drawText("IN",818,338,20,12,juce::Justification::centred);
-        g.setColour(accent); g.drawText("OUT",845,338,32,12,juce::Justification::centred);
-        g.setColour(stageStyle::grid); g.drawHorizontalLine(402,712,884);
+        g.setColour(stageStyle::secondary); g.setFont(juce::FontOptions(7.f));
+        g.drawText("WAVE",805,249,30,10,juce::Justification::centredLeft);
+        g.setColour(cyan); g.drawText("IN",839,249,16,10,juce::Justification::centred);
+        g.setColour(accent); g.drawText("OUT",857,249,27,10,juce::Justification::centred);
+        g.setColour(stageStyle::grid); g.drawHorizontalLine(296,804,888);
         const auto window=liveScopeValid ? qin::waveformWindow(liveScope.input)
             : qin::WaveformWindow{0.f,float(previewInput.size()-1),true};
         float peak=.2f;
@@ -1434,16 +1439,17 @@ void QinSynthEditor::paint(juce::Graphics& g)
         };
         if(liveScopeValid) { includePeak(liveScope.input); includePeak(liveScope.output); }
         else { includePeak(previewInput); includePeak(previewOutput); }
-        const auto gain=49.f/std::max(.2f,peak*1.2f);
+        const auto gain=29.f/std::max(.2f,peak*1.2f);
         const auto drawWave=[&](const auto& samples,juce::Colour colour)
         {
             juce::Path path;
-            for(size_t index=0;index<QinSynthProcessor::driveScopePoints;++index)
+            constexpr size_t displayPoints=80;
+            for(size_t index=0;index<displayPoints;++index)
             {
-                const auto fraction=float(index)/float(QinSynthProcessor::driveScopePoints-1);
-                const auto x=713.f+170.f*fraction;
+                const auto fraction=float(index)/float(displayPoints-1);
+                const auto x=804.f+84.f*fraction;
                 const auto sample=qin::waveformSample(samples,window.start+fraction*window.length);
-                const auto y=402.f-std::clamp(sample*gain,-49.f,49.f);
+                const auto y=296.f-std::clamp(sample*gain,-29.f,29.f);
                 if(index==0) path.startNewSubPath(x,y); else path.lineTo(x,y);
             }
             g.setColour(colour); g.strokePath(path,juce::PathStrokeType(1.3f));
