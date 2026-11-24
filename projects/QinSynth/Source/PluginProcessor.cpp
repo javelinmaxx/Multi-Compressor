@@ -189,6 +189,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     highCutRange.setSkewForCentre(5000.f);
     result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"driveHighCut",1},
         "Drive high cut",highCutRange,20000.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"drivePostLowCut",1},
+        "Drive post low cut",lowCutRange,0.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"drivePostHighCut",1},
+        "Drive post high cut",highCutRange,20000.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
     return result;
 }
 QinSynthProcessor::QinSynthProcessor()
@@ -279,6 +283,9 @@ void QinSynthProcessor::prepareToPlay(double rate,int expectedBlockSize)
     driveInputFilter.prepare(sampleRate,
         parameters.getRawParameterValue("driveLowCut")->load(),
         parameters.getRawParameterValue("driveHighCut")->load());
+    drivePostFilter.prepare(sampleRate,
+        parameters.getRawParameterValue("drivePostLowCut")->load(),
+        parameters.getRawParameterValue("drivePostHighCut")->load());
     driveWasActive=false;
     lastDriveMode=std::clamp(juce::roundToInt(parameters.getRawParameterValue("driveMode")->load()),0,3);
     for(size_t mode=0;mode<driveWeights.size();++mode)
@@ -389,6 +396,8 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings(const char* override
     settings.driveMix=std::clamp(get("driveMix")*.01f,0.f,1.f);
     settings.driveLowCut=std::clamp(get("driveLowCut"),0.f,1000.f);
     settings.driveHighCut=std::clamp(get("driveHighCut"),1000.f,20000.f);
+    settings.drivePostLowCut=std::clamp(get("drivePostLowCut"),0.f,1000.f);
+    settings.drivePostHighCut=std::clamp(get("drivePostHighCut"),1000.f,20000.f);
     settings.driveMode=std::clamp(juce::roundToInt(get("driveMode")),0,3);
     settings.transformer=get("transformer")>=.5f;
     settings.polyLegato=get("polyLegato")>=.5f;
@@ -1189,9 +1198,12 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         lastDriveMode=settings.driveMode;
     }
     driveInputFilter.setCutoffs(settings.driveLowCut,settings.driveHighCut);
+    drivePostFilter.setCutoffs(settings.drivePostLowCut,settings.drivePostHighCut);
     const auto driveActive=settings.drive>1.e-4f && settings.driveMix>1.e-4f;
     const auto driveFilterActive=driveInputFilter.isActive();
-    if(driveActive && !driveWasActive) driveInputFilter.resetStates();
+    const auto drivePostFilterActive=drivePostFilter.isActive();
+    if(driveActive && !driveWasActive)
+    { driveInputFilter.resetStates(); drivePostFilter.resetStates(); }
     driveWasActive=driveActive;
     // Around 12 kHz of scope samples spans roughly 85 ms, enough to see two
     // complete cycles of a low piano note without processing every sample.
@@ -1205,6 +1217,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         if(driveActive)
         {
             if(driveFilterActive) driveInputFilter.beginSample();
+            if(drivePostFilterActive) drivePostFilter.beginSample();
             for(int ch=0;ch<2;++ch)
             {
                 const auto dry=buffer.getSample(ch,i);
@@ -1213,7 +1226,9 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 for(size_t mode=0;mode<weights.size();++mode)
                     if(weights[mode]>1.e-6f)
                         driven+=weights[mode]*driveCircuit.process(int(mode),ch,circuitInput*(1+5*settings.drive));
-                const auto result=dry+settings.driveMix*(driven-dry);
+                const auto shaped=drivePostFilterActive && std::isfinite(driven)
+                    ? double(drivePostFilter.process(ch,float(std::clamp(driven,-1.e6,1.e6)))) : driven;
+                const auto result=dry+settings.driveMix*(shaped-dry);
                 buffer.setSample(ch,i,!bypass && std::isfinite(result) ? float(std::clamp(result,-4.0,4.0)) : dry);
             }
         }

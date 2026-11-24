@@ -393,6 +393,73 @@ void QinAnalogSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
     g.setColour(highlighted ? accent : stageStyle::grid); g.drawEllipse(cap,.8f);
     if(hasKeyboardFocus(true)) { g.setColour(accent); g.drawEllipse(flange.expanded(3.f),1.f); }
 }
+void QinDualFilterSlider::setRingValues(float pre,float post)
+{
+    pre=std::clamp(pre,0.f,1.f); post=std::clamp(post,0.f,1.f);
+    if(std::abs(pre-preRing)<.0001f && std::abs(post-postRing)<.0001f) return;
+    preRing=pre; postRing=post; repaint();
+}
+void QinDualFilterSlider::mouseDown(const juce::MouseEvent& event)
+{
+    clicked=event.mods.isLeftButtonDown() && event.getNumberOfClicks()==1;
+    dragged=false;
+    juce::Slider::mouseDown(event);
+}
+void QinDualFilterSlider::mouseDrag(const juce::MouseEvent& event)
+{
+    dragged|=event.getDistanceFromDragStart()>3;
+    juce::Slider::mouseDrag(event);
+}
+void QinDualFilterSlider::mouseUp(const juce::MouseEvent& event)
+{
+    const auto toggle=clicked && !dragged && event.getDistanceFromDragStart()<=3;
+    juce::Slider::mouseUp(event);
+    clicked=false;
+    if(toggle && onClick) onClick();
+}
+void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,int height,
+    float value,float start,float end,juce::Slider& slider)
+{
+    auto* dual=dynamic_cast<QinDualFilterSlider*>(&slider);
+    if(dual==nullptr)
+    { StageLookAndFeel::drawRotarySlider(g,x,y,width,height,value,start,end,slider); return; }
+    const auto bounds=juce::Rectangle<float>(float(x),float(y),float(width),float(height)).reduced(5.f);
+    const auto centre=bounds.getCentre();
+    const auto radius=.5f*std::min(bounds.getWidth(),bounds.getHeight())-1.f;
+    const auto ring=[&](float r,float amount,juce::Colour colour,bool selected)
+    {
+        const auto arc=[&](float stop)
+        {
+            juce::Path path;
+            constexpr int steps=48;
+            for(int step=0;step<=steps;++step)
+            {
+                const auto angle=start+(stop-start)*float(step)/steps;
+                const auto px=centre.x+std::sin(angle)*r;
+                const auto py=centre.y-std::cos(angle)*r;
+                if(step==0) path.startNewSubPath(px,py);
+                else path.lineTo(px,py);
+            }
+            return path;
+        };
+        const auto track=arc(end),active=arc(start+amount*(end-start));
+        g.setColour(trackColour.brighter(.3f)); g.strokePath(track,juce::PathStrokeType(2.f));
+        g.setColour(colour.withAlpha(selected ? 1.f : .52f));
+        g.strokePath(active,juce::PathStrokeType(selected ? 2.8f : 2.2f));
+    };
+    ring(radius,dual->getPostRing(),cyan,dual->isPostSelected());
+    ring(radius-7.f,dual->getPreRing(),accentColour,!dual->isPostSelected());
+    const auto dial=juce::Rectangle<float>((radius-12.f)*2.f,(radius-12.f)*2.f).withCentre(centre);
+    g.setColour(juce::Colours::black.withAlpha(.32f)); g.fillEllipse(dial.translated(0.f,2.f));
+    g.setGradientFill(juce::ColourGradient(dialTopColour,dial.getTopLeft(),dialBottomColour,dial.getBottomRight(),false));
+    g.fillEllipse(dial);
+    g.setColour(markColour.withAlpha(.3f)); g.drawEllipse(dial.reduced(1.f),.7f);
+    const auto angle=start+value*(end-start);
+    const auto tip=radius-13.f;
+    g.setColour(dual->isPostSelected() ? cyan : accentColour);
+    g.fillEllipse(centre.x+std::sin(angle)*tip-2.f,
+                  centre.y-std::cos(angle)*tip-2.f,4.f,4.f);
+}
 void QinLookAndFeel::drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
     float sliderPos,float minSliderPos,float maxSliderPos,const juce::Slider::SliderStyle style,juce::Slider& slider)
 {
@@ -730,11 +797,10 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
             {driveScopeX,driveScopeY,driveScopeWidth,driveScopeHeight}));
     };
-    constexpr std::array<const char*,2> cutIds{"driveLowCut","driveHighCut"};
     constexpr std::array<const char*,2> cutNames{"LOW CUT","HIGH CUT"};
     constexpr std::array<const char*,2> cutHints{
-        "Removes bass before the drive circuit while leaving the dry Mix path unfiltered.",
-        "Removes treble before the drive circuit while leaving the dry Mix path unfiltered."};
+        "Click to select the low cut before or after drive, then drag; the inner and outer rings show their settings.",
+        "Click to select the high cut before or after drive, then drag; the inner and outer rings show their settings."};
     for(size_t i=0;i<driveCutSliders.size();++i)
     {
         auto& slider=driveCutSliders[i]; auto& label=driveCutLabels[i];
@@ -742,34 +808,28 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,90,17);
         slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
         slider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
-        slider.setComponentID(cutIds[i]);
         slider.setName(cutNames[i]); slider.setTitle(cutNames[i]);
-        label.setText(cutNames[i],juce::dontSendNotification);
         label.setFont(juce::FontOptions(9.f));
         label.setJustificationType(juce::Justification::centred);
         label.setColour(juce::Label::textColourId,stageStyle::secondary);
         editorTooltips::setHint(slider,label,cutHints[i]);
         addAndMakeVisible(slider); addAndMakeVisible(label);
-        driveCutAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,cutIds[i],slider);
-        slider.textFromValueFunction=[i](double value)
+        slider.onClick=[this,i]
         {
-            if((i==0 && value<=0.) || (i==1 && value>=20000.)) return juce::String("OFF");
-            if(value>=1000.) return juce::String(value/1000.,1)+"k";
-            return juce::String(juce::roundToInt(value))+" Hz";
+            auto& control=driveCutSliders[i];
+            control.setPostSelected(!control.isPostSelected());
+            bindDriveCut(i);
         };
-        slider.valueFromTextFunction=[i](const juce::String& text)
-        {
-            if(text.trim().equalsIgnoreCase("OFF")) return i==0 ? 0. : 20000.;
-            return double(text.getFloatValue())*(text.containsIgnoreCase("k") ? 1000. : 1.);
-        };
-        slider.updateText();
         slider.onValueChange=[this]
         {
+            updateDriveCutRings();
             updateDrivePreview();
             repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
                 {driveScopeX,driveScopeY,driveScopeWidth,driveScopeHeight}));
         };
+        bindDriveCut(i);
     }
+    updateDriveCutRings();
     addAndMakeVisible(transformerButton);
     transformerAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"transformer",transformerButton);
     for(size_t i=0;i<sliders.size();++i)
@@ -1007,6 +1067,41 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     updateVisibility(); editorScaling::enable(*this,designWidth,designHeight);
     updateDrivePreview(); gpu.attach(*this); startTimerHz(40);
 }
+void QinSynthEditor::bindDriveCut(size_t index)
+{
+    constexpr std::array<const char*,2> preIds{"driveLowCut","driveHighCut"};
+    constexpr std::array<const char*,2> postIds{"drivePostLowCut","drivePostHighCut"};
+    constexpr std::array<const char*,2> names{"LOW CUT","HIGH CUT"};
+    auto& slider=driveCutSliders[index];
+    driveCutAttachments[index].reset();
+    const auto post=slider.isPostSelected();
+    const auto* id=post ? postIds[index] : preIds[index];
+    slider.setComponentID(id);
+    driveCutLabels[index].setText(juce::String(names[index])+(post ? " / POST" : " / PRE"),
+                                  juce::dontSendNotification);
+    driveCutAttachments[index]=std::make_unique<State::SliderAttachment>(processor.parameters,id,slider);
+    slider.textFromValueFunction=[index](double value)
+    {
+        if((index==0 && value<=0.) || (index==1 && value>=20000.)) return juce::String("OFF");
+        if(value>=1000.) return juce::String(value/1000.,1)+"k";
+        return juce::String(juce::roundToInt(value))+" Hz";
+    };
+    slider.valueFromTextFunction=[index](const juce::String& text)
+    {
+        if(text.trim().equalsIgnoreCase("OFF")) return index==0 ? 0. : 20000.;
+        return double(text.getFloatValue())*(text.containsIgnoreCase("k") ? 1000. : 1.);
+    };
+    slider.updateText();
+    updateDriveCutRings();
+}
+void QinSynthEditor::updateDriveCutRings()
+{
+    constexpr std::array<const char*,2> preIds{"driveLowCut","driveHighCut"};
+    constexpr std::array<const char*,2> postIds{"drivePostLowCut","drivePostHighCut"};
+    for(size_t index=0;index<driveCutSliders.size();++index)
+        driveCutSliders[index].setRingValues(processor.parameters.getParameter(preIds[index])->getValue(),
+                                             processor.parameters.getParameter(postIds[index])->getValue());
+}
 void QinSynthEditor::updateEnvelopeTimePresentation()
 {
     constexpr std::array<const char*,3> timeIds {"ampTimesFive","fltTimesFive","modTimesFive"};
@@ -1022,25 +1117,31 @@ void QinSynthEditor::updateDrivePreview()
     const auto drive=std::clamp(float(sliders[37].getValue())*.01f,0.f,1.f);
     const auto mix=std::clamp(float(driveMix.getValue())*.01f,0.f,1.f);
     qin::DriveInputFilter inputFilter;
-    inputFilter.prepare(48000.0,float(driveCutSliders[0].getValue()),
-        float(driveCutSliders[1].getValue()));
+    inputFilter.prepare(48000.0,processor.parameters.getRawParameterValue("driveLowCut")->load(),
+        processor.parameters.getRawParameterValue("driveHighCut")->load());
+    qin::DriveInputFilter postFilter;
+    postFilter.prepare(48000.0,processor.parameters.getRawParameterValue("drivePostLowCut")->load(),
+        processor.parameters.getRawParameterValue("drivePostHighCut")->load());
     for(int sample=0;sample<384;++sample)
     {
         const auto phase=std::fmod(float(sample)/64.f,1.f);
         const auto original=.55f*(1.f-4.f*std::abs(phase-.5f));
         inputFilter.beginSample();
+        postFilter.beginSample();
         const auto filtered=inputFilter.process(0,original);
         const auto driven=drive>1.e-4f ? float(circuit.process(mode,0,filtered*(1.f+5.f*drive))) : original;
+        const auto shaped=drive>1.e-4f && postFilter.isActive() ? postFilter.process(0,driven) : driven;
         if(sample>=256)
         {
             const auto index=size_t(sample-256);
             previewInput[index]=original;
-            previewOutput[index]=original+mix*(driven-original);
+            previewOutput[index]=original+mix*(shaped-original);
         }
     }
 }
 void QinSynthEditor::timerCallback()
 {
+    updateDriveCutRings();
     polyLegatoButton.advance(1.f/40.f);
     for(auto& button:timesFiveButtons) button.advance(1.f/40.f);
     transformerButton.advance(1.f/40.f);

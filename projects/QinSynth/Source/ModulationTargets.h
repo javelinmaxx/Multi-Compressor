@@ -57,7 +57,8 @@ inline constexpr ModulationTarget continuousModTargets[] {
     {"tune7","TUNE / Degree 7"},{"tune8","TUNE / Degree 8"},
     {"tune9","TUNE / Degree 9"},{"tune10","TUNE / Degree 10"},
     {"tune11","TUNE / Degree 11"},
-    {"driveLowCut","FX / Low Cut"},{"driveHighCut","FX / High Cut"}
+    {"driveLowCut","FX / Pre Low Cut"},{"driveHighCut","FX / Pre High Cut"},
+    {"drivePostLowCut","FX / Post Low Cut"},{"drivePostHighCut","FX / Post High Cut"}
 };
 inline constexpr int legacyModTargetCount=4;
 inline constexpr int continuousModTargetCount=int(sizeof(continuousModTargets)/sizeof(continuousModTargets[0]));

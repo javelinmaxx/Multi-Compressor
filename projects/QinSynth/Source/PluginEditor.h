@@ -9,8 +9,26 @@
 class QinLookAndFeel final : public StageLookAndFeel
 {
 public:
+    void drawRotarySlider(juce::Graphics&,int,int,int,int,float,float,float,juce::Slider&) override;
     void drawLinearSlider(juce::Graphics&,int,int,int,int,float,float,float,
                           const juce::Slider::SliderStyle,juce::Slider&) override;
+};
+
+class QinDualFilterSlider final : public juce::Slider
+{
+public:
+    void setRingValues(float pre,float post);
+    void setPostSelected(bool selected) { if(postSelected!=selected) { postSelected=selected; repaint(); } }
+    bool isPostSelected() const noexcept { return postSelected; }
+    float getPreRing() const noexcept { return preRing; }
+    float getPostRing() const noexcept { return postRing; }
+    std::function<void()> onClick;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+private:
+    float preRing=0,postRing=0;
+    bool postSelected=false,clicked=false,dragged=false;
 };
 
 class QinVoiceSlider final : public juce::Slider
@@ -138,6 +156,8 @@ private:
     void updateVisibility();
     void timerCallback() override;
     void updateDrivePreview();
+    void bindDriveCut(size_t index);
+    void updateDriveCutRings();
     void updateEnvelopeTimePresentation();
     void updatePlayAvailability();
     void updateTuningLabels();
@@ -160,7 +180,7 @@ private:
     QinAnalogSwitch transformerButton {"TRANSFORMER"};
     juce::Slider driveMode, driveMix;
     juce::Label driveModeLabel, driveMixLabel;
-    std::array<juce::Slider,2> driveCutSliders;
+    std::array<QinDualFilterSlider,2> driveCutSliders;
     std::array<juce::Label,2> driveCutLabels;
     QinVoiceSlider voiceCount;
     std::array<QinVoiceSlider,3> levelDisplays;

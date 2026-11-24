@@ -72,8 +72,8 @@
 | Output | Sets the final synth level. |
 | Drive | Sets how hard the oscillator signal drives the selected circuit. |
 | Drive Mix | Blends the driven signal with the dry oscillator signal. |
-| Drive Low Cut | Removes bass before the drive circuit while leaving the dry Mix path unfiltered. |
-| Drive High Cut | Removes treble before the drive circuit while leaving the dry Mix path unfiltered. |
+| Drive Low Cut | Click to select the low cut before or after drive, then drag; the inner and outer rings show their settings. |
+| Drive High Cut | Click to select the high cut before or after drive, then drag; the inner and outer rings show their settings. |
 | Time | Sets Lan's delay and reverb time. |
 | Sync | Synchronizes Delay Time to the host tempo using straight, dotted, or triplet notes. |
 | Delay Note | Selects the note length for tempo-synchronized delay and reverb time. |

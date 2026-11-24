@@ -209,6 +209,20 @@ struct QinSynthEditorTestAccess
         editor.driveCutSliders[0].setValue(low,juce::sendNotificationSync);
         editor.driveCutSliders[1].setValue(high,juce::sendNotificationSync);
     }
+    static void clickDriveCut(QinSynthEditor& editor,int index)
+    {
+        auto& knob=editor.driveCutSliders[size_t(index)];
+        const juce::Point<float> point{float(knob.getWidth())*.5f,float(knob.getHeight())*.3f};
+        const auto now=juce::Time::getCurrentTime();
+        juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(),point,
+            juce::ModifierKeys::leftButtonModifier,1.f,0.f,0.f,0.f,0.f,
+            &knob,&knob,now,point,now,1,true);
+        knob.mouseDown(event); knob.mouseUp(event);
+    }
+    static bool driveCutPostSelected(const QinSynthEditor& editor,int index)
+    { return editor.driveCutSliders[size_t(index)].isPostSelected(); }
+    static float driveCutPostRing(const QinSynthEditor& editor,int index)
+    { return editor.driveCutSliders[size_t(index)].getPostRing(); }
     static bool driveCutsOffText(QinSynthEditor& editor)
     { return editor.driveCutSliders[0].getTextFromValue(0)=="OFF"
           && editor.driveCutSliders[1].getTextFromValue(20000)=="OFF"; }
@@ -837,6 +851,35 @@ int main(int argc,char** argv)
             }
             if(dryError>1.e-6 || mixError>1.e-5 || wetDifference<1.)
                 throw std::runtime_error("Drive cuts must affect only the circuit input while dry Mix stays unchanged");
+        }
+        {
+            std::array<std::unique_ptr<QinSynthProcessor>,4> owned;
+            for(auto& processor:owned) processor=std::make_unique<QinSynthProcessor>();
+            for(auto& processor:owned) set(*processor,"verbMix",0);
+            for(int index:{1,2,3}) set(*owned[size_t(index)],"drive",75);
+            set(*owned[2],"drivePostHighCut",1200);
+            set(*owned[3],"driveMix",0); set(*owned[3],"drivePostHighCut",1200);
+            for(auto& processor:owned) processor->prepareToPlay(48000,256);
+            std::array<juce::AudioBuffer<float>,4> blocks;
+            for(auto& audio:blocks) audio.setSize(2,256);
+            double postDifference=0,dryError=0;
+            for(int blockIndex=0;blockIndex<12;++blockIndex)
+            {
+                for(size_t index=0;index<owned.size();++index)
+                {
+                    juce::MidiBuffer postMidi;
+                    if(blockIndex==0) postMidi.addEvent(juce::MidiMessage::noteOn(1,84,1.f),0);
+                    owned[index]->processBlock(blocks[index],postMidi);
+                }
+                for(int sample=0;sample<256;++sample)
+                {
+                    postDifference+=std::abs(blocks[1].getSample(0,sample)-blocks[2].getSample(0,sample));
+                    dryError=std::max(dryError,double(std::abs(blocks[0].getSample(0,sample)
+                                                          -blocks[3].getSample(0,sample))));
+                }
+            }
+            if(postDifference<.5 || dryError>1.e-6)
+                throw std::runtime_error("Post-drive filtering must shape the wet circuit without filtering dry Mix");
         }
         {
             std::array<std::array<float,256>,4> outputs {};
@@ -1855,6 +1898,34 @@ int main(int argc,char** argv)
                || std::abs(preview.parameters.getRawParameterValue("driveHighCut")->load()-6000)>1.e-3
                || preview.parameters.getRawParameterValue("transformer")->load()<.5f)
                 throw std::runtime_error("Drive circuit, cuts, mix, and transformer controls must update host parameters");
+            QinSynthEditorTestAccess::clickDriveCut(editor,0);
+            QinSynthEditorTestAccess::clickDriveCut(editor,1);
+            if(!QinSynthEditorTestAccess::driveCutsOffText(editor))
+                throw std::runtime_error("Neutral post-drive cuts must also show OFF");
+            QinSynthEditorTestAccess::setDriveCuts(editor,440,2400);
+            if(!QinSynthEditorTestAccess::driveCutPostSelected(editor,0)
+               || !QinSynthEditorTestAccess::driveCutPostSelected(editor,1)
+               || std::abs(preview.parameters.getRawParameterValue("driveLowCut")->load()-220)>1.e-3
+               || std::abs(preview.parameters.getRawParameterValue("driveHighCut")->load()-6000)>1.e-3
+               || std::abs(preview.parameters.getRawParameterValue("drivePostLowCut")->load()-440)>1.e-3
+               || std::abs(preview.parameters.getRawParameterValue("drivePostHighCut")->load()-2400)>1.e-3
+               || std::abs(QinSynthEditorTestAccess::driveCutPostRing(editor,0)
+                   -preview.parameters.getParameter("drivePostLowCut")->getValue())>.001f)
+                throw std::runtime_error("Clicking drive cut knobs must edit the post filters and retain pre settings");
+            juce::MemoryBlock driveState;
+            preview.getStateInformation(driveState);
+            QinSynthProcessor restoredDrive;
+            restoredDrive.setStateInformation(driveState.getData(),int(driveState.getSize()));
+            if(std::abs(restoredDrive.parameters.getRawParameterValue("drivePostLowCut")->load()-440)>1.e-3
+               || std::abs(restoredDrive.parameters.getRawParameterValue("drivePostHighCut")->load()-2400)>1.e-3)
+                throw std::runtime_error("Post-drive cuts must survive host state restoration");
+            if(changes({800,245,92,89},[&]{QinSynthEditorTestAccess::setDriveCuts(editor,700,1400);})<12)
+                throw std::runtime_error("Drive preview must follow the post cut controls");
+            QinSynthEditorTestAccess::clickDriveCut(editor,0);
+            QinSynthEditorTestAccess::clickDriveCut(editor,1);
+            if(QinSynthEditorTestAccess::driveCutPostSelected(editor,0)
+               || QinSynthEditorTestAccess::driveCutPostSelected(editor,1))
+                throw std::runtime_error("Clicking drive cut knobs again must return to pre controls");
             if(changes({800,245,92,89},[&]{QinSynthEditorTestAccess::setDriveCuts(editor,700,1200);})<12)
                 throw std::runtime_error("Drive preview must follow the input cut controls");
             if(changes({800,245,92,89},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
