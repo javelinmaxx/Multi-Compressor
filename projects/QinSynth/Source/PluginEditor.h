@@ -148,6 +148,8 @@ public:
 private:
     friend struct QinSynthEditorTestAccess;
     static constexpr int designWidth=920, designHeight=640;
+    static constexpr int oscPlotX=34, oscPlotY=175, oscPlotWidth=168, oscPlotHeight=96;
+    static constexpr int glidePlotX=292, glidePlotY=545, glidePlotSize=55;
     static constexpr int driveScopeX=800, driveScopeY=245, driveScopeWidth=92, driveScopeHeight=89;
     static float oscPreviewPhase(int point) noexcept { return point==266 ? 0.f : float(point)/266.f; }
     void showOscillator(int oscillator);
@@ -200,6 +202,8 @@ private:
     std::array<juce::Label,4> noiseLabels;
     std::array<juce::Slider,3> detuneShapeSliders;
     std::array<juce::Label,3> detuneShapeLabels;
+    std::array<juce::Slider,3> dutySliders;
+    std::array<juce::Label,3> dutyLabels;
     std::array<juce::Slider,3> fmAmountSliders;
     std::array<juce::Label,3> fmAmountLabels;
     std::array<juce::Slider,3> fmSources;
@@ -249,6 +253,7 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>,3> envelopeMergeAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,4> noiseSliderAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> detuneShapeAttachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,3> dutyAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> fmAmountAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> fmSourceAttachments;
     std::unique_ptr<State::ComboBoxAttachment> noiseStyleAttachment;

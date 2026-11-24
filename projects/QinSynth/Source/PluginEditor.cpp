@@ -611,7 +611,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     };
     slideTime.updateText(); slideShape.updateText();
     slideShape.onValueChange=[this]
-    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{297,545,49,55})); };
+    { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{glidePlotX,glidePlotY,glidePlotSize,glidePlotSize})); };
     updatePlayAvailability();
     for(size_t i=0;i<oscillatorTabs.size();++i)
     {
@@ -638,7 +638,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     noiseStyleLabel.setTooltip("Selects white, pink, or sparse velvet noise before the tuned filter.");
     addAndMakeVisible(noiseStyle); addAndMakeVisible(noiseStyleLabel);
     noiseStyleAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"noiseStyle",noiseStyle);
-    noiseStyle.onChange=[this] { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{34,198,270,54})); };
+    noiseStyle.onChange=[this] { repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight})); };
     for(size_t i=0;i<noiseSliders.size();++i)
     {
         auto& slider=noiseSliders[i]; auto& label=noiseLabels[i];
@@ -684,6 +684,30 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
             "osc"+juce::String(int(i)+1)+"DetuneShape",slider);
         editorTooltips::setHint(slider,label,
             "Moves inner unison pitches toward center at -100% or toward the outer voices at +100%.");
+    }
+    for(size_t i=0;i<dutySliders.size();++i)
+    {
+        auto& slider=dutySliders[i]; auto& label=dutyLabels[i];
+        slider.setComponentID("osc"+juce::String(int(i)+1)+"Duty");
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,72,17);
+        slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        slider.setColour(juce::Slider::textBoxTextColourId,panelInk);
+        label.setText("DUTY",juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setFont(juce::FontOptions(9.f));
+        label.setColour(juce::Label::textColourId,secondaryRed);
+        addAndMakeVisible(slider); addAndMakeVisible(label);
+        dutyAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,
+            "osc"+juce::String(int(i)+1)+"Duty",slider);
+        editorTooltips::setHint(slider,label,
+            "Changes pulse width, narrows triangle peaks, and adds a flat end to saw without changing sine.");
+        slider.onValueChange=[this,i]
+        {
+            if(int(i)==currentOscillator)
+                repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
+                    {oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight}));
+        };
     }
     for(size_t i=0;i<fmAmountSliders.size();++i)
     {
@@ -1023,7 +1047,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
             x->setValueNotifyingHost(x->convertTo0to1(position.x*100.f));
             y->setValueNotifyingHost(y->convertTo0to1(position.y*100.f));
             if(int(i)==currentOscillator)
-                repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{34,198,270,54}));
+                repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight}));
         };
         retrigAttachments[i]=std::make_unique<State::ButtonAttachment>(synth.parameters,"osc"+juce::String(int(i)+1)+"Retrig",retrig[i]);
     }
@@ -1268,7 +1292,7 @@ void QinSynthEditor::timerCallback()
         const auto changed=waves[i].setPosition({waveXParameters[i]->convertFrom0to1(waveXParameters[i]->getValue())*.01f,
                                                  waveYParameters[i]->convertFrom0to1(waveYParameters[i]->getValue())*.01f});
         if(changed && int(i)==currentOscillator)
-            repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{34,198,270,54}));
+            repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight}));
         phaseStartLines[i].setPhase(phaseStartParameters[i]->convertFrom0to1(
             phaseStartParameters[i]->getValue())*.01f);
     }
@@ -1313,6 +1337,7 @@ void QinSynthEditor::updateVisibility()
         octaveDisplays[size_t(osc)].setVisible(selected);
         fineDisplays[size_t(osc)].setVisible(selected);
         detuneShapeSliders[size_t(osc)].setVisible(selected); detuneShapeLabels[size_t(osc)].setVisible(selected);
+        dutySliders[size_t(osc)].setVisible(selected); dutyLabels[size_t(osc)].setVisible(selected);
         fmAmountSliders[size_t(osc)].setVisible(selected); fmAmountLabels[size_t(osc)].setVisible(selected);
         fmSources[size_t(osc)].setVisible(selected); fmSourceLabels[size_t(osc)].setVisible(selected);
         for(int control=0;control<6;++control)
@@ -1354,7 +1379,7 @@ void QinSynthEditor::resized()
     tuningA4Label.setBounds(154,316,86,15); tuningA4.setBounds(154,331,86,75);
     voiceCount.setBounds(660,34,94,27);
     activeVoicesLabel.setBounds(761,35,130,25);
-    polyLegatoButton.setBounds(345,526,79,72);
+    polyLegatoButton.setBounds(351,526,79,72);
     legatoRuleLabel.setBounds(30,522,83,13); legatoRule.setBounds(30,535,83,70);
     slideTimeLabel.setBounds(119,522,83,13); slideTime.setBounds(119,535,83,70);
     slideShapeLabel.setBounds(208,522,83,13); slideShape.setBounds(208,535,83,70);
@@ -1363,7 +1388,9 @@ void QinSynthEditor::resized()
         oscillatorTabs[size_t(i)].setBounds(31+i*109,101,103,27);
         envelopeTabs[size_t(i)].setBounds(455+i*55,413,52,27);
         waveLabels[size_t(i)].setBounds(318,164,96,11); waves[size_t(i)].setBounds(318,175,96,96);
-        phaseStartLines[size_t(i)].setBounds(34,198,270,54);
+        dutyLabels[size_t(i)].setBounds(218,164,86,11);
+        dutySliders[size_t(i)].setBounds(218,175,86,96);
+        phaseStartLines[size_t(i)].setBounds(oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight);
         retrig[size_t(i)].setBounds(333,139,85,26);
         levelDisplays[size_t(i)].setBounds(34,139,105,26);
         fineDisplays[size_t(i)].setBounds(143,139,102,26);
@@ -1448,6 +1475,8 @@ void QinSynthEditor::resized()
     for(auto& label:noiseLabels) label.setTransform(scale);
     for(auto& slider:detuneShapeSliders) slider.setTransform(scale);
     for(auto& label:detuneShapeLabels) label.setTransform(scale);
+    for(auto& slider:dutySliders) slider.setTransform(scale);
+    for(auto& label:dutyLabels) label.setTransform(scale);
     for(auto& slider:fmAmountSliders) slider.setTransform(scale);
     for(auto& label:fmAmountLabels) label.setTransform(scale);
     for(auto& source:fmSources) source.setTransform(scale);
@@ -1507,7 +1536,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
     stageStyle::drawPanel(g,{692,500,212,130},panelRed);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("PLAY",30,492,120,20,juce::Justification::centredLeft);
-    const juce::Rectangle<float> glidePlot(297,545,44,55);
+    const juce::Rectangle<float> glidePlot(glidePlotX,glidePlotY,glidePlotSize,glidePlotSize);
     g.setColour(secondaryRed); g.setFont(juce::FontOptions(9.f));
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(glidePlot,5);
     const auto curveLeft=glidePlot.getX()+5.f, curveRight=glidePlot.getRight()-5.f;
@@ -1629,11 +1658,14 @@ void QinSynthEditor::paint(juce::Graphics& g)
                    juce::roundToInt(x)-15,227,30,11,juce::Justification::centred);
     }
     g.setColour(secondaryRed); g.setFont(juce::FontOptions(9.f));
-    g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(34,198,270,54),6);
+    const juce::Rectangle<float> oscPlot(oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight);
+    g.setColour(stageStyle::inset); g.fillRoundedRectangle(oscPlot,6);
     for(int line=1;line<4;++line)
-    { g.setColour(stageStyle::grid); g.drawHorizontalLine(198+juce::roundToInt(line*13.5f),34,304); }
+    { g.setColour(stageStyle::grid); g.drawHorizontalLine(juce::roundToInt(oscPlotY+line*oscPlotHeight*.25f),oscPlotX,oscPlotX+oscPlotWidth); }
     const auto waveMix=currentOscillator==3 ? std::array<float,4>{1.f,0.f,0.f,0.f}
         : qin::waveWeights(waves[size_t(currentOscillator)].getPosition());
+    const auto duty=currentOscillator==3 ? .5 : dutySliders[size_t(currentOscillator)].getValue()*.01;
+    const auto dutyShape=qin::makeDutyShape(duty);
     juce::Path waveform;
     uint32_t noisePreviewState=0x87a3d21fu;
     float pinkPreview=0;
@@ -1649,12 +1681,13 @@ void QinSynthEditor::paint(juce::Graphics& g)
         const auto style=noiseStyle.getSelectedId();
         const auto noiseShape=style==2 ? pinkPreview*2.5f
             : style==3 ? ((noisePreviewState&31u)==0 ? white*2.f : 0.f) : white;
-        const auto shape=currentOscillator==3 ? std::clamp(noiseShape,-1.f,1.f)
-            : waveMix[0]*(2.f*cycle-1.f)
-              +waveMix[1]*(cycle<.5f ? 1.f : -1.f)
-              +waveMix[2]*(1.f-4.f*std::abs(cycle-.5f))
+        const auto shape=currentOscillator==3 ? double(std::clamp(noiseShape,-1.f,1.f))
+            : waveMix[0]*qin::dutySaw(cycle,dutyShape)
+              +waveMix[1]*qin::dutyPulse(cycle,dutyShape)
+              +waveMix[2]*qin::dutyTriangle(cycle,dutyShape)
               +waveMix[3]*std::sin(2.f*juce::MathConstants<float>::pi*cycle);
-        const auto x=36.f+point,y=225.f-18.f*shape;
+        const auto x=oscPlotX+2.f+(oscPlotWidth-4.f)*float(point)/266.f;
+        const auto y=oscPlot.getCentreY()-40.f*shape;
         if(point==0) waveform.startNewSubPath(x,y); else waveform.lineTo(x,y);
     }
     g.setColour(curveBlue.withAlpha(.22f)); g.strokePath(waveform,juce::PathStrokeType(4));

@@ -62,7 +62,7 @@ public:
 private:
     friend struct QinSynthTestAccess;
     static juce::AudioProcessorValueTreeState::ParameterLayout layout();
-    struct Subvoice { double phase=0, triangle=0; };
+    struct Subvoice { double phase=0; };
     struct Envelope { float value=0, progress=0, start=0; int stage=0; };
     struct FilterState { float s1=0,s2=0,t1=0,t2=0,pole=0; std::array<float,4> ladder {}; };
     struct NoiseFilterCoefficients { float a1=1, a2=0, a3=0, highPass=0; };
@@ -94,6 +94,7 @@ private:
         std::array<float,oscillatorCount> fmDepth;
         std::array<std::array<double,maxUnison>,oscillatorCount> detuneRatios;
         std::array<std::array<float,4>,oscillatorCount> waveMixes;
+        std::array<qin::DutyShape,oscillatorCount> dutyShapes;
     };
     struct VoiceFrame
     {
@@ -115,7 +116,7 @@ private:
         QinSynthProcessor& owner;
     };
     struct HeldNote { int note=-1, channel=1, voiceIndex=-1; };
-    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1, fmSource=-1; bool retrig=false; float phaseStart=0, level=0, detune=0, detuneShape=0, spread=.12f, pan=0, fmAmount=0, fineCents=0; };
+    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1, fmSource=-1; bool retrig=false; float phaseStart=0, duty=.5f, level=0, detune=0, detuneShape=0, spread=.12f, pan=0, fmAmount=0, fineCents=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
     struct Settings
@@ -142,7 +143,7 @@ private:
     void handleMidi(const juce::MidiMessage&,const Settings&);
     void renderSegment(juce::AudioBuffer<float>&,int,int,const Settings&,bool);
     void process(juce::AudioBuffer<float>&,juce::MidiBuffer&,bool);
-    static double oscillatorSample(Subvoice&,const std::array<float,4>&,double) noexcept;
+    static double oscillatorSample(Subvoice&,const std::array<float,4>&,double,const qin::DutyShape&) noexcept;
     static double polyBlep(double,double) noexcept;
     static float notePan(int,float) noexcept;
     float advanceEnvelope(Envelope&,const EnvelopeSettings&,bool,const std::array<float,3>&) const noexcept;
@@ -162,6 +163,7 @@ private:
     std::array<Envelope,3> sharedEnvelopes {};
     std::array<float,3> smoothedEnvelopeMerge {};
     std::array<qin::WavePosition,oscillatorCount> smoothedWaves {};
+    std::array<float,oscillatorCount> smoothedDuties {};
     std::array<std::array<double,maxUnison>,oscillatorCount> detuneRatios {};
     std::array<juce::SmoothedValue<float>,oscillatorCount> fmAmounts {};
     bool fmWasActive=false;

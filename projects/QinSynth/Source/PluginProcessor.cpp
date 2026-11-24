@@ -50,6 +50,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         const juce::String prefix(prefixes[size_t(osc)]), title="Oscillator "+juce::String(osc+1);
         add(prefix+"WaveX",title+" waveform horizontal",0,100,.1f,osc==1 ? 100.f : 0.f,"%");
         add(prefix+"WaveY",title+" waveform vertical",0,100,.1f,osc==2 ? 100.f : 0.f,"%");
+        add(prefix+"Duty",title+" duty cycle",0,100,.1f,50.f,"%");
         addGainLevel(prefix+"Level",title+" level",osc==0 ? 80.f : 0.f);
         add(prefix+"Octave",title+" octave",-2,2,1,0,"oct");
         add(prefix+"Fine",title+" fine pitch",-1200,1200,.1f,0,"cents");
@@ -264,6 +265,8 @@ void QinSynthProcessor::prepareToPlay(double rate,int expectedBlockSize)
         smoothedWaves[size_t(osc)]=qin::clampWavePosition(
             parameters.getRawParameterValue(prefix+"WaveX")->load()*.01f,
             parameters.getRawParameterValue(prefix+"WaveY")->load()*.01f);
+        smoothedDuties[size_t(osc)]=std::clamp(
+            parameters.getRawParameterValue(prefix+"Duty")->load()*.01f,0.f,1.f);
         const auto octave=juce::roundToInt(parameters.getRawParameterValue(prefix+"Octave")->load());
         const auto fine=parameters.getRawParameterValue(prefix+"Fine")->load();
         const auto unison=juce::roundToInt(parameters.getRawParameterValue(prefix+"Unison")->load());
@@ -337,6 +340,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings(const char* override
         const juce::String prefix(prefixes[size_t(osc)]);
         auto& target=settings.oscillator[size_t(osc)];
         target.wave=qin::clampWavePosition(get(prefix+"WaveX")*.01f,get(prefix+"WaveY")*.01f);
+        target.duty=std::clamp(get(prefix+"Duty")*.01f,0.f,1.f);
         target.retrig=get(prefix+"Retrig")>=.5f;
         target.phaseStart=std::clamp(get(prefix+"PhaseStart")*.01f,0.f,1.f);
         target.octave=std::clamp(juce::roundToInt(get(prefix+"Octave")),-2,2);
@@ -496,15 +500,17 @@ double QinSynthProcessor::polyBlep(double phase,double step) noexcept
     if(phase>1-step) { const auto t=(phase-1)/step; return t*t+t+t+1; }
     return 0;
 }
-double QinSynthProcessor::oscillatorSample(Subvoice& state,const std::array<float,4>& weights,double step) noexcept
+double QinSynthProcessor::oscillatorSample(Subvoice& state,const std::array<float,4>& weights,double step,
+                                          const qin::DutyShape& duty) noexcept
 {
     const auto phase=state.phase;
     const auto edge=polyBlep(phase,step);
-    const auto saw=2*phase-1-edge;
-    const auto pulse=(phase<.5 ? 1.0 : -1.0)+edge-polyBlep(std::fmod(phase+.5,1.0),step);
-    state.triangle=.9998*state.triangle+4*step*pulse;
+    const auto saw=weights[0]>1.e-6f ? qin::dutySaw(phase,duty)-edge : 0.0;
+    const auto pulsePhase=phase>=duty.pulseWidth ? phase-duty.pulseWidth : phase-duty.pulseWidth+1.0;
+    const auto pulse=weights[1]>1.e-6f ? qin::dutyPulse(phase,duty)+edge-polyBlep(pulsePhase,step) : 0.0;
+    const auto triangle=weights[2]>1.e-6f ? qin::dutyTriangle(phase,duty) : 0.0;
     const auto sine=weights[3]>1.e-6f ? qin::curveLookup.sineAt(phase) : 0.0;
-    const auto value=weights[0]*saw+weights[1]*pulse+weights[2]*state.triangle+weights[3]*sine;
+    const auto value=weights[0]*saw+weights[1]*pulse+weights[2]*triangle+weights[3]*sine;
     state.phase+=step;
     if(state.phase>=1) state.phase-=1;
     return std::clamp(value,-1.5,1.5);
@@ -657,9 +663,6 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
                         {
                             const auto phase=std::fmod(double(settings.oscillator[size_t(osc)].phaseStart),1.0);
                             subvoice.phase=phase;
-                            // The triangle is an integrated pulse. Set its integrator
-                            // to the corresponding cycle position before the first sample.
-                            subvoice.triangle=phase<.5 ? -1.0+4.0*phase : 3.0-4.0*phase;
                         }
                         else if(hadPreviousNote)
                             subvoice=previousOscillators[size_t(osc)][size_t(u)];
@@ -897,6 +900,9 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             current.x+=waveSmoothing*(target.x-current.x);
             current.y+=waveSmoothing*(target.y-current.y);
             frame.waveMixes[size_t(osc)]=qin::waveWeights(current);
+            auto& currentDuty=smoothedDuties[size_t(osc)];
+            currentDuty+=waveSmoothing*(settings.oscillator[size_t(osc)].duty-currentDuty);
+            frame.dutyShapes[size_t(osc)]=qin::makeDutyShape(currentDuty);
         }
     };
     const auto renderVoiceSample=[&](int voiceIndex,const SharedFrame& sharedFrame,VoiceFrame& out)
@@ -992,7 +998,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                     const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
                     const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],sharedFrame.waveMixes[size_t(osc)],
                         std::min(.49,baseSteps[size_t(voiceIndex)][size_t(osc)]
-                            *ratios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod))
+                            *ratios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod),sharedFrame.dutyShapes[size_t(osc)])
                         *control.level/control.unison;
                     auto gains=panGains[size_t(voiceIndex)][size_t(osc)][size_t(u)];
                     if(movingPan[size_t(voiceIndex)])
@@ -1029,7 +1035,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                 {
                     const auto raw=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],sharedFrame.waveMixes[size_t(osc)],
                         std::clamp(baseSteps[size_t(voiceIndex)][size_t(osc)]
-                            *ratios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod*frequencyScale,1.e-7,.49));
+                            *ratios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod*frequencyScale,1.e-7,.49),
+                        sharedFrame.dutyShapes[size_t(osc)]);
                     sum+=raw;
                     if(control.level<=0) continue;
                     const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);

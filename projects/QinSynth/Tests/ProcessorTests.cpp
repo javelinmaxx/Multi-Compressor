@@ -30,6 +30,12 @@ struct QinSynthTestAccess
     static int monoNote(const QinSynthProcessor& p) { return p.voices[0].note; }
     static bool monoHeld(const QinSynthProcessor& p) { return p.voices[0].keyDown; }
     static double monoPhase(const QinSynthProcessor& p) { return p.voices[0].oscillators[0][0].phase; }
+    static double dutySample(const std::array<float,4>& weights,double phase,double duty)
+    {
+        QinSynthProcessor::Subvoice state;
+        state.phase=phase;
+        return QinSynthProcessor::oscillatorSample(state,weights,.001,qin::makeDutyShape(duty));
+    }
     static float monoEnvelope(const QinSynthProcessor& p) { return p.voices[0].env[0].value; }
     static float effectiveEnvelope(const QinSynthProcessor& p,int voice,int envelope)
     { return p.voices[size_t(voice)].effectiveEnv[size_t(envelope)]; }
@@ -44,7 +50,7 @@ struct QinSynthTestAccess
     {
         for(const auto& oscillator:p.voices[0].oscillators)
             for(const auto& subvoice:oscillator)
-                if(std::abs(subvoice.phase)>1.e-12 || std::abs(subvoice.triangle+1.0)>1.e-12) return false;
+                if(std::abs(subvoice.phase)>1.e-12) return false;
         return true;
     }
     static bool newestRetriggeredPhasesMatch(const QinSynthProcessor& p,
@@ -56,9 +62,7 @@ struct QinSynthTestAccess
             for(const auto& subvoice:newest->oscillators[osc])
             {
                 const auto phase=expected[osc];
-                const auto triangle=phase<.5 ? -1.0+4.0*phase : 3.0-4.0*phase;
-                if(std::abs(subvoice.phase-phase)>1.e-6
-                    || std::abs(subvoice.triangle-triangle)>1.e-6) return false;
+                if(std::abs(subvoice.phase-phase)>1.e-6) return false;
             }
         return true;
     }
@@ -125,7 +129,8 @@ struct QinSynthEditorTestAccess
     static void fxSection(QinSynthEditor& editor,int index) { editor.showFxSection(index); }
     static bool oscillatorVisible(const QinSynthEditor& editor,int index)
     { return editor.waves[size_t(index)].isVisible() && editor.retrig[size_t(index)].isVisible()
-        && editor.levelDisplays[size_t(index)].isVisible(); }
+        && editor.levelDisplays[size_t(index)].isVisible()
+        && editor.dutySliders[size_t(index)].isVisible(); }
     static bool voiceDragEnabled(const QinSynthEditor& editor)
     { return editor.voiceCount.isVisible()
         && editor.voiceCount.getSliderStyle()==juce::Slider::RotaryVerticalDrag
@@ -161,11 +166,17 @@ struct QinSynthEditorTestAccess
               QinSynthEditor::oscPreviewPhase(266)}; }
     static void setDetuneShape(QinSynthEditor& editor,int index,float shape)
     { editor.detuneShapeSliders[size_t(index)].setValue(shape,juce::sendNotificationSync); }
+    static void setDuty(QinSynthEditor& editor,int index,float duty)
+    { editor.dutySliders[size_t(index)].setValue(duty,juce::sendNotificationSync); }
     static bool oscillatorLayout(const QinSynthEditor& editor)
     { return editor.levelDisplays[0].getY()<editor.sliders[2].getY()
         && editor.fineDisplays[0].getY()<editor.sliders[2].getY()
         && editor.sliders[35].getY()>editor.sliders[2].getY()
         && editor.detuneShapeSliders[0].isVisible()
+        && editor.phaseStartLines[0].getHeight()==editor.waves[0].getHeight()
+        && editor.phaseStartLines[0].getWidth()==168
+        && editor.dutySliders[0].getX()>editor.phaseStartLines[0].getRight()
+        && editor.dutySliders[0].getRight()<editor.waves[0].getX()
         && editor.levelDisplays[0].getRight()<editor.fineDisplays[0].getX()
         && editor.retrig[0].getButtonText()=="RETRIG"
         && editor.retrig[0].getHeight()<=30; }
@@ -549,6 +560,26 @@ int main(int argc,char** argv)
                 if(std::abs(actual[index]-expected[index])>1.e-5f)
                     throw std::runtime_error("Square pad must use bilinear waveform blends");
         }
+        if(std::abs(qin::dutySaw(.25,.5)+.5)>1.e-8
+           || std::abs(qin::dutySaw(.9,1.)-1.)>1.e-8
+           || std::abs(qin::dutySaw(.1,0.)+1.)>1.e-8
+           || std::abs(qin::dutyPulse(.3,.2)+1.)>1.e-8
+           || std::abs(qin::dutyPulse(.3,.8)-1.)>1.e-8
+           || std::abs(qin::dutyTriangle(.5,.5)-1.)>1.e-8
+           || std::abs(qin::dutyTriangle(0.,.5)+1.)>1.e-8
+           || std::abs(qin::dutyTriangle(.35,0.))>1.e-8)
+            throw std::runtime_error("Duty control must shape saw, pulse, and triangle around the unchanged midpoint");
+        const std::array<float,4> sawOnly {1,0,0,0}, pulseOnly {0,1,0,0};
+        const std::array<float,4> triangleOnly {0,0,1,0}, sineOnly {0,0,0,1};
+        if(std::abs(QinSynthTestAccess::dutySample(sawOnly,.9,.5)
+                    -QinSynthTestAccess::dutySample(sawOnly,.9,1.))<.1
+           || std::abs(QinSynthTestAccess::dutySample(pulseOnly,.3,.2)
+                       -QinSynthTestAccess::dutySample(pulseOnly,.3,.8))<1.
+           || std::abs(QinSynthTestAccess::dutySample(triangleOnly,.35,.5)
+                       -QinSynthTestAccess::dutySample(triangleOnly,.35,0.))<.2
+           || std::abs(QinSynthTestAccess::dutySample(sineOnly,.35,0.)
+                       -QinSynthTestAccess::dutySample(sineOnly,.35,1.))>1.e-9)
+            throw std::runtime_error("Duty control must affect the rendered waves but leave sine unchanged");
         for(int voice=0;voice<8;++voice)
         {
             const auto linear=qin::detunePosition(voice,8,0.f);
@@ -675,6 +706,7 @@ int main(int argc,char** argv)
         if(QinSynthTestAccess::active(limited)!=2 || !QinSynthTestAccess::allRetriggeredPhasesMatch(limited))
             throw std::runtime_error("Retrig must start every oscillator and unison copy at the same phase");
         set(limited,"osc1PhaseStart",25); set(limited,"osc2PhaseStart",50); set(limited,"osc3PhaseStart",75);
+        set(limited,"osc1Duty",20); set(limited,"osc2Duty",50); set(limited,"osc3Duty",80);
         QinSynthTestAccess::noteOn(limited,69);
         if(!QinSynthTestAccess::newestRetriggeredPhasesMatch(limited,{.25,.5,.75}))
             throw std::runtime_error("Each Retrig oscillator and unison copy must start at its selected phase");
@@ -683,8 +715,11 @@ int main(int argc,char** argv)
         restoredPhases.setStateInformation(phaseState.getData(),int(phaseState.getSize()));
         if(std::abs(restoredPhases.parameters.getRawParameterValue("osc1PhaseStart")->load()-25.f)>.01f
            || std::abs(restoredPhases.parameters.getRawParameterValue("osc2PhaseStart")->load()-50.f)>.01f
-           || std::abs(restoredPhases.parameters.getRawParameterValue("osc3PhaseStart")->load()-75.f)>.01f)
-            throw std::runtime_error("Per-oscillator phase starts must survive session restoration");
+           || std::abs(restoredPhases.parameters.getRawParameterValue("osc3PhaseStart")->load()-75.f)>.01f
+           || std::abs(restoredPhases.parameters.getRawParameterValue("osc1Duty")->load()-20.f)>.01f
+           || std::abs(restoredPhases.parameters.getRawParameterValue("osc2Duty")->load()-50.f)>.01f
+           || std::abs(restoredPhases.parameters.getRawParameterValue("osc3Duty")->load()-80.f)>.01f)
+            throw std::runtime_error("Per-oscillator phase starts and duty settings must survive session restoration");
         set(limited,"osc1Retrig",0);
         const auto freePhase=QinSynthTestAccess::secondPhase(limited,0);
         QinSynthTestAccess::noteOn(limited,70);
@@ -739,6 +774,40 @@ int main(int argc,char** argv)
             }
             if(error>.01 || difference<.05)
                 throw std::runtime_error("OSC pad must blend all four audible waveform signals");
+        }
+        {
+            auto narrow=std::make_unique<QinSynthProcessor>();
+            auto wide=std::make_unique<QinSynthProcessor>();
+            for(auto* instrument:{narrow.get(),wide.get()})
+            {
+                set(*instrument,"osc1WaveX",100); set(*instrument,"osc1WaveY",0);
+                set(*instrument,"osc1Retrig",1); set(*instrument,"filterType",0);
+                set(*instrument,"driveMix",0); set(*instrument,"verbMix",0);
+            }
+            set(*narrow,"osc1Duty",20); set(*wide,"osc1Duty",80);
+            narrow->prepareToPlay(48000,256); wide->prepareToPlay(48000,256);
+            juce::AudioBuffer<float> a(2,256),b(2,256);
+            juce::MidiBuffer events;
+            events.addEvent(juce::MidiMessage::noteOn(1,60,.7f),0);
+            for(int blockIndex=0;blockIndex<16;++blockIndex)
+            {
+                narrow->processBlock(a,events); wide->processBlock(b,events);
+                events.clear();
+            }
+            double difference=0;
+            for(int sample=0;sample<256;++sample)
+                difference+=std::abs(a.getSample(0,sample)-b.getSample(0,sample));
+            if(difference<.1)
+                throw std::runtime_error("Duty must alter the rendered oscillator pulse width");
+            for(auto* instrument:{narrow.get(),wide.get()})
+            { set(*instrument,"osc1WaveX",100); set(*instrument,"osc1WaveY",100); }
+            for(int blockIndex=0;blockIndex<24;++blockIndex)
+            { narrow->processBlock(a,events); wide->processBlock(b,events); }
+            difference=0;
+            for(int sample=0;sample<256;++sample)
+                difference+=std::abs(a.getSample(0,sample)-b.getSample(0,sample));
+            if(difference>.001)
+                throw std::runtime_error("Duty must leave the rendered sine wave unchanged");
         }
         auto lowOwner=std::make_unique<QinSynthProcessor>();
         auto& low=*lowOwner;
@@ -1774,6 +1843,10 @@ int main(int argc,char** argv)
             if(std::abs(preview.parameters.getRawParameterValue("osc1DetuneShape")->load()-75.f)>.1f)
                 throw std::runtime_error("Detune Shape knob must update the host parameter");
             QinSynthEditorTestAccess::setDetuneShape(editor,0,0.f);
+            QinSynthEditorTestAccess::setDuty(editor,0,80.f);
+            if(std::abs(preview.parameters.getRawParameterValue("osc1Duty")->load()-80.f)>.1f)
+                throw std::runtime_error("Duty knob must update its host parameter");
+            QinSynthEditorTestAccess::setDuty(editor,0,50.f);
             QinSynthEditorTestAccess::setVoiceCount(editor,4);
             QinSynthEditorTestAccess::setWave(editor,1,{.75f,.5f});
             QinSynthEditorTestAccess::setRetrig(editor,2,true);
@@ -1848,12 +1921,15 @@ int main(int argc,char** argv)
                         different+=before.getPixelAt(x,y)!=after.getPixelAt(x,y);
                 return different;
             };
-            if(changes({34,198,270,54},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
+            if(changes({34,175,168,96},[&]{QinSynthEditorTestAccess::setWave(editor,0,{1.f,1.f});})<30)
                 throw std::runtime_error("OSC waveform plot must follow the square pad");
             QinSynthEditorTestAccess::setWave(editor,0,{0.f,0.f});
+            if(changes({34,175,168,96},[&]{QinSynthEditorTestAccess::setDuty(editor,0,90.f);})<20)
+                throw std::runtime_error("OSC waveform plot must follow the Duty knob");
+            QinSynthEditorTestAccess::setDuty(editor,0,50.f);
             QinSynthEditorTestAccess::setSlide(editor,80,0);
-            if(changes({297,545,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
-               || changes({297,545,44,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
+            if(changes({292,545,55,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,50);})<12
+               || changes({292,545,55,55},[&]{QinSynthEditorTestAccess::setSlide(editor,80,100);})<12)
                 throw std::runtime_error("Legato curve preview must follow the Shape knob");
             QinSynthEditorTestAccess::setSlide(editor,80,50);
             if(changes({455,442,218,45},[&]{QinSynthEditorTestAccess::previewValue(editor,20,0);})<20)

@@ -30,6 +30,7 @@
 | Transformer | Adds Ren's transformer to the output and saves CPU when off. |
 | DELAY tab | Opens Lan's delay and reverb controls. |
 | Osc Wave | Drag within the square to blend the selected oscillator between saw, pulse, triangle, and sine waves. |
+| Osc Duty | Changes pulse width, narrows triangle peaks, and adds a flat end to saw without changing sine. |
 | OSC Phase Start | Drag the phase line to choose where this oscillator starts when Retrig is enabled. |
 | Osc Level | Drag to set this oscillator's level from silence to 0 dB; double-click to reset. |
 | Osc Octave | Transposes the selected oscillator by whole octaves. |
