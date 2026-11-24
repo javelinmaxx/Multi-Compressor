@@ -160,6 +160,8 @@ private:
     QinAnalogSwitch transformerButton {"TRANSFORMER"};
     juce::Slider driveMode, driveMix;
     juce::Label driveModeLabel, driveMixLabel;
+    std::array<juce::Slider,2> driveCutSliders;
+    std::array<juce::Label,2> driveCutLabels;
     QinVoiceSlider voiceCount;
     std::array<QinVoiceSlider,3> levelDisplays;
     std::array<QinVoiceSlider,3> octaveDisplays;
@@ -220,6 +222,7 @@ private:
     std::unique_ptr<State::SliderAttachment> slideTimeAttachment, slideShapeAttachment;
     std::unique_ptr<State::ComboBoxAttachment> filterTypeAttachment, modTargetAttachment;
     std::unique_ptr<State::SliderAttachment> driveModeAttachment, driveMixAttachment;
+    std::array<std::unique_ptr<State::SliderAttachment>,2> driveCutAttachments;
     std::unique_ptr<State::ButtonAttachment> transformerAttachment;
     std::unique_ptr<State::ButtonAttachment> noiseAttachment;
     std::array<std::unique_ptr<State::ButtonAttachment>,3> timesFiveAttachments;

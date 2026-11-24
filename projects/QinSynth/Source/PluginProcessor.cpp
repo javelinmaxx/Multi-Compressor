@@ -180,6 +180,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         const juce::String prefix(prefixes[size_t(osc)]);
         add(prefix+"PhaseStart","Oscillator "+juce::String(osc+1)+" retrigger phase",0,100,.1f,0,"%");
     }
+    juce::NormalisableRange<float> lowCutRange{0.f,1000.f,1.f};
+    lowCutRange.setSkewForCentre(100.f);
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"driveLowCut",1},
+        "Drive low cut",lowCutRange,0.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
+    juce::NormalisableRange<float> highCutRange{1000.f,20000.f,1.f};
+    highCutRange.setSkewForCentre(5000.f);
+    result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"driveHighCut",1},
+        "Drive high cut",highCutRange,20000.f,juce::AudioParameterFloatAttributes().withLabel("Hz")));
     return result;
 }
 QinSynthProcessor::QinSynthProcessor()
@@ -226,6 +234,10 @@ void QinSynthProcessor::prepareToPlay(double rate,int)
     voiceAge=onsetCount=0; onsetTap=onsetPhase=0; sustain=false;
     activeVoiceCount.store(0,std::memory_order_relaxed);
     driveCircuit.prepare(sampleRate);
+    driveInputFilter.prepare(sampleRate,
+        parameters.getRawParameterValue("driveLowCut")->load(),
+        parameters.getRawParameterValue("driveHighCut")->load());
+    driveWasActive=false;
     lastDriveMode=std::clamp(juce::roundToInt(parameters.getRawParameterValue("driveMode")->load()),0,3);
     for(size_t mode=0;mode<driveWeights.size();++mode)
     {
@@ -333,6 +345,8 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings(const char* override
     settings.pan=std::clamp(get("keyPan")*.01f,-1.f,1.f);
     settings.drive=std::clamp(get("drive")*.01f,0.f,1.f);
     settings.driveMix=std::clamp(get("driveMix")*.01f,0.f,1.f);
+    settings.driveLowCut=std::clamp(get("driveLowCut"),0.f,1000.f);
+    settings.driveHighCut=std::clamp(get("driveHighCut"),1000.f,20000.f);
     settings.driveMode=std::clamp(juce::roundToInt(get("driveMode")),0,3);
     settings.transformer=get("transformer")>=.5f;
     settings.polyLegato=get("polyLegato")>=.5f;
@@ -1045,6 +1059,11 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             driveWeights[mode].setTargetValue(int(mode)==settings.driveMode ? 1.f : 0.f);
         lastDriveMode=settings.driveMode;
     }
+    driveInputFilter.setCutoffs(settings.driveLowCut,settings.driveHighCut);
+    const auto driveActive=settings.drive>1.e-4f && settings.driveMix>1.e-4f;
+    const auto driveFilterActive=driveInputFilter.isActive();
+    if(driveActive && !driveWasActive) driveInputFilter.resetStates();
+    driveWasActive=driveActive;
     // Around 12 kHz of scope samples spans roughly 85 ms, enough to see two
     // complete cycles of a low piano note without processing every sample.
     const auto stride=std::max(1u,uint32_t(sampleRate/12000.0));
@@ -1054,17 +1073,21 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         const auto original=capture ? .5f*(buffer.getSample(0,i)+buffer.getSample(1,i)) : 0.f;
         std::array<float,zao::circuitCount> weights {};
         for(size_t mode=0;mode<weights.size();++mode) weights[mode]=driveWeights[mode].getNextValue();
-        if(settings.drive>1.e-4f && settings.driveMix>1.e-4f)
+        if(driveActive)
+        {
+            if(driveFilterActive) driveInputFilter.beginSample();
             for(int ch=0;ch<2;++ch)
             {
                 const auto dry=buffer.getSample(ch,i);
+                const auto circuitInput=driveFilterActive ? driveInputFilter.process(ch,dry) : dry;
                 double driven=0;
                 for(size_t mode=0;mode<weights.size();++mode)
                     if(weights[mode]>1.e-6f)
-                        driven+=weights[mode]*driveCircuit.process(int(mode),ch,dry*(1+5*settings.drive));
+                        driven+=weights[mode]*driveCircuit.process(int(mode),ch,circuitInput*(1+5*settings.drive));
                 const auto result=dry+settings.driveMix*(driven-dry);
                 buffer.setSample(ch,i,!bypass && std::isfinite(result) ? float(std::clamp(result,-4.0,4.0)) : dry);
             }
+        }
         if(capture)
         {
             driveScopeCounter=0;

@@ -730,6 +730,46 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
             {driveScopeX,driveScopeY,driveScopeWidth,driveScopeHeight}));
     };
+    constexpr std::array<const char*,2> cutIds{"driveLowCut","driveHighCut"};
+    constexpr std::array<const char*,2> cutNames{"LOW CUT","HIGH CUT"};
+    constexpr std::array<const char*,2> cutHints{
+        "Removes bass before the drive circuit while leaving the dry Mix path unfiltered.",
+        "Removes treble before the drive circuit while leaving the dry Mix path unfiltered."};
+    for(size_t i=0;i<driveCutSliders.size();++i)
+    {
+        auto& slider=driveCutSliders[i]; auto& label=driveCutLabels[i];
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,90,17);
+        slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colours::transparentBlack);
+        slider.setColour(juce::Slider::textBoxTextColourId,stageStyle::foreground);
+        slider.setComponentID(cutIds[i]);
+        slider.setName(cutNames[i]); slider.setTitle(cutNames[i]);
+        label.setText(cutNames[i],juce::dontSendNotification);
+        label.setFont(juce::FontOptions(9.f));
+        label.setJustificationType(juce::Justification::centred);
+        label.setColour(juce::Label::textColourId,stageStyle::secondary);
+        editorTooltips::setHint(slider,label,cutHints[i]);
+        addAndMakeVisible(slider); addAndMakeVisible(label);
+        driveCutAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,cutIds[i],slider);
+        slider.textFromValueFunction=[i](double value)
+        {
+            if((i==0 && value<=0.) || (i==1 && value>=20000.)) return juce::String("OFF");
+            if(value>=1000.) return juce::String(value/1000.,1)+"k";
+            return juce::String(juce::roundToInt(value))+" Hz";
+        };
+        slider.valueFromTextFunction=[i](const juce::String& text)
+        {
+            if(text.trim().equalsIgnoreCase("OFF")) return i==0 ? 0. : 20000.;
+            return double(text.getFloatValue())*(text.containsIgnoreCase("k") ? 1000. : 1.);
+        };
+        slider.updateText();
+        slider.onValueChange=[this]
+        {
+            updateDrivePreview();
+            repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
+                {driveScopeX,driveScopeY,driveScopeWidth,driveScopeHeight}));
+        };
+    }
     addAndMakeVisible(transformerButton);
     transformerAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"transformer",transformerButton);
     for(size_t i=0;i<sliders.size();++i)
@@ -981,11 +1021,16 @@ void QinSynthEditor::updateDrivePreview()
     const auto mode=std::clamp(juce::roundToInt(driveMode.getValue()),0,3);
     const auto drive=std::clamp(float(sliders[37].getValue())*.01f,0.f,1.f);
     const auto mix=std::clamp(float(driveMix.getValue())*.01f,0.f,1.f);
+    qin::DriveInputFilter inputFilter;
+    inputFilter.prepare(48000.0,float(driveCutSliders[0].getValue()),
+        float(driveCutSliders[1].getValue()));
     for(int sample=0;sample<384;++sample)
     {
         const auto phase=std::fmod(float(sample)/64.f,1.f);
         const auto original=.55f*(1.f-4.f*std::abs(phase-.5f));
-        const auto driven=drive>1.e-4f ? float(circuit.process(mode,0,original*(1.f+5.f*drive))) : original;
+        inputFilter.beginSample();
+        const auto filtered=inputFilter.process(0,original);
+        const auto driven=drive>1.e-4f ? float(circuit.process(mode,0,filtered*(1.f+5.f*drive))) : original;
         if(sample>=256)
         {
             const auto index=size_t(sample-256);
@@ -1168,6 +1213,8 @@ void QinSynthEditor::updateVisibility()
     verbNoteSlider.setVisible(currentFxSection==1 && lastVerbSync);
     driveMode.setVisible(currentFxSection==0); driveModeLabel.setVisible(currentFxSection==0);
     driveMix.setVisible(currentFxSection==0); driveMixLabel.setVisible(currentFxSection==0);
+    for(size_t i=0;i<driveCutSliders.size();++i)
+    { driveCutSliders[i].setVisible(currentFxSection==0); driveCutLabels[i].setVisible(currentFxSection==0); }
 }
 void QinSynthEditor::resized()
 {
@@ -1247,6 +1294,12 @@ void QinSynthEditor::resized()
     driveModeLabel.setBounds(706,145,90,14); driveMode.setBounds(706,159,90,79);
     labels[37].setBounds(802,145,90,14); sliders[37].setBounds(802,159,90,79);
     driveMixLabel.setBounds(707,241,88,14); driveMix.setBounds(707,255,88,79);
+    for(size_t i=0;i<driveCutSliders.size();++i)
+    {
+        const auto x=706+int(i)*96;
+        driveCutLabels[i].setBounds(x,350,90,14);
+        driveCutSliders[i].setBounds(x,364,90,80);
+    }
     transformerButton.setBounds(805,524,90,78);
     labels[36].setBounds(712,522,82,13); sliders[36].setBounds(712,535,82,73);
     for(int i=38;i<44;++i)
@@ -1281,6 +1334,8 @@ void QinSynthEditor::resized()
     for(auto& tab:fxTabs) tab.setTransform(scale);
     driveMode.setTransform(scale); driveModeLabel.setTransform(scale);
     driveMix.setTransform(scale); driveMixLabel.setTransform(scale);
+    for(auto& slider:driveCutSliders) slider.setTransform(scale);
+    for(auto& label:driveCutLabels) label.setTransform(scale);
     transformerButton.setTransform(scale);
     for(auto& slider:sliders) slider.setTransform(scale);
     for(auto& slider:curveSliders) slider.setTransform(scale);

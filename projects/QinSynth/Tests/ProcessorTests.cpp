@@ -178,6 +178,7 @@ struct QinSynthEditorTestAccess
     { return editor.sliders[38].isVisible() && editor.sliders[43].isVisible(); }
     static bool driveVisible(const QinSynthEditor& editor)
     { return editor.sliders[37].isVisible() && editor.driveMode.isVisible() && editor.driveMix.isVisible()
+        && editor.driveCutSliders[0].isVisible() && editor.driveCutSliders[1].isVisible()
         && editor.driveMix.getSliderStyle()==juce::Slider::RotaryHorizontalVerticalDrag; }
     static bool transformerVisible(const QinSynthEditor& editor) { return editor.transformerButton.isVisible(); }
     static bool outputSectionVisible(const QinSynthEditor& editor)
@@ -189,7 +190,10 @@ struct QinSynthEditorTestAccess
     { return editor.driveMix.getRight()<=QinSynthEditor::driveScopeX
         && editor.driveMix.getY()<QinSynthEditor::driveScopeY+QinSynthEditor::driveScopeHeight
         && editor.driveMix.getBottom()>QinSynthEditor::driveScopeY
-        && QinSynthEditor::driveScopeWidth<=100 && QinSynthEditor::driveScopeHeight<=100; }
+        && QinSynthEditor::driveScopeWidth<=100 && QinSynthEditor::driveScopeHeight<=100
+        && editor.driveCutSliders[0].getY()>editor.driveMix.getBottom()
+        && editor.driveCutSliders[0].getRight()<editor.driveCutSliders[1].getX()
+        && editor.driveCutSliders[1].getBottom()<490; }
     static int driveModeCount(const QinSynthEditor& editor)
     { return editor.driveMode.getSliderStyle()==juce::Slider::RotaryHorizontalVerticalDrag
         ? juce::roundToInt(editor.driveMode.getMaximum()-editor.driveMode.getMinimum())+1 : 0; }
@@ -197,6 +201,14 @@ struct QinSynthEditorTestAccess
     { editor.driveMode.setValue(item-1,juce::sendNotificationSync); }
     static void setDriveMix(QinSynthEditor& editor,double mix)
     { editor.driveMix.setValue(mix,juce::sendNotificationSync); }
+    static void setDriveCuts(QinSynthEditor& editor,double low,double high)
+    {
+        editor.driveCutSliders[0].setValue(low,juce::sendNotificationSync);
+        editor.driveCutSliders[1].setValue(high,juce::sendNotificationSync);
+    }
+    static bool driveCutsOffText(QinSynthEditor& editor)
+    { return editor.driveCutSliders[0].getTextFromValue(0)=="OFF"
+          && editor.driveCutSliders[1].getTextFromValue(20000)=="OFF"; }
     static void setTransformer(QinSynthEditor& editor,bool on)
     { editor.transformerButton.setToggleState(on,juce::sendNotificationSync); }
     static bool envelopeVisible(const QinSynthEditor& editor,int index)
@@ -734,6 +746,33 @@ int main(int argc,char** argv)
            || power(reverseHighAudio,0)<=power(reverseHighAudio,1)*2)
             throw std::runtime_error("Negative Key Pan must send high notes left and low notes right");
         {
+            const auto filterRms=[](float frequency,float lowCut,float highCut)
+            {
+                qin::DriveInputFilter filter;
+                filter.prepare(48000.0,lowCut,highCut);
+                double energy=0;
+                for(int i=0;i<8192;++i)
+                {
+                    const auto input=std::sin(juce::MathConstants<float>::twoPi*frequency*i/48000.f);
+                    filter.beginSample();
+                    const auto output=filter.process(0,input);
+                    if(i>=4096) energy+=output*output;
+                }
+                return std::sqrt(energy/4096.0);
+            };
+            const auto untouched100=filterRms(100,0,20000);
+            const auto lowCut100=filterRms(100,500,20000);
+            const auto lowCut5000=filterRms(5000,500,20000);
+            const auto highCut100=filterRms(100,0,1500);
+            const auto highCut8000=filterRms(8000,0,1500);
+            if(std::abs(untouched100-std::sqrt(.5))>.01
+               || lowCut100>untouched100*.4
+               || lowCut5000<.55
+               || highCut100<.65
+               || highCut8000>.35)
+                throw std::runtime_error("Drive input low and high cuts must remove their respective frequency regions");
+        }
+        {
             auto plainOwner=std::make_unique<QinSynthProcessor>();
             auto& plain=*plainOwner;
             auto drivenOwner=std::make_unique<QinSynthProcessor>();
@@ -758,6 +797,43 @@ int main(int argc,char** argv)
             }
             if(difference<1 || dryDifference>1.e-4)
                 throw std::runtime_error("Drive Mix must independently blend the driven and dry oscillator signals");
+        }
+        {
+            std::array<std::unique_ptr<QinSynthProcessor>,4> owned;
+            for(auto& p:owned) p=std::make_unique<QinSynthProcessor>();
+            for(auto& p:owned)
+            {
+                set(*p,"verbMix",0); set(*p,"driveLowCut",500); set(*p,"driveHighCut",1500);
+            }
+            set(*owned[0],"drive",0); // original oscillator signal
+            set(*owned[1],"drive",75); set(*owned[1],"driveMix",0); // filtered circuit is dry
+            set(*owned[2],"drive",75); set(*owned[2],"driveMix",50);
+            set(*owned[3],"drive",75); set(*owned[3],"driveMix",100);
+            for(auto& p:owned) p->prepareToPlay(48000,256);
+            std::array<juce::AudioBuffer<float>,4> blocks;
+            for(auto& audioBlock:blocks) audioBlock.setSize(2,256);
+            double dryError=0,mixError=0,wetDifference=0;
+            for(int blockIndex=0;blockIndex<12;++blockIndex)
+            {
+                for(size_t index=0;index<owned.size();++index)
+                {
+                    juce::MidiBuffer note;
+                    if(blockIndex==0) note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+                    owned[index]->processBlock(blocks[index],note);
+                }
+                for(int i=0;i<256;++i)
+                {
+                    const auto dry=blocks[0].getSample(0,i);
+                    const auto filteredDry=blocks[1].getSample(0,i);
+                    const auto half=blocks[2].getSample(0,i);
+                    const auto wet=blocks[3].getSample(0,i);
+                    dryError=std::max(dryError,double(std::abs(dry-filteredDry)));
+                    mixError=std::max(mixError,double(std::abs(half-.5f*(dry+wet))));
+                    wetDifference+=std::abs(wet-dry);
+                }
+            }
+            if(dryError>1.e-6 || mixError>1.e-5 || wetDifference<1.)
+                throw std::runtime_error("Drive cuts must affect only the circuit input while dry Mix stays unchanged");
         }
         {
             std::array<std::array<float,256>,4> outputs {};
@@ -1540,7 +1616,6 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
                || !QinSynthEditorTestAccess::outputSectionVisible(editor)
                || !QinSynthEditorTestAccess::compactFxKnobs(editor)
-               || !QinSynthEditorTestAccess::compactDriveLayout(editor)
                || !QinSynthEditorTestAccess::compactHeaderLayout(editor)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,0)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
@@ -1548,6 +1623,10 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::oscillatorLayout(editor)
                || !QinSynthEditorTestAccess::fmGridLayout(editor))
                 throw std::runtime_error("Polyphony readout and oscillator pads must be available");
+            if(!QinSynthEditorTestAccess::compactDriveLayout(editor))
+                throw std::runtime_error("Drive input cuts must fit below Mix");
+            if(!QinSynthEditorTestAccess::driveCutsOffText(editor))
+                throw std::runtime_error("Drive input cuts must show OFF at neutral endpoints");
             if(!QinSynthEditorTestAccess::fmVisible(editor,0)
                || QinSynthEditorTestAccess::fmVisible(editor,1))
                 throw std::runtime_error("FM controls must follow the selected OSC tab");
@@ -1765,11 +1844,16 @@ int main(int argc,char** argv)
                 throw std::runtime_error("FX must expose four Zao circuits and the output transformer");
             QinSynthEditorTestAccess::selectDriveMode(editor,3);
             QinSynthEditorTestAccess::setDriveMix(editor,45);
+            QinSynthEditorTestAccess::setDriveCuts(editor,220,6000);
             QinSynthEditorTestAccess::setTransformer(editor,true);
             if(std::abs(preview.parameters.getRawParameterValue("driveMode")->load()-2)>1.e-6
                || std::abs(preview.parameters.getRawParameterValue("driveMix")->load()-45)>1.e-3
+               || std::abs(preview.parameters.getRawParameterValue("driveLowCut")->load()-220)>1.e-3
+               || std::abs(preview.parameters.getRawParameterValue("driveHighCut")->load()-6000)>1.e-3
                || preview.parameters.getRawParameterValue("transformer")->load()<.5f)
-                throw std::runtime_error("Drive circuit, mix, and transformer controls must update host parameters");
+                throw std::runtime_error("Drive circuit, cuts, mix, and transformer controls must update host parameters");
+            if(changes({800,245,92,89},[&]{QinSynthEditorTestAccess::setDriveCuts(editor,700,1200);})<12)
+                throw std::runtime_error("Drive preview must follow the input cut controls");
             if(changes({800,245,92,89},[&]{QinSynthEditorTestAccess::selectDriveMode(editor,4);})<20)
                 throw std::runtime_error("Drive preview must follow the selected circuit");
             QinSynthEditorTestAccess::selectDriveMode(editor,2);

@@ -3,6 +3,7 @@
 #include "../../LanReverb/Source/ReverbEngine.h"
 #include "../../RenTransformer/Source/TransformerStage.h"
 #include "DriveCircuitBank.h"
+#include "DriveInputFilter.h"
 #include "WaveBlend.h"
 #include "StereoPanLookup.h"
 #include "FmRouting.h"
@@ -95,7 +96,7 @@ private:
         qin::TuningTable tuning;
         std::array<EnvelopeSettings,3> env;
         std::array<float,3> envelopeMerge {};
-        float pan=0, drive=0, driveMix=1, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
+        float pan=0, drive=0, driveMix=1, driveLowCut=0, driveHighCut=20000, output=0, cutoff=18000, resonance=0, keyFollow=0, filterEnv=0, filterMerge=0, modDepth=0;
         int filterType=0, modTarget=0, voiceCount=maxVoices, driveMode=1, legatoMode=0;
         bool noise=false, transformer=false, polyLegato=false;
         float slideMs=80, slideShape=.5f;
@@ -128,6 +129,8 @@ private:
     std::array<HeldNote,128> heldNotes {};
     int heldNoteCount=0;
     qin::DriveCircuitBank driveCircuit;
+    qin::DriveInputFilter driveInputFilter;
+    bool driveWasActive=false;
     std::array<juce::SmoothedValue<float>,zao::circuitCount> driveWeights;
     int lastDriveMode=1;
     std::array<FilterState,2> masterFilter {};
