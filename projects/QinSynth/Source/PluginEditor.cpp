@@ -135,16 +135,23 @@ void QinTuningKey::setIdentity(juce::String note,bool black,bool root)
 void QinTuningKey::paint(juce::Graphics& g)
 {
     const auto area=getLocalBounds().toFloat().reduced(1.f);
-    const auto face=blackKey ? juce::Colour(0xff1c1d22) : juce::Colour(0xffddd8ca);
-    const auto text=blackKey ? stageStyle::foreground : juce::Colour(0xff24242a);
+    const auto text=blackKey ? stageStyle::foreground : panelInk;
     g.setColour(juce::Colours::black.withAlpha(.45f));
     g.fillRoundedRectangle(area.translated(1.f,2.f),blackKey ? 4.f : 5.f);
-    g.setColour(face); g.fillRoundedRectangle(area,blackKey ? 4.f : 5.f);
-    g.setColour(rootKey ? accent : blackKey ? juce::Colour(0xff73757a) : juce::Colour(0xff77716a));
+    g.setGradientFill(juce::ColourGradient(
+        blackKey ? juce::Colour(0xff526170) : juce::Colour(0xfff0f4f6),area.getTopLeft(),
+        blackKey ? juce::Colour(0xff18232e) : juce::Colour(0xffa5b3bf),area.getBottomLeft(),false));
+    g.fillRoundedRectangle(area,blackKey ? 4.f : 5.f);
+    g.setColour(juce::Colours::white.withAlpha(blackKey ? .18f : .72f));
+    g.drawHorizontalLine(juce::roundToInt(area.getY()+2.f),area.getX()+4.f,area.getRight()-4.f);
+    g.drawVerticalLine(juce::roundToInt(area.getX()+2.f),area.getY()+5.f,area.getBottom()-5.f);
+    g.setColour(juce::Colour(0xff465766).withAlpha(blackKey ? .55f : .35f));
+    g.drawVerticalLine(juce::roundToInt(area.getRight()-2.f),area.getY()+5.f,area.getBottom()-5.f);
+    g.setColour(rootKey ? accent : juce::Colour(0xff5d7081));
     g.drawRoundedRectangle(area,blackKey ? 4.f : 5.f,rootKey ? 2.f : 1.f);
     if(rootKey)
     {
-        g.setColour(accent.withAlpha(.22f));
+        g.setColour(accent.withAlpha(.12f));
         g.fillRoundedRectangle(area.reduced(3.f),3.f);
     }
     const auto cents=rootKey ? 0.0 : getValue();
