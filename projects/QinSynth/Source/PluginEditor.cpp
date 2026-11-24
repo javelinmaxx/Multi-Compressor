@@ -13,7 +13,8 @@ const auto backgroundGreen=juce::Colour(0xff0c211c);
 const auto secondaryRed=juce::Colour(0xff82313d);
 const auto plotRed=juce::Colour(0xfff3aab0);
 const auto curveBlue=juce::Colour(0xff87c9ed);
-const auto accent=juce::Colour(0xff3e8db9);
+const auto accent=juce::Colour(0xffbd4e60);
+const auto postFilterAccent=juce::Colour(0xffdc7180);
 const auto highlightRed=plotRed;
 const auto buttonIdle=juce::Colour(0xff36414c);
 const auto buttonActive=juce::Colour(0xff84c8e8);
@@ -465,7 +466,7 @@ void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,in
         g.setColour(colour.withAlpha(selected ? 1.f : .52f));
         g.strokePath(active,juce::PathStrokeType(selected ? 2.8f : 2.2f));
     };
-    ring(radius,dual->getPostRing(),curveBlue,dual->isPostSelected());
+    ring(radius,dual->getPostRing(),postFilterAccent,dual->isPostSelected());
     ring(radius-7.f,dual->getPreRing(),accentColour,!dual->isPostSelected());
     const auto dial=juce::Rectangle<float>((radius-12.f)*2.f,(radius-12.f)*2.f).withCentre(centre);
     g.setColour(juce::Colours::black.withAlpha(.32f)); g.fillEllipse(dial.translated(0.f,2.f));
@@ -474,7 +475,7 @@ void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,in
     g.setColour(markColour.withAlpha(.3f)); g.drawEllipse(dial.reduced(1.f),.7f);
     const auto angle=start+value*(end-start);
     const auto tip=radius-13.f;
-    g.setColour(dual->isPostSelected() ? curveBlue : accentColour);
+    g.setColour(dual->isPostSelected() ? postFilterAccent : accentColour);
     g.fillEllipse(centre.x+std::sin(angle)*tip-2.f,
                   centre.y-std::cos(angle)*tip-2.f,4.f,4.f);
 }
