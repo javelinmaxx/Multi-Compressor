@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <vector>
 
 class QinSynthProcessor final : public juce::AudioProcessor
 {
@@ -26,8 +27,9 @@ public:
         uint32_t epoch=0;
     };
     QinSynthProcessor();
+    ~QinSynthProcessor() override;
     void prepareToPlay(double, int) override;
-    void releaseResources() override { reverb.release(); }
+    void releaseResources() override;
     bool isBusesLayoutSupported(const BusesLayout&) const override;
     void processBlock(juce::AudioBuffer<float>&,juce::MidiBuffer&) override;
     void processBlockBypassed(juce::AudioBuffer<float>&,juce::MidiBuffer&) override;
@@ -85,6 +87,33 @@ private:
         bool noiseWasGliding=false;
         bool keyDown=false, sustained=false, active=false;
     };
+    struct SharedFrame
+    {
+        std::array<float,3> sharedValues, merge;
+        float modDepth;
+        std::array<float,oscillatorCount> fmDepth;
+        std::array<std::array<double,maxUnison>,oscillatorCount> detuneRatios;
+        std::array<std::array<float,4>,oscillatorCount> waveMixes;
+    };
+    struct VoiceFrame
+    {
+        double left=0,right=0,masterLeft=0,masterRight=0,cutoffSum=0,cutoffWeight=0;
+    };
+    struct WorkerJob
+    {
+        void* context=nullptr;
+        void (*run)(void*,int,int)=nullptr;
+        int first=0,last=0;
+    };
+    class VoiceWorkerThread final : public juce::Thread
+    {
+    public:
+        explicit VoiceWorkerThread(QinSynthProcessor& processor)
+            : juce::Thread("Qin voice render"),owner(processor) {}
+        void run() override { owner.voiceWorkerLoop(); }
+    private:
+        QinSynthProcessor& owner;
+    };
     struct HeldNote { int note=-1, channel=1, voiceIndex=-1; };
     struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1, fmSource=-1; bool retrig=false; float phaseStart=0, level=0, detune=0, detuneShape=0, spread=.12f, pan=0, fmAmount=0, fineCents=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
@@ -117,7 +146,17 @@ private:
     float advanceEnvelope(Envelope&,const EnvelopeSettings&,bool,const std::array<float,3>&) const noexcept;
     float filterSample(FilterState&,float,float,float,float,int) const noexcept;
     float filterCoefficient(float hz) const noexcept;
+    void stopVoiceWorker();
+    void voiceWorkerLoop();
     std::array<Voice,maxVoices> voices {};
+    std::vector<SharedFrame> sharedFrames;
+    std::array<std::vector<VoiceFrame>,maxVoices> voiceFrames;
+    juce::WaitableEvent voiceWorkerWake;
+    VoiceWorkerThread voiceWorker {*this};
+    WorkerJob voiceWorkerJob;
+    std::atomic<int> voiceWorkerState {2};
+    std::atomic<uint32_t> parallelVoiceJobs {0};
+    bool parallelVoicesEnabled=true;
     std::array<Envelope,3> sharedEnvelopes {};
     std::array<float,3> smoothedEnvelopeMerge {};
     std::array<qin::WavePosition,oscillatorCount> smoothedWaves {};

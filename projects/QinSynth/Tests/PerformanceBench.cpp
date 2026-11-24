@@ -6,6 +6,12 @@
 #include <cstdio>
 #include <cstdlib>
 
+struct QinSynthTestAccess
+{
+    static void setParallel(QinSynthProcessor& processor,bool enabled)
+    { processor.parallelVoicesEnabled=enabled; }
+};
+
 namespace
 {
 void set(QinSynthProcessor& processor,const char* id,float value)
@@ -14,12 +20,18 @@ void set(QinSynthProcessor& processor,const char* id,float value)
     parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
 }
 
-double run(int scenario)
+double run(int scenario,bool parallel=true)
 {
     QinSynthProcessor instrument;
+    QinSynthTestAccess::setParallel(instrument,parallel);
     set(instrument,"verbMix",0); set(instrument,"driveMix",0);
-    set(instrument,"transformer",0); set(instrument,"filterType",0);
-    set(instrument,"voiceCount",scenario==0 ? 16 : 1);
+    set(instrument,"transformer",0); set(instrument,"filterType",scenario==3 ? 2 : 0);
+    set(instrument,"voiceCount",(scenario==0 || scenario==3) ? 16 : 1);
+    if(scenario==3)
+    {
+        set(instrument,"filterCutoff",1800); set(instrument,"filterResonance",55);
+        set(instrument,"filterEnvAmount",40); set(instrument,"filterMerge",50);
+    }
     set(instrument,"slideTime",200); set(instrument,"keyPan",100);
     if(scenario==2)
     {
@@ -42,11 +54,11 @@ double run(int scenario)
     {
         if(block==0)
         {
-            const auto count=scenario==0 ? 16 : 1;
+            const auto count=(scenario==0 || scenario==3) ? 16 : 1;
             for(int voice=0;voice<count;++voice)
                 midi.addEvent(juce::MidiMessage::noteOn(1,48+voice,.8f),0);
         }
-        else if(scenario!=0 && block%16==0)
+        else if((scenario==1 || scenario==2) && block%16==0)
             midi.addEvent(juce::MidiMessage::noteOn(1,block%32==0 ? 84 : 48,.8f),0);
         instrument.processBlock(audio,midi);
         midi.clear();
@@ -62,13 +74,21 @@ double run(int scenario)
 int main()
 {
     juce::ScopedJuceInitialiser_GUI juce;
-    constexpr std::array<const char*,3> names {"static_pan","moving_pan","noise_glide"};
-    for(int scenario=0;scenario<3;++scenario)
+    constexpr std::array<const char*,4> names {"static_pan","moving_pan","noise_glide","poly_filter"};
+    for(int scenario=0;scenario<4;++scenario)
     {
         run(scenario);
         std::array<double,5> times {};
         for(auto& result:times) result=run(scenario);
         std::sort(times.begin(),times.end());
         std::printf("%s,%.3f\n",names[size_t(scenario)],times[2]);
+    }
+    for(int scenario:{0,3})
+    {
+        run(scenario,false);
+        std::array<double,5> times {};
+        for(auto& result:times) result=run(scenario,false);
+        std::sort(times.begin(),times.end());
+        std::printf("%s_serial,%.3f\n",names[size_t(scenario)],times[2]);
     }
 }

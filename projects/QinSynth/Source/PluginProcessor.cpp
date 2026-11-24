@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <thread>
 
 namespace
 {
@@ -197,14 +198,55 @@ QinSynthProcessor::QinSynthProcessor()
     for(auto& point:driveScopeInput) point.store(0,std::memory_order_relaxed);
     for(auto& point:driveScopeOutput) point.store(0,std::memory_order_relaxed);
 }
+QinSynthProcessor::~QinSynthProcessor() { stopVoiceWorker(); }
+void QinSynthProcessor::stopVoiceWorker()
+{
+    voiceWorker.signalThreadShouldExit();
+    voiceWorkerWake.signal();
+    if(voiceWorker.isThreadRunning()) voiceWorker.stopThread();
+}
+void QinSynthProcessor::voiceWorkerLoop()
+{
+    for(;;)
+    {
+        voiceWorkerWake.wait();
+        if(voiceWorker.threadShouldExit()) return;
+        int pending=0;
+        if(voiceWorkerState.compare_exchange_strong(pending,1,std::memory_order_acquire))
+        {
+            const auto job=voiceWorkerJob;
+            job.run(job.context,job.first,job.last);
+            parallelVoiceJobs.fetch_add(1,std::memory_order_relaxed);
+            voiceWorkerState.store(2,std::memory_order_release);
+        }
+    }
+}
+void QinSynthProcessor::releaseResources()
+{
+    stopVoiceWorker();
+    reverb.release();
+}
 bool QinSynthProcessor::isBusesLayoutSupported(const BusesLayout& buses) const
 {
     return buses.getMainInputChannelSet().isDisabled()
         && buses.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
 }
-void QinSynthProcessor::prepareToPlay(double rate,int)
+void QinSynthProcessor::prepareToPlay(double rate,int expectedBlockSize)
 {
+    stopVoiceWorker();
+    const auto scratchSamples=std::clamp(expectedBlockSize,2048,8192);
+    sharedFrames.resize(size_t(scratchSamples));
+    for(auto& frames:voiceFrames) frames.resize(size_t(scratchSamples));
+    voiceWorkerState.store(2,std::memory_order_relaxed);
+    parallelVoiceJobs.store(0,std::memory_order_relaxed);
     sampleRate=std::isfinite(rate) && rate>=8000 ? rate : 48000;
+    const auto frameMs=1000.0*std::max(128,expectedBlockSize)/sampleRate;
+    const auto realtime=juce::Thread::RealtimeOptions()
+        .withPriority(8).withPeriodMs(frameMs)
+        .withProcessingTimeMs(frameMs*.35)
+        .withMaximumProcessingTimeMs(frameMs*.9);
+    if(!voiceWorker.startRealtimeThread(realtime))
+        voiceWorker.startThread(juce::Thread::Priority::high);
     hostTempo.store(120.0,std::memory_order_relaxed);
     glideShapeSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.01)));
     waveSmoothing=float(1.0-std::exp(-1.0/(sampleRate*.005)));
@@ -800,223 +842,255 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         }
         else voice.noiseCoefficientsReady=false;
     }
-    for(int i=start;i<start+count;++i)
+    int activeCount=0,split=maxVoices;
+    std::array<bool,maxVoices> initiallyActive {};
+    for(int index=0;index<maxVoices;++index)
+    {
+        initiallyActive[size_t(index)]=voices[size_t(index)].active;
+        if(initiallyActive[size_t(index)]) ++activeCount;
+    }
+    if(activeCount>=4)
+    {
+        int seen=0;
+        for(int index=0;index<maxVoices;++index)
+            if(initiallyActive[size_t(index)] && ++seen>=activeCount/2)
+            { split=index+1; break; }
+    }
+    const auto parallel=parallelVoicesEnabled && voiceWorker.isThreadRunning()
+        && activeCount>=4 && count>=128 && size_t(count)<=sharedFrames.size()
+        && split<maxVoices;
+
+    // Global controls advance once per sample. The parallel path snapshots
+    // their values before dispatching independent voice and filter work.
+    const auto advanceShared=[&](SharedFrame& frame)
     {
         const auto sharedHeld=std::any_of(voices.begin(),voices.end(),[](const Voice& voice)
         { return voice.active && (voice.keyDown || voice.sustained); });
-        std::array<float,3> sharedValues {};
         for(size_t env=0;env<sharedEnvelopes.size();++env)
         {
-            sharedValues[env]=advanceEnvelope(sharedEnvelopes[env],settings.env[env],sharedHeld,coefficients[env]);
+            frame.sharedValues[env]=advanceEnvelope(sharedEnvelopes[env],settings.env[env],sharedHeld,coefficients[env]);
             smoothedEnvelopeMerge[env]+=mergeSmoothing*(settings.envelopeMerge[env]-smoothedEnvelopeMerge[env]);
+            frame.merge[env]=smoothedEnvelopeMerge[env];
         }
         smoothedModDepth+=modDepthIncrement;
-        std::array<float,oscillatorCount> fmDepth {};
+        frame.modDepth=smoothedModDepth;
         for(int osc=0;osc<oscillatorCount;++osc)
-            fmDepth[size_t(osc)]=fmAmounts[size_t(osc)].getNextValue();
+            frame.fmDepth[size_t(osc)]=fmAmounts[size_t(osc)].getNextValue();
         if(pitchMoving)
             for(int osc=0;osc<oscillatorCount;++osc)
                 for(int u=0;u<settings.oscillator[size_t(osc)].unison;++u)
                     detuneRatios[size_t(osc)][size_t(u)]+=ratioIncrements[size_t(osc)][size_t(u)];
-        std::array<std::array<float,4>,oscillatorCount> waveMixes {};
+        if(parallel) frame.detuneRatios=detuneRatios;
         for(int osc=0;osc<oscillatorCount;++osc)
         {
             auto& current=smoothedWaves[size_t(osc)];
             const auto target=settings.oscillator[size_t(osc)].wave;
             current.x+=waveSmoothing*(target.x-current.x);
             current.y+=waveSmoothing*(target.y-current.y);
-            waveMixes[size_t(osc)]=qin::waveWeights(current);
+            frame.waveMixes[size_t(osc)]=qin::waveWeights(current);
         }
-        double left=0,right=0,masterInputLeft=0,masterInputRight=0;
-        double cutoffSum=0,cutoffWeight=0;
-        for(size_t voiceIndex=0;voiceIndex<voices.size();++voiceIndex)
+    };
+    const auto renderVoiceSample=[&](int voiceIndex,const SharedFrame& sharedFrame,VoiceFrame& out)
+    {
+        out={};
+        auto& voice=voices[size_t(voiceIndex)];
+        if(!voice.active) return;
+        const auto& ratios=parallel ? sharedFrame.detuneRatios : detuneRatios;
+        const auto held=voice.keyDown || voice.sustained;
+        voice.onsetGain=std::min(1.f,voice.onsetGain+onsetStep);
+        if(!held && voice.env[0].stage!=3)
+            voice.env[0].value=voice.effectiveEnv[0];
+        for(size_t env=0;env<voice.env.size();++env)
         {
-            auto& voice=voices[voiceIndex];
-            if(!voice.active) continue;
-            const auto held=voice.keyDown || voice.sustained;
-            voice.onsetGain=std::min(1.f,voice.onsetGain+onsetStep);
-            if(!held && voice.env[0].stage!=3)
-                voice.env[0].value=voice.effectiveEnv[0];
-            for(size_t env=0;env<voice.env.size();++env)
-            {
-                const auto individual=advanceEnvelope(voice.env[env],settings.env[env],held,coefficients[env]);
-                voice.effectiveEnv[env]=individual+(sharedValues[env]-individual)*smoothedEnvelopeMerge[env];
-            }
-            // On note-off, the voice's own release starts at its last audible
-            // level. Later shared attacks cannot pull that tail back upward.
-            const auto amp=held ? voice.env[0].value*(1.f-smoothedEnvelopeMerge[0])
-                +sharedValues[0]*smoothedEnvelopeMerge[0]*voice.onsetGain : voice.env[0].value;
-            voice.effectiveEnv[0]=amp;
-            const auto filterEnv=voice.effectiveEnv[1];
-            const auto modEnv=voice.effectiveEnv[2];
-            if(!held && amp<1.e-4f) { voice.active=false; continue; }
-            const auto gliding=voice.glideProgress<1.f;
-            const auto currentPitch=gliding ? advancePitch(voice,settings) : double(voice.note);
-            const auto pitchFactor=voice.glideProgress>=1.f ? 1.0
-                : std::exp2((settings.tuning.tunedPitch(currentPitch)-tunedBasePitch[voiceIndex])/12.0);
-            if(gliding) voice.pan=std::clamp(float((currentPitch-64.0)/44.0)*settings.pan,-.95f,.95f);
-            double voiceLeft=0,voiceRight=0;
-            const auto spreadMod=settings.modTarget==1 ? smoothedModDepth*modEnv : 0.f;
-            const auto pitchMod=settings.modTarget==2 ? std::exp2(double(smoothedModDepth*modEnv)) : 1.0;
-            float noiseRaw=0;
-            if(noiseActive)
-            {
-                auto& random=voice.noiseState;
-                random^=random<<13; random^=random>>17; random^=random<<5;
-                const auto white=float(random>>8)*(1.f/8388607.5f)-1.f;
-                auto& pink=voice.pink;
-                pink[0]=.99765f*pink[0]+.099046f*white;
-                pink[1]=.963f*pink[1]+.2965164f*white;
-                pink[2]=.57f*pink[2]+1.0526913f*white;
-                const auto pinkSample=.08f*(pink[0]+pink[1]+pink[2]+.1848f*white);
-                const auto velvet=(random&1023u)<64u ? white*4.f : 0.f;
-                const auto source=settings.noiseOscillator.style==1 ? pinkSample
-                    : settings.noiseOscillator.style==2 ? velvet : white;
-                if(gliding)
-                {
-                    if(voice.noiseCoefficientSamples==0)
-                    {
-                        const auto ahead=std::min(1.f,voice.glideProgress
-                            +noiseUpdateSamples*voice.glideIncrement);
-                        const auto pitch=voice.glideStart+(double(voice.note)-voice.glideStart)
-                            *qin::legatoCurve(ahead,voice.glideShape);
-                        const auto target=noiseAtPitch(pitch);
-                        auto& step=voice.noiseCoefficientStep;
-                        const auto& current=voice.noiseCoefficients;
-                        step.a1=(target.a1-current.a1)/noiseUpdateSamples;
-                        step.a2=(target.a2-current.a2)/noiseUpdateSamples;
-                        step.a3=(target.a3-current.a3)/noiseUpdateSamples;
-                        voice.noiseCoefficientSamples=noiseUpdateSamples;
-                    }
-                    auto& current=voice.noiseCoefficients;
-                    const auto& step=voice.noiseCoefficientStep;
-                    current.a1+=step.a1; current.a2+=step.a2; current.a3+=step.a3;
-                    --voice.noiseCoefficientSamples;
-                    voice.noiseWasGliding=true;
-                }
-                else if(voice.noiseWasGliding)
-                {
-                    voice.noiseCoefficients=noiseAtPitch(currentPitch);
-                    voice.noiseCoefficientSamples=0;
-                    voice.noiseWasGliding=false;
-                }
-                const auto& noiseFilter=voice.noiseCoefficients;
-                const auto v3=source-voice.noiseLowState;
-                const auto band=noiseFilter.a1*voice.noiseBandState+noiseFilter.a2*v3;
-                const auto low=voice.noiseLowState+noiseFilter.a2*voice.noiseBandState+noiseFilter.a3*v3;
-                voice.noiseBandState=2*band-voice.noiseBandState;
-                voice.noiseLowState=2*low-voice.noiseLowState;
-                voice.noiseHighPassState+=noiseFilter.highPass*(band-voice.noiseHighPassState);
-                noiseRaw=band-voice.noiseHighPassState;
-            }
-            if(!anyFmActive)
-            {
-                for(int osc=0;osc<oscillatorCount;++osc)
-                {
-                    const auto& control=settings.oscillator[size_t(osc)];
-                    if(control.level<=0) continue;
-                    for(int u=0;u<control.unison;++u)
-                    {
-                        const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
-                        const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],waveMixes[size_t(osc)],
-                            std::min(.49,baseSteps[voiceIndex][size_t(osc)]
-                                *detuneRatios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod))
-                            *control.level/control.unison;
-                        auto gains=panGains[voiceIndex][size_t(osc)][size_t(u)];
-                        if(movingPan[voiceIndex])
-                        {
-                            const auto pan=std::clamp(double(voice.pan)+control.pan
-                                +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
-                            gains=qin::stereoPanLookup.evaluate(float(pan));
-                        }
-                        voiceLeft+=value*gains.left;
-                        voiceRight+=value*gains.right;
-                    }
-                }
-            }
-            else
-            {
-                // Process a source before its targets. An edge within a feedback
-                // cycle reads the source's previous sample instead of recursing.
-                std::array<float,oscillatorCount> fmOutput {};
-                for(int position=0;position<oscillatorCount;++position)
-                {
-                    const auto osc=fmRouting.order[size_t(position)];
-                    const auto& control=settings.oscillator[size_t(osc)];
-                    if(control.level<=0 && !fmSourceNeeded[size_t(osc)]) continue;
-                    float source=0;
-                    const auto sourceIndex=fmSources[size_t(osc)];
-                    if(sourceIndex==oscillatorCount) source=noiseRaw;
-                    else if(sourceIndex>=0 && sourceIndex<oscillatorCount)
-                        source=fmRouting.delayedEdge[size_t(osc)]
-                            ? voice.previousFmOutput[size_t(sourceIndex)]
-                            : fmOutput[size_t(sourceIndex)];
-                    const auto frequencyScale=1.0+fmDepth[size_t(osc)]*std::clamp(source,-1.f,1.f);
-                    double sum=0;
-                    for(int u=0;u<control.unison;++u)
-                    {
-                        const auto raw=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],waveMixes[size_t(osc)],
-                            std::clamp(baseSteps[voiceIndex][size_t(osc)]
-                                *detuneRatios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod*frequencyScale,1.e-7,.49));
-                        sum+=raw;
-                        if(control.level<=0) continue;
-                        const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
-                        const auto value=raw*control.level/control.unison;
-                        auto gains=panGains[voiceIndex][size_t(osc)][size_t(u)];
-                        if(movingPan[voiceIndex])
-                        {
-                            const auto pan=std::clamp(double(voice.pan)+control.pan
-                                +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
-                            gains=qin::stereoPanLookup.evaluate(float(pan));
-                        }
-                        voiceLeft+=value*gains.left;
-                        voiceRight+=value*gains.right;
-                    }
-                    fmOutput[size_t(osc)]=std::clamp(float(sum/control.unison),-1.f,1.f);
-                }
-                voice.previousFmOutput=fmOutput;
-            }
-            if(noiseOutputActive)
-            {
-                const auto gains=movingPan[voiceIndex]
-                    ? qin::stereoPanLookup.evaluate(std::clamp(voice.pan+settings.noiseOscillator.pan,-.98f,.98f))
-                    : noisePanGains[voiceIndex];
-                voiceLeft+=noiseRaw*settings.noiseOscillator.level*gains.left;
-                voiceRight+=noiseRaw*settings.noiseOscillator.level*gains.right;
-            }
-            if(settings.modTarget==0 && std::abs(smoothedModDepth)>1.e-6f)
-            {
-                const auto amount=smoothedModDepth*modEnv;
-                if(amount>0)
-                {
-                    voiceLeft=voiceLeft+amount*(std::tanh(voiceLeft*(1+3*amount))-voiceLeft);
-                    voiceRight=voiceRight+amount*(std::tanh(voiceRight*(1+3*amount))-voiceRight);
-                }
-                else { voiceLeft*=1+amount; voiceRight*=1+amount; }
-            }
-            if(settings.filterType!=0)
-            {
-                const auto octaves=settings.keyFollow*float((currentPitch-60.0)/12.0)
-                    +settings.filterEnv*filterEnv*4.f
-                    +(settings.modTarget==3 ? smoothedModDepth*modEnv*4.f : 0.f);
-                const auto target=std::clamp(settings.cutoff*(std::abs(octaves)<1.e-6f ? 1.f : std::exp2(octaves)),
-                                             30.f,float(sampleRate*.44));
-                voice.cutoff+=cutoffSmoothing*(target-voice.cutoff);
-                const auto hz=std::clamp(voice.cutoff,25.f,float(sampleRate*.44));
-                const auto coefficient=settings.filterType==1
-                    ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)
-                    : filterCoefficient(hz);
-                const auto onePole=settings.filterType==2
-                    ? coefficient/(1.f+coefficient) : 0.f;
-                const auto gain=.16*voice.velocity*amp;
-                masterInputLeft+=gain*voiceLeft; masterInputRight+=gain*voiceRight;
-                cutoffSum+=gain*hz; cutoffWeight+=gain;
-                voiceLeft=filterSample(voice.filter[0],float(voiceLeft),coefficient,onePole,settings.resonance,settings.filterType);
-                voiceRight=filterSample(voice.filter[1],float(voiceRight),coefficient,onePole,settings.resonance,settings.filterType);
-            }
-            const auto gain=.16*voice.velocity*amp;
-            left+=gain*voiceLeft; right+=gain*voiceRight;
+            const auto individual=advanceEnvelope(voice.env[env],settings.env[env],held,coefficients[env]);
+            voice.effectiveEnv[env]=individual+(sharedFrame.sharedValues[env]-individual)*sharedFrame.merge[env];
         }
+        // On note-off, the voice's own release starts at its last audible
+        // level. Later shared attacks cannot pull that tail back upward.
+        const auto amp=held ? voice.env[0].value*(1.f-sharedFrame.merge[0])
+            +sharedFrame.sharedValues[0]*sharedFrame.merge[0]*voice.onsetGain : voice.env[0].value;
+        voice.effectiveEnv[0]=amp;
+        const auto filterEnv=voice.effectiveEnv[1];
+        const auto modEnv=voice.effectiveEnv[2];
+        if(!held && amp<1.e-4f) { voice.active=false; return; }
+        const auto gliding=voice.glideProgress<1.f;
+        const auto currentPitch=gliding ? advancePitch(voice,settings) : double(voice.note);
+        const auto pitchFactor=voice.glideProgress>=1.f ? 1.0
+            : std::exp2((settings.tuning.tunedPitch(currentPitch)-tunedBasePitch[size_t(voiceIndex)])/12.0);
+        if(gliding) voice.pan=std::clamp(float((currentPitch-64.0)/44.0)*settings.pan,-.95f,.95f);
+        double voiceLeft=0,voiceRight=0;
+        const auto spreadMod=settings.modTarget==1 ? sharedFrame.modDepth*modEnv : 0.f;
+        const auto pitchMod=settings.modTarget==2 ? std::exp2(double(sharedFrame.modDepth*modEnv)) : 1.0;
+        float noiseRaw=0;
+        if(noiseActive)
+        {
+            auto& random=voice.noiseState;
+            random^=random<<13; random^=random>>17; random^=random<<5;
+            const auto white=float(random>>8)*(1.f/8388607.5f)-1.f;
+            auto& pink=voice.pink;
+            pink[0]=.99765f*pink[0]+.099046f*white;
+            pink[1]=.963f*pink[1]+.2965164f*white;
+            pink[2]=.57f*pink[2]+1.0526913f*white;
+            const auto pinkSample=.08f*(pink[0]+pink[1]+pink[2]+.1848f*white);
+            const auto velvet=(random&1023u)<64u ? white*4.f : 0.f;
+            const auto source=settings.noiseOscillator.style==1 ? pinkSample
+                : settings.noiseOscillator.style==2 ? velvet : white;
+            if(gliding)
+            {
+                if(voice.noiseCoefficientSamples==0)
+                {
+                    const auto ahead=std::min(1.f,voice.glideProgress
+                        +noiseUpdateSamples*voice.glideIncrement);
+                    const auto pitch=voice.glideStart+(double(voice.note)-voice.glideStart)
+                        *qin::legatoCurve(ahead,voice.glideShape);
+                    const auto target=noiseAtPitch(pitch);
+                    auto& step=voice.noiseCoefficientStep;
+                    const auto& current=voice.noiseCoefficients;
+                    step.a1=(target.a1-current.a1)/noiseUpdateSamples;
+                    step.a2=(target.a2-current.a2)/noiseUpdateSamples;
+                    step.a3=(target.a3-current.a3)/noiseUpdateSamples;
+                    voice.noiseCoefficientSamples=noiseUpdateSamples;
+                }
+                auto& current=voice.noiseCoefficients;
+                const auto& step=voice.noiseCoefficientStep;
+                current.a1+=step.a1; current.a2+=step.a2; current.a3+=step.a3;
+                --voice.noiseCoefficientSamples;
+                voice.noiseWasGliding=true;
+            }
+            else if(voice.noiseWasGliding)
+            {
+                voice.noiseCoefficients=noiseAtPitch(currentPitch);
+                voice.noiseCoefficientSamples=0;
+                voice.noiseWasGliding=false;
+            }
+            const auto& noiseFilter=voice.noiseCoefficients;
+            const auto v3=source-voice.noiseLowState;
+            const auto band=noiseFilter.a1*voice.noiseBandState+noiseFilter.a2*v3;
+            const auto low=voice.noiseLowState+noiseFilter.a2*voice.noiseBandState+noiseFilter.a3*v3;
+            voice.noiseBandState=2*band-voice.noiseBandState;
+            voice.noiseLowState=2*low-voice.noiseLowState;
+            voice.noiseHighPassState+=noiseFilter.highPass*(band-voice.noiseHighPassState);
+            noiseRaw=band-voice.noiseHighPassState;
+        }
+        if(!anyFmActive)
+        {
+            for(int osc=0;osc<oscillatorCount;++osc)
+            {
+                const auto& control=settings.oscillator[size_t(osc)];
+                if(control.level<=0) continue;
+                for(int u=0;u<control.unison;++u)
+                {
+                    const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
+                    const auto value=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],sharedFrame.waveMixes[size_t(osc)],
+                        std::min(.49,baseSteps[size_t(voiceIndex)][size_t(osc)]
+                            *ratios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod))
+                        *control.level/control.unison;
+                    auto gains=panGains[size_t(voiceIndex)][size_t(osc)][size_t(u)];
+                    if(movingPan[size_t(voiceIndex)])
+                    {
+                        const auto pan=std::clamp(double(voice.pan)+control.pan
+                            +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
+                        gains=qin::stereoPanLookup.evaluate(float(pan));
+                    }
+                    voiceLeft+=value*gains.left;
+                    voiceRight+=value*gains.right;
+                }
+            }
+        }
+        else
+        {
+            // Process a source before its targets. An edge within a feedback
+            // cycle reads the source's previous sample instead of recursing.
+            std::array<float,oscillatorCount> fmOutput {};
+            for(int position=0;position<oscillatorCount;++position)
+            {
+                const auto osc=fmRouting.order[size_t(position)];
+                const auto& control=settings.oscillator[size_t(osc)];
+                if(control.level<=0 && !fmSourceNeeded[size_t(osc)]) continue;
+                float source=0;
+                const auto sourceIndex=fmSources[size_t(osc)];
+                if(sourceIndex==oscillatorCount) source=noiseRaw;
+                else if(sourceIndex>=0 && sourceIndex<oscillatorCount)
+                    source=fmRouting.delayedEdge[size_t(osc)]
+                        ? voice.previousFmOutput[size_t(sourceIndex)]
+                        : fmOutput[size_t(sourceIndex)];
+                const auto frequencyScale=1.0+sharedFrame.fmDepth[size_t(osc)]*std::clamp(source,-1.f,1.f);
+                double sum=0;
+                for(int u=0;u<control.unison;++u)
+                {
+                    const auto raw=oscillatorSample(voice.oscillators[size_t(osc)][size_t(u)],sharedFrame.waveMixes[size_t(osc)],
+                        std::clamp(baseSteps[size_t(voiceIndex)][size_t(osc)]
+                            *ratios[size_t(osc)][size_t(u)]*pitchFactor*pitchMod*frequencyScale,1.e-7,.49));
+                    sum+=raw;
+                    if(control.level<=0) continue;
+                    const auto offset=control.unison==1 ? 0.0 : (2.0*u/(control.unison-1)-1.0);
+                    const auto value=raw*control.level/control.unison;
+                    auto gains=panGains[size_t(voiceIndex)][size_t(osc)][size_t(u)];
+                    if(movingPan[size_t(voiceIndex)])
+                    {
+                        const auto pan=std::clamp(double(voice.pan)+control.pan
+                            +offset*.35*std::clamp(control.spread+spreadMod,0.f,1.f),-.98,.98);
+                        gains=qin::stereoPanLookup.evaluate(float(pan));
+                    }
+                    voiceLeft+=value*gains.left;
+                    voiceRight+=value*gains.right;
+                }
+                fmOutput[size_t(osc)]=std::clamp(float(sum/control.unison),-1.f,1.f);
+            }
+            voice.previousFmOutput=fmOutput;
+        }
+        if(noiseOutputActive)
+        {
+            const auto gains=movingPan[size_t(voiceIndex)]
+                ? qin::stereoPanLookup.evaluate(std::clamp(voice.pan+settings.noiseOscillator.pan,-.98f,.98f))
+                : noisePanGains[size_t(voiceIndex)];
+            voiceLeft+=noiseRaw*settings.noiseOscillator.level*gains.left;
+            voiceRight+=noiseRaw*settings.noiseOscillator.level*gains.right;
+        }
+        if(settings.modTarget==0 && std::abs(sharedFrame.modDepth)>1.e-6f)
+        {
+            const auto amount=sharedFrame.modDepth*modEnv;
+            if(amount>0)
+            {
+                voiceLeft=voiceLeft+amount*(std::tanh(voiceLeft*(1+3*amount))-voiceLeft);
+                voiceRight=voiceRight+amount*(std::tanh(voiceRight*(1+3*amount))-voiceRight);
+            }
+            else { voiceLeft*=1+amount; voiceRight*=1+amount; }
+        }
+        if(settings.filterType!=0)
+        {
+            const auto octaves=settings.keyFollow*float((currentPitch-60.0)/12.0)
+                +settings.filterEnv*filterEnv*4.f
+                +(settings.modTarget==3 ? sharedFrame.modDepth*modEnv*4.f : 0.f);
+            const auto target=std::clamp(settings.cutoff*(std::abs(octaves)<1.e-6f ? 1.f : std::exp2(octaves)),
+                                         30.f,float(sampleRate*.44));
+            voice.cutoff+=cutoffSmoothing*(target-voice.cutoff);
+            const auto hz=std::clamp(voice.cutoff,25.f,float(sampleRate*.44));
+            const auto coefficient=settings.filterType==1
+                ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)
+                : filterCoefficient(hz);
+            const auto onePole=settings.filterType==2
+                ? coefficient/(1.f+coefficient) : 0.f;
+            const auto gain=.16*voice.velocity*amp;
+            out.masterLeft=gain*voiceLeft; out.masterRight=gain*voiceRight;
+            out.cutoffSum=gain*hz; out.cutoffWeight=gain;
+            voiceLeft=filterSample(voice.filter[0],float(voiceLeft),coefficient,onePole,settings.resonance,settings.filterType);
+            voiceRight=filterSample(voice.filter[1],float(voiceRight),coefficient,onePole,settings.resonance,settings.filterType);
+        }
+        const auto gain=.16*voice.velocity*amp;
+        out.left=gain*voiceLeft; out.right=gain*voiceRight;
+    };
+    const auto sumFrame=[](VoiceFrame& total,const VoiceFrame& out)
+    {
+        total.left+=out.left; total.right+=out.right;
+        total.masterLeft+=out.masterLeft; total.masterRight+=out.masterRight;
+        total.cutoffSum+=out.cutoffSum; total.cutoffWeight+=out.cutoffWeight;
+    };
+    const auto finishSample=[&](int i,const VoiceFrame& total)
+    {
+        double left=total.left,right=total.right;
+        const double masterInputLeft=total.masterLeft,masterInputRight=total.masterRight;
+        const double cutoffSum=total.cutoffSum,cutoffWeight=total.cutoffWeight;
         if(settings.filterType!=0)
         {
             const auto target=cutoffWeight>1.e-8 ? float(cutoffSum/cutoffWeight) : masterCutoff;
@@ -1038,6 +1112,61 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         }
         buffer.setSample(0,i,float(std::clamp(left,-4.0,4.0)));
         buffer.setSample(1,i,float(std::clamp(right,-4.0,4.0)));
+    };
+    if(!parallel)
+    {
+        for(int i=start;i<start+count;++i)
+        {
+            SharedFrame frame;
+            advanceShared(frame);
+            VoiceFrame total;
+            for(int voiceIndex=0;voiceIndex<maxVoices;++voiceIndex)
+            {
+                if(!voices[size_t(voiceIndex)].active) continue;
+                VoiceFrame out;
+                renderVoiceSample(voiceIndex,frame,out);
+                sumFrame(total,out);
+            }
+            finishSample(i,total);
+        }
+    }
+    else
+    {
+        for(int offset=0;offset<count;++offset)
+            advanceShared(sharedFrames[size_t(offset)]);
+        auto renderVoices=[&](int first,int last)
+        {
+            for(int voiceIndex=first;voiceIndex<last;++voiceIndex)
+            {
+                if(!initiallyActive[size_t(voiceIndex)]) continue;
+                for(int offset=0;offset<count;++offset)
+                    renderVoiceSample(voiceIndex,sharedFrames[size_t(offset)],
+                                      voiceFrames[size_t(voiceIndex)][size_t(offset)]);
+            }
+        };
+        voiceWorkerJob={&renderVoices,[](void* context,int first,int last)
+        { (*static_cast<decltype(renderVoices)*>(context))(first,last); },split,maxVoices};
+        voiceWorkerState.store(0,std::memory_order_release);
+        voiceWorkerWake.signal();
+        renderVoices(0,split);
+        int pending=0;
+        if(voiceWorkerState.compare_exchange_strong(pending,1,std::memory_order_acquire))
+        {
+            // A worker that has not yet woken leaves its group to the audio thread.
+            renderVoices(split,maxVoices);
+            voiceWorkerState.store(2,std::memory_order_release);
+        }
+        else while(voiceWorkerState.load(std::memory_order_acquire)!=2)
+            std::this_thread::yield();
+        // Reduction and shared filtering retain the original voice order.
+        for(int offset=0;offset<count;++offset)
+        {
+            VoiceFrame total;
+            for(int voiceIndex=0;voiceIndex<maxVoices;++voiceIndex)
+                if(initiallyActive[size_t(voiceIndex)])
+                    sumFrame(total,voiceFrames[size_t(voiceIndex)][size_t(offset)]);
+            finishSample(start+offset,total);
+        }
     }
     double cutoffLogSum=0, cutoffWeight=0;
     if(settings.filterType!=0)

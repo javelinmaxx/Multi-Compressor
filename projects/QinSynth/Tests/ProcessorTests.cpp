@@ -11,6 +11,9 @@
 
 struct QinSynthTestAccess
 {
+    static void setParallel(QinSynthProcessor& p,bool enabled) { p.parallelVoicesEnabled=enabled; }
+    static uint32_t parallelJobs(const QinSynthProcessor& p)
+    { return p.parallelVoiceJobs.load(std::memory_order_relaxed); }
     static int active(const QinSynthProcessor& p)
     { int count=0; for(const auto& voice:p.voices) if(voice.active) ++count; return count; }
     static int note(const QinSynthProcessor& p,int voice) { return p.voices[size_t(voice)].note; }
@@ -2064,6 +2067,42 @@ int main(int argc,char** argv)
             for(int env=0;env<3;++env)
                 if(std::abs(restored.parameters.getRawParameterValue(ids[size_t(env)])->load()-25.f*(env+1))>.1f)
                     throw std::runtime_error("The three Merge controls must survive host state restoration");
+        }
+        {
+            auto serial=std::make_unique<QinSynthProcessor>();
+            auto threaded=std::make_unique<QinSynthProcessor>();
+            for(auto* candidate:{serial.get(),threaded.get()})
+            {
+                set(*candidate,"verbMix",0); set(*candidate,"driveMix",0);
+                set(*candidate,"filterType",2); set(*candidate,"filterCutoff",1800);
+                set(*candidate,"filterResonance",55); set(*candidate,"filterEnvAmount",40);
+                set(*candidate,"filterMerge",50); set(*candidate,"ampMerge",30);
+                set(*candidate,"noise",1); set(*candidate,"noiseLevel",18);
+                for(const auto* id:{"osc1Unison","osc2Unison","osc3Unison"}) set(*candidate,id,8);
+                for(const auto* id:{"osc1Level","osc2Level","osc3Level"}) set(*candidate,id,35);
+                set(*candidate,"osc2FmSource",1); set(*candidate,"osc2FmAmount",25);
+                candidate->prepareToPlay(48000,256);
+            }
+            QinSynthTestAccess::setParallel(*serial,false);
+            juce::AudioBuffer<float> reference(2,256),actual(2,256);
+            for(int renderBlock=0;renderBlock<12;++renderBlock)
+            {
+                juce::MidiBuffer voiceMidi;
+                if(renderBlock==0)
+                    for(int note=48;note<56;++note)
+                        voiceMidi.addEvent(juce::MidiMessage::noteOn(1,note,.75f),0);
+                if(renderBlock==7)
+                    for(int note=48;note<56;++note)
+                        voiceMidi.addEvent(juce::MidiMessage::noteOff(1,note),0);
+                serial->processBlock(reference,voiceMidi);
+                threaded->processBlock(actual,voiceMidi);
+                for(int channel=0;channel<2;++channel)
+                    for(int sample=0;sample<256;++sample)
+                        if(std::abs(reference.getSample(channel,sample)-actual.getSample(channel,sample))>1.e-5f)
+                            throw std::runtime_error("Threaded voice and filter render differs from serial output");
+            }
+            if(QinSynthTestAccess::parallelJobs(*threaded)==0)
+                throw std::runtime_error("Dense polyphony did not run on the voice worker");
         }
         std::cout<<"Qin Synth processor checks passed\n";
         return 0;

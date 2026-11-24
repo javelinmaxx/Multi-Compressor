@@ -1,5 +1,32 @@
 # Qin Synth pan and noise-glide optimization
 
+## Parallel voice synthesis and filters
+
+The audio thread and one persistent JUCE worker split active voices when a
+render segment contains at least four voices and 128 samples. Each lane computes
+its voices' oscillators, FM chains, noise, envelopes, filter coefficients, and
+filter outputs. Shared controls are snapshotted per sample, then the audio
+thread sums voice contributions in their original order and runs the merged
+filter and output effects. The worker requests real-time scheduling and falls
+back to high priority if that request fails. Worker scratch buffers are
+allocated during `prepareToPlay`.
+
+Linux Release build, 48 kHz, 128-sample blocks, one second of audio per run.
+Each value is the median of five timed runs after one warmup. Serial and
+threaded figures use the same build and settings; wall-clock time includes
+the synchronization cost. DAW CPU meters may differ.
+
+| Scenario | Serial | Threaded | Reduction |
+| --- | ---: | ---: | ---: |
+| 16 voices, 3 oscillators × 8 unison, filter bypassed | 272.000 ms | 170.416 ms | 37.3% |
+| Same voices, Sallen-Key filter, 55% resonance, 50% merge | 343.686 ms | 210.747 ms | 38.7% |
+
+The serial mono legato and noise glide cases measured 70.870 ms and 47.304 ms.
+Processor tests compare threaded and serial output sample by sample under FM,
+noise, per-voice and merged filtering, note-on, and note-off. The maximum
+allowed difference is `1e-5`, and the test checks that the worker actually
+renders dense polyphony.
+
 ## CPU comparison
 
 Linux Release build, 48 kHz stereo, 128-sample blocks, one second of rendered
