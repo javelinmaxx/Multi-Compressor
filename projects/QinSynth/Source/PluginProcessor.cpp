@@ -175,6 +175,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
     result.add(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"slideTime",1},
         "Legato slide time",slideRange,80.f,juce::AudioParameterFloatAttributes().withLabel("ms")));
     add("slideShape","Legato slide shape",0,100,.1f,50,"%");
+    for(int osc=0;osc<oscillatorCount;++osc)
+    {
+        const juce::String prefix(prefixes[size_t(osc)]);
+        add(prefix+"PhaseStart","Oscillator "+juce::String(osc+1)+" retrigger phase",0,100,.1f,0,"%");
+    }
     return result;
 }
 QinSynthProcessor::QinSynthProcessor()
@@ -272,6 +277,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings(const char* override
         auto& target=settings.oscillator[size_t(osc)];
         target.wave=qin::clampWavePosition(get(prefix+"WaveX")*.01f,get(prefix+"WaveY")*.01f);
         target.retrig=get(prefix+"Retrig")>=.5f;
+        target.phaseStart=std::clamp(get(prefix+"PhaseStart")*.01f,0.f,1.f);
         target.octave=std::clamp(juce::roundToInt(get(prefix+"Octave")),-2,2);
         target.fineCents=std::clamp(get(prefix+"Fine"),-1200.f,1200.f);
         target.unison=std::clamp(juce::roundToInt(get(prefix+"Unison")),1,maxUnison);
@@ -583,7 +589,13 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
                     {
                         auto& subvoice=selected->oscillators[size_t(osc)][size_t(u)];
                         if(settings.oscillator[size_t(osc)].retrig)
-                            subvoice={};
+                        {
+                            const auto phase=std::fmod(double(settings.oscillator[size_t(osc)].phaseStart),1.0);
+                            subvoice.phase=phase;
+                            // The triangle is an integrated pulse. Set its integrator
+                            // to the corresponding cycle position before the first sample.
+                            subvoice.triangle=phase<.5 ? -1.0+4.0*phase : 3.0-4.0*phase;
+                        }
                         else if(hadPreviousNote)
                             subvoice=previousOscillators[size_t(osc)][size_t(u)];
                         else

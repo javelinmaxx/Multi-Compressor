@@ -41,7 +41,22 @@ struct QinSynthTestAccess
     {
         for(const auto& oscillator:p.voices[0].oscillators)
             for(const auto& subvoice:oscillator)
-                if(std::abs(subvoice.phase)>1.e-12 || std::abs(subvoice.triangle)>1.e-12) return false;
+                if(std::abs(subvoice.phase)>1.e-12 || std::abs(subvoice.triangle+1.0)>1.e-12) return false;
+        return true;
+    }
+    static bool newestRetriggeredPhasesMatch(const QinSynthProcessor& p,
+                                            const std::array<double,3>& expected)
+    {
+        const auto newest=std::max_element(p.voices.begin(),p.voices.end(),
+            [](const auto& a,const auto& b) { return a.age<b.age; });
+        for(size_t osc=0;osc<expected.size();++osc)
+            for(const auto& subvoice:newest->oscillators[osc])
+            {
+                const auto phase=expected[osc];
+                const auto triangle=phase<.5 ? -1.0+4.0*phase : 3.0-4.0*phase;
+                if(std::abs(subvoice.phase-phase)>1.e-6
+                    || std::abs(subvoice.triangle-triangle)>1.e-6) return false;
+            }
         return true;
     }
     static void noteOn(QinSynthProcessor& p,int note)
@@ -115,6 +130,23 @@ struct QinSynthEditorTestAccess
     { return editor.waves[size_t(index)].getPosition(); }
     static void setRetrig(QinSynthEditor& editor,int index,bool enabled)
     { editor.retrig[size_t(index)].setToggleState(enabled,juce::sendNotificationSync); }
+    static void setPhaseStart(QinSynthEditor& editor,int index,float position)
+    {
+        auto& line=editor.phaseStartLines[size_t(index)];
+        const juce::Point<float> point{2.f+(line.getWidth()-4.f)*position,line.getHeight()*.5f};
+        const auto now=juce::Time::getCurrentTime();
+        juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(),point,
+            juce::ModifierKeys::leftButtonModifier,1.f,0.f,0.f,0.f,0.f,
+            &line,&line,now,point,now,1,true);
+        line.mouseDown(event); line.mouseDrag(event); line.mouseUp(event);
+    }
+    static float phaseStart(const QinSynthEditor& editor,int index)
+    { return editor.phaseStartLines[size_t(index)].getPhase(); }
+    static bool phaseLineVisible(const QinSynthEditor& editor,int index)
+    { return editor.phaseStartLines[size_t(index)].isVisible(); }
+    static std::array<float,3> previewCycle()
+    { return {QinSynthEditor::oscPreviewPhase(0),QinSynthEditor::oscPreviewPhase(133),
+              QinSynthEditor::oscPreviewPhase(266)}; }
     static void setDetuneShape(QinSynthEditor& editor,int index,float shape)
     { editor.detuneShapeSliders[size_t(index)].setValue(shape,juce::sendNotificationSync); }
     static bool oscillatorLayout(const QinSynthEditor& editor)
@@ -604,6 +636,17 @@ int main(int argc,char** argv)
         QinSynthTestAccess::noteOn(limited,68);
         if(QinSynthTestAccess::active(limited)!=2 || !QinSynthTestAccess::allRetriggeredPhasesMatch(limited))
             throw std::runtime_error("Retrig must start every oscillator and unison copy at the same phase");
+        set(limited,"osc1PhaseStart",25); set(limited,"osc2PhaseStart",50); set(limited,"osc3PhaseStart",75);
+        QinSynthTestAccess::noteOn(limited,69);
+        if(!QinSynthTestAccess::newestRetriggeredPhasesMatch(limited,{.25,.5,.75}))
+            throw std::runtime_error("Each Retrig oscillator and unison copy must start at its selected phase");
+        juce::MemoryBlock phaseState; limited.getStateInformation(phaseState);
+        QinSynthProcessor restoredPhases;
+        restoredPhases.setStateInformation(phaseState.getData(),int(phaseState.getSize()));
+        if(std::abs(restoredPhases.parameters.getRawParameterValue("osc1PhaseStart")->load()-25.f)>.01f
+           || std::abs(restoredPhases.parameters.getRawParameterValue("osc2PhaseStart")->load()-50.f)>.01f
+           || std::abs(restoredPhases.parameters.getRawParameterValue("osc3PhaseStart")->load()-75.f)>.01f)
+            throw std::runtime_error("Per-oscillator phase starts must survive session restoration");
         set(limited,"osc1Retrig",0);
         const auto freePhase=QinSynthTestAccess::secondPhase(limited,0);
         QinSynthTestAccess::noteOn(limited,70);
@@ -1491,6 +1534,7 @@ int main(int argc,char** argv)
             auto& preview=*previewOwner;
             QinSynthEditor editor(preview);
             if(editor.getWidth()!=920 || editor.getHeight()!=640
+               || QinSynthEditorTestAccess::previewCycle()!=std::array<float,3>{0.f,.5f,0.f}
                || QinSynthEditorTestAccess::modDestinationCount(editor)
                     !=qin::legacyModTargetCount+qin::continuousModTargetCount
                || !QinSynthEditorTestAccess::voiceDragEnabled(editor)
@@ -1597,16 +1641,23 @@ int main(int argc,char** argv)
             QinSynthEditorTestAccess::setVoiceCount(editor,4);
             QinSynthEditorTestAccess::setWave(editor,1,{.75f,.5f});
             QinSynthEditorTestAccess::setRetrig(editor,2,true);
+            QinSynthEditorTestAccess::setPhaseStart(editor,2,.375f);
+            QinSynthEditorTestAccess::setPhaseStart(editor,0,.35f);
             if(std::abs(preview.parameters.getRawParameterValue("voiceCount")->load()-4)>1.e-6
                || std::abs(preview.parameters.getRawParameterValue("osc2WaveX")->load()-75)>1.e-3
                || std::abs(preview.parameters.getRawParameterValue("osc2WaveY")->load()-50)>1.e-3
-               || preview.parameters.getRawParameterValue("osc3Retrig")->load()<.5f)
+               || preview.parameters.getRawParameterValue("osc3Retrig")->load()<.5f
+               || std::abs(preview.parameters.getRawParameterValue("osc3PhaseStart")->load()-37.5f)>.1f
+               || std::abs(preview.parameters.getRawParameterValue("osc1PhaseStart")->load()-35.f)>.1f
+               || !QinSynthEditorTestAccess::phaseLineVisible(editor,0))
                 throw std::runtime_error("Polyphony, waveform pad, and Retrig UI must update their host parameters");
+            set(preview,"osc2PhaseStart",62.5f);
             set(preview,"osc2WaveX",50); set(preview,"osc2WaveY",100);
             QinSynthEditorTestAccess::tick(editor);
             const auto automated=QinSynthEditorTestAccess::wavePosition(editor,1);
-            if(std::abs(automated.x-.5f)>.001f || std::abs(automated.y-1.f)>.001f)
-                throw std::runtime_error("Waveform pad must follow host automation");
+            if(std::abs(automated.x-.5f)>.001f || std::abs(automated.y-1.f)>.001f
+               || std::abs(QinSynthEditorTestAccess::phaseStart(editor,1)-.625f)>.001f)
+                throw std::runtime_error("Waveform pad and phase line must follow host automation");
             if(!QinSynthEditorTestAccess::playVisible(editor)
                || QinSynthEditorTestAccess::legatoRules(editor)!=4
                || QinSynthEditorTestAccess::ruleEnabled(editor)

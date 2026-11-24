@@ -46,6 +46,23 @@ private:
     bool dragging=false;
 };
 
+class QinPhaseStartLine final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    QinPhaseStartLine();
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void setPhase(float next);
+    float getPhase() const noexcept { return phase; }
+    std::function<void()> onDragStart, onDragEnd;
+    std::function<void(float)> onPhaseChange;
+private:
+    float phase=0;
+    bool dragging=false;
+};
+
 class QinAnalogSwitch final : public juce::ToggleButton
 {
 public:
@@ -114,6 +131,7 @@ private:
     friend struct QinSynthEditorTestAccess;
     static constexpr int designWidth=920, designHeight=640;
     static constexpr int driveScopeX=800, driveScopeY=245, driveScopeWidth=92, driveScopeHeight=89;
+    static float oscPreviewPhase(int point) noexcept { return point==266 ? 0.f : float(point)/266.f; }
     void showOscillator(int oscillator);
     void showEnvelope(int envelope);
     void showFxSection(int section);
@@ -179,7 +197,9 @@ private:
     std::array<juce::Slider,3> curveSliders;
     juce::Label curveLabel;
     std::array<QinWavePad,3> waves;
+    std::array<QinPhaseStartLine,3> phaseStartLines;
     std::array<juce::RangedAudioParameter*,3> waveXParameters {}, waveYParameters {};
+    std::array<juce::RangedAudioParameter*,3> phaseStartParameters {};
     std::array<juce::TextButton,3> retrig;
     std::array<juce::Label,3> waveLabels;
     juce::ComboBox filterType, modTarget;

@@ -85,7 +85,7 @@ private:
         bool keyDown=false, sustained=false, active=false;
     };
     struct HeldNote { int note=-1, channel=1, voiceIndex=-1; };
-    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1, fmSource=-1; bool retrig=false; float level=0, detune=0, detuneShape=0, spread=.12f, pan=0, fmAmount=0, fineCents=0; };
+    struct OscillatorSettings { qin::WavePosition wave; int octave=0, unison=1, fmSource=-1; bool retrig=false; float phaseStart=0, level=0, detune=0, detuneShape=0, spread=.12f, pan=0, fmAmount=0, fineCents=0; };
     struct NoiseSettings { float level=.3f, tune=0, highPass=20, pan=0; int style=0; };
     struct EnvelopeSettings { float attack=.01f, decay=.2f, sustain=1.f, release=.3f, curve=0; };
     struct Settings

@@ -284,6 +284,49 @@ void QinWavePad::paint(juce::Graphics& g)
     g.drawText("SAW",0,juce::roundToInt(bottom)+2,37,13,juce::Justification::centredLeft);
     g.drawText("PULSE",getWidth()-47,juce::roundToInt(bottom)+2,47,13,juce::Justification::centredRight);
 }
+QinPhaseStartLine::QinPhaseStartLine()
+{
+    setName("PHASE START"); setTitle("Oscillator retrigger phase");
+    setTooltip("Drag the phase line to choose where this oscillator starts when Retrig is enabled.");
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+}
+void QinPhaseStartLine::setPhase(float next)
+{
+    next=std::clamp(next,0.f,1.f);
+    if(std::abs(next-phase)<.0005f) return;
+    phase=next; repaint();
+}
+void QinPhaseStartLine::mouseDown(const juce::MouseEvent& event)
+{
+    if(!event.mods.isLeftButtonDown()) return;
+    dragging=true;
+    if(onDragStart) onDragStart();
+    mouseDrag(event);
+}
+void QinPhaseStartLine::mouseDrag(const juce::MouseEvent& event)
+{
+    if(!dragging) return;
+    const auto next=std::clamp((event.position.x-2.f)/float(getWidth()-4),0.f,1.f);
+    if(std::abs(next-phase)<.0005f) return;
+    setPhase(next);
+    if(onPhaseChange) onPhaseChange(phase);
+}
+void QinPhaseStartLine::mouseUp(const juce::MouseEvent&)
+{
+    if(!dragging) return;
+    dragging=false;
+    if(onDragEnd) onDragEnd();
+}
+void QinPhaseStartLine::paint(juce::Graphics& g)
+{
+    const auto x=2.f+(getWidth()-4.f)*phase;
+    g.setColour(accent.withAlpha(.22f)); g.drawVerticalLine(juce::roundToInt(x),3.f,float(getHeight()-3));
+    g.setColour(accent); g.fillRoundedRectangle(x-1.f,3.f,2.f,float(getHeight()-6),1.f);
+    juce::Path handle;
+    handle.startNewSubPath(x-5.f,2.f); handle.lineTo(x+5.f,2.f);
+    handle.lineTo(x,9.f); handle.closeSubPath();
+    g.fillPath(handle);
+}
 QinAnalogSwitch::QinAnalogSwitch(const juce::String& caption) : ToggleButton(caption)
 {
     setTooltip(caption=="RETRIG"
@@ -815,6 +858,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     for(size_t i=0;i<waves.size();++i)
     {
         auto& wave=waves[i]; auto& label=waveLabels[i]; auto& retrigger=retrig[i];
+        auto& phaseLine=phaseStartLines[i];
         wave.setComponentID("osc"+juce::String(int(i)+1)+"WaveX");
         wave.setTooltip("Drag within the square to blend oscillator "+juce::String(int(i)+1)+" between saw, pulse, triangle, and sine waves.");
         label.setText("WAVE",juce::dontSendNotification); label.setFont(juce::FontOptions(9.f));
@@ -827,9 +871,19 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         retrigger.setColour(juce::TextButton::textColourOnId,stageStyle::background);
         retrigger.setTooltip("Restarts this oscillator's waveform phase at each note onset when enabled.");
         addAndMakeVisible(wave); addAndMakeVisible(label); addAndMakeVisible(retrigger);
+        addAndMakeVisible(phaseLine);
         const auto prefix="osc"+juce::String(int(i)+1);
         waveXParameters[i]=synth.parameters.getParameter(prefix+"WaveX");
         waveYParameters[i]=synth.parameters.getParameter(prefix+"WaveY");
+        phaseStartParameters[i]=synth.parameters.getParameter(prefix+"PhaseStart");
+        phaseLine.setPhase(synth.parameters.getRawParameterValue(prefix+"PhaseStart")->load()*.01f);
+        phaseLine.onDragStart=[this,i] { phaseStartParameters[i]->beginChangeGesture(); };
+        phaseLine.onDragEnd=[this,i] { phaseStartParameters[i]->endChangeGesture(); };
+        phaseLine.onPhaseChange=[this,i](float phase)
+        {
+            auto* parameter=phaseStartParameters[i];
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(phase*100.f));
+        };
         wave.setPosition({synth.parameters.getRawParameterValue(prefix+"WaveX")->load()*.01f,
                           synth.parameters.getRawParameterValue(prefix+"WaveY")->load()*.01f});
         wave.onDragStart=[this,i]
@@ -1042,6 +1096,8 @@ void QinSynthEditor::timerCallback()
                                                  waveYParameters[i]->convertFrom0to1(waveYParameters[i]->getValue())*.01f});
         if(changed && int(i)==currentOscillator)
             repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{34,198,270,54}));
+        phaseStartLines[i].setPhase(phaseStartParameters[i]->convertFrom0to1(
+            phaseStartParameters[i]->getValue())*.01f);
     }
 }
 void QinSynthEditor::updatePlayAvailability()
@@ -1079,6 +1135,7 @@ void QinSynthEditor::updateVisibility()
     for(int osc=0;osc<3;++osc)
     {
         const auto selected=osc==currentOscillator; waves[size_t(osc)].setVisible(selected); waveLabels[size_t(osc)].setVisible(selected); retrig[size_t(osc)].setVisible(selected);
+        phaseStartLines[size_t(osc)].setVisible(selected);
         levelDisplays[size_t(osc)].setVisible(selected);
         octaveDisplays[size_t(osc)].setVisible(selected);
         fineDisplays[size_t(osc)].setVisible(selected);
@@ -1131,6 +1188,7 @@ void QinSynthEditor::resized()
         oscillatorTabs[size_t(i)].setBounds(31+i*109,101,103,27);
         envelopeTabs[size_t(i)].setBounds(455+i*55,413,52,27);
         waveLabels[size_t(i)].setBounds(318,164,96,11); waves[size_t(i)].setBounds(318,175,96,96);
+        phaseStartLines[size_t(i)].setBounds(34,198,270,54);
         retrig[size_t(i)].setBounds(333,139,85,26);
         levelDisplays[size_t(i)].setBounds(34,139,105,26);
         fineDisplays[size_t(i)].setBounds(143,139,102,26);
@@ -1229,6 +1287,7 @@ void QinSynthEditor::resized()
     curveLabel.setTransform(scale);
     for(auto& label:labels) label.setTransform(scale);
     for(auto& wave:waves) wave.setTransform(scale);
+    for(auto& line:phaseStartLines) line.setTransform(scale);
     for(auto& button:retrig) button.setTransform(scale);
     voiceCount.setTransform(scale);
     for(auto& display:levelDisplays) display.setTransform(scale);
@@ -1396,7 +1455,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
     float pinkPreview=0;
     for(int point=0;point<=266;++point)
     {
-        const auto cycle=std::fmod(float(point)/266.f*3.f,1.f);
+        // Include the wrapped endpoint so the plot covers exactly one cycle.
+        const auto cycle=oscPreviewPhase(point);
         noisePreviewState^=noisePreviewState<<13;
         noisePreviewState^=noisePreviewState>>17;
         noisePreviewState^=noisePreviewState<<5;
