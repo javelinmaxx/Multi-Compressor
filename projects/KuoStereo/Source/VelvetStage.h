@@ -12,7 +12,8 @@ class VelvetStage
 {
 public:
     struct Result { float side; bool onset, instant; };
-    void prepare (float rate, std::array<float, 3> initialBands, bool enableBandLevels = true)
+    void prepare (float rate, std::array<float, 3> initialBands, bool enableBandLevels = true,
+                  std::array<float, 2> bandCrossovers = { 250.0f, 2500.0f })
     {
         sampleRate = rate;
         bandLevelsEnabled = enableBandLevels;
@@ -27,6 +28,9 @@ public:
         { return 1.0f - std::exp (-juce::MathConstants<float>::twoPi * hz / sampleRate); };
         fastCoefficient = coefficient (160.0f);
         slowCoefficient = coefficient (8.0f);
+        bandGainCoefficient = 1.0f - std::exp (-1.0f / (0.010f * sampleRate));
+        velvetLowCoefficient = coefficient (bandCrossovers[0]);
+        velvetUpperCoefficient = coefficient (bandCrossovers[1]);
         constexpr std::array<float, 3> detectorCrossovers { 250, 2500, 8000 };
         for (size_t band = 0; band < detectorCoefficients.size(); ++band)
             detectorCoefficients[band] = coefficient (detectorCrossovers[band]);
@@ -54,11 +58,6 @@ public:
         if (bandLevelsEnabled)
         {
             velvetBandTargets = bands;
-            bandGainCoefficient = 1.0f - std::exp (-1.0f / (0.010f * sampleRate));
-            velvetLowCoefficient = 1.0f - std::exp (
-                -juce::MathConstants<float>::twoPi * 250.0f / sampleRate);
-            velvetUpperCoefficient = 1.0f - std::exp (
-                -juce::MathConstants<float>::twoPi * 2500.0f / sampleRate);
         }
         tonalGuardAttackStep = 1.0f
             / (std::max (guardAttackMs, 0.5f) * 0.001f * sampleRate);
@@ -119,8 +118,7 @@ public:
             ? transientGuardAttackStep : tonalGuardAttackStep;
         velvetGuardEnvelope = onset ? std::min (1.0f, velvetGuardEnvelope + attackStep) : 0.0f;
         const auto velvetInput = mid * (1.0f - protection * velvetGuardEnvelope * onsetStrength);
-        // Standalone Kuo Velvet feeds the full-band signal directly to the
-        // convolution; Kuo Stereo retains its adjustable three-band input.
+        // At unity band gains the three bands recombine to the full-band input.
         auto velvetBands = velvetInput;
         if (bandLevelsEnabled)
         {

@@ -45,33 +45,20 @@ void referenceTests()
         std::cout << "Pre-refactor parity at " << rate << " Hz: " << error << " maximum error\n";
     }
 }
-void legacyStateTests()
+void bandStateTests()
 {
     KuoVelvetProcessor baseline, restored;
-    set (baseline, "width", 70); set (baseline, "transientProtect", 60);
-    set (baseline, "guardAttack", 2.5f); set (baseline, "output", 3);
-    auto legacy = baseline.parameters.copyState();
-    for (const auto* id : { "velvetLow", "velvetMid", "velvetHigh" })
-    {
-        check (restored.parameters.getParameter (id) == nullptr, "retired band controls are absent from host parameters");
-        juce::ValueTree child ("PARAM");
-        child.setProperty ("id", id, nullptr); child.setProperty ("value", 0.0f, nullptr);
-        legacy.appendChild (child, nullptr);
-    }
-    juce::MemoryBlock data;
-    if (auto xml = legacy.createXml()) juce::AudioProcessor::copyXmlToBinary (*xml, data);
+    set (baseline, "width", 70); set (baseline, "velvetLow", 0);
+    set (baseline, "velvetMid", 175); set (baseline, "velvetHigh", 25);
+    set (baseline, "side", 65);
+    juce::MemoryBlock data; baseline.getStateInformation (data);
     restored.setStateInformation (data.getData(), static_cast<int> (data.getSize()));
-    for (const auto* id : { "width", "transientProtect", "guardAttack", "output", "bypass" })
+    for (const auto* id : { "width", "velvetLow", "velvetMid", "velvetHigh", "side" })
         check (std::abs (baseline.parameters.getRawParameterValue (id)->load()
                - restored.parameters.getRawParameterValue (id)->load()) < 1.0e-5f,
-               "old presets retain all remaining parameter values");
-    juce::MemoryBlock saved; restored.getStateInformation (saved);
-    auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), static_cast<int> (saved.getSize()));
-    check (xml != nullptr && ! xml->toString().contains ("velvetLow")
-           && ! xml->toString().contains ("velvetMid") && ! xml->toString().contains ("velvetHigh"),
-           "new saved states discard retired band values");
+               "band and Side settings survive state restoration");
     baseline.prepareToPlay (48000, 128); restored.prepareToPlay (48000, 128);
-    juce::MidiBuffer midi; uint32_t random = 2468; double error = 0, sideEnergy = 0;
+    juce::MidiBuffer midi; uint32_t random = 2468; double error = 0;
     for (int base = 0; base < 8192; base += 128)
     {
         juce::AudioBuffer<float> a (2, 128), b;
@@ -86,10 +73,77 @@ void legacyStateTests()
         {
             for (int c = 0; c < 2; ++c)
                 error = std::max (error, static_cast<double> (std::abs (a.getSample (c, i) - b.getSample (c, i))));
-            const auto side = 0.5f * (b.getSample (0, i) - b.getSample (1, i)); sideEnergy += side * side;
         }
     }
-    check (error < 1.0e-6 && sideEnergy > 1.0, "old zero-band presets now widen the full-band signal at the recalled settings");
+    check (error < 1.0e-6, "restored band and Side settings render identical audio");
+}
+double bandSideEnergy (float toneHz, std::array<float, 3> bands)
+{
+    KuoVelvetProcessor p;
+    set (p, "width", 100); set (p, "transientProtect", 0);
+    set (p, "velvetLow", bands[0]); set (p, "velvetMid", bands[1]); set (p, "velvetHigh", bands[2]);
+    p.prepareToPlay (48000, 128);
+    juce::MidiBuffer midi; double energy = 0;
+    for (int base = 0; base < 16384; base += 128)
+    {
+        juce::AudioBuffer<float> b (2, 128);
+        for (int i = 0; i < 128; ++i)
+        {
+            const auto x = 0.2f * std::sin (juce::MathConstants<float>::twoPi * toneHz * (base+i) / 48000.0f);
+            b.setSample (0, i, x); b.setSample (1, i, x);
+        }
+        p.processBlock (b, midi);
+        if (base >= 8192)
+            for (int i = 0; i < 128; ++i)
+            {
+                const auto side = 0.5f * (b.getSample (0, i) - b.getSample (1, i));
+                energy += side * side;
+            }
+    }
+    return energy;
+}
+void bandAndSideTests()
+{
+    for (const auto tone : { 60.0f, 500.0f, 6000.0f })
+    {
+        const auto muted = bandSideEnergy (tone, { 0, 0, 0 });
+        const auto active = bandSideEnergy (tone, { 100, 100, 100 });
+        check (muted < 1.0e-10 && active > 0.01, "band sliders control generated side without changing dry stereo");
+    }
+    const auto loAt60 = bandSideEnergy (60, { 100, 0, 0 });
+    const auto hiAt60 = bandSideEnergy (60, { 0, 0, 100 });
+    const auto midAt500 = bandSideEnergy (500, { 0, 100, 0 });
+    const auto loAt500 = bandSideEnergy (500, { 100, 0, 0 });
+    const auto hiAt6000 = bandSideEnergy (6000, { 0, 0, 100 });
+    const auto loAt6000 = bandSideEnergy (6000, { 100, 0, 0 });
+    check (loAt60 > hiAt60 * 10 && midAt500 > loAt500 * 2 && hiAt6000 > loAt6000 * 10,
+           "200 Hz and 1 kHz crossovers route low, mid and high tones to their sliders");
+    for (float width : { 0.0f, 100.0f })
+    {
+        KuoVelvetProcessor p;
+        set (p, "width", width); set (p, "side", 0); set (p, "transientProtect", 0);
+        p.prepareToPlay (48000, 128);
+        juce::MidiBuffer midi; double error = 0;
+        for (int base = 0; base < 8192; base += 128)
+        {
+            juce::AudioBuffer<float> b (2, 128);
+            for (int i = 0; i < 128; ++i)
+            {
+                b.setSample (0, i, 0.15f * std::sin ((base+i) * 0.09f));
+                b.setSample (1, i, 0.12f * std::cos ((base+i) * 0.11f));
+            }
+            p.processBlock (b, midi);
+            for (int i = 0; i < 128; ++i)
+                error = std::max (error, static_cast<double> (std::abs (b.getSample (0, i) - b.getSample (1, i))));
+        }
+        check (error < 1.0e-7, "zero Side removes both original and generated stereo side");
+    }
+    KuoVelvetProcessor p; set (p, "width", 0); set (p, "side", 100);
+    p.prepareToPlay (48000, 128);
+    juce::AudioBuffer<float> b (2, 256); b.clear(); b.setSample (0, 0, 1); b.setSample (1, 0, -0.5f);
+    juce::MidiBuffer midi; p.processBlock (b, midi);
+    check (std::abs (b.getSample (0, 72) - 1) < 1.0e-7f && std::abs (b.getSample (1, 72) + 0.5f) < 1.0e-7f,
+           "full Side retains the original stereo field at zero Width");
 }
 float impulseEnergy (float protect, float attack)
 {
@@ -201,9 +255,9 @@ int main (int argc, char** argv)
         juce::ScopedJuceInitialiser_GUI gui;
         verifyParameterRetention<KuoVelvetProcessor>();
         monoStereoTests::run<KuoVelvetProcessor> (nullptr,true);
-        stateTests<KuoVelvetProcessor> (5); referenceTests(); velvetTests(); legacyStateTests();
+        stateTests<KuoVelvetProcessor> (9); referenceTests(); velvetTests(); bandStateTests(); bandAndSideTests();
         blockSizeTests<KuoVelvetProcessor>();
-        if (argc > 2 && juce::String (argv[1]) == "--editor") editorTests<KuoVelvetProcessor> (juce::File (argv[2]), 260, 4, 444);
+        if (argc > 2 && juce::String (argv[1]) == "--editor") editorTests<KuoVelvetProcessor> (juce::File (argv[2]), 382, 8, 444);
         std::cout << checks << " Kuo Velvet checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

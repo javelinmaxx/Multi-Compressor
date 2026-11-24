@@ -32,6 +32,7 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     kuo::VelvetStage velvet;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> sideLevel;
     std::array<std::vector<float>, 2> dryHistory;
     size_t writePosition = 0;
     void process (juce::AudioBuffer<float>&, bool hostBypass);

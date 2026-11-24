@@ -14,6 +14,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout KuoVelvetProcessor::createPa
     add ("width", "Velvet width", 0, 100, 0.1f, 35, "%");
     add ("transientProtect", "Transient", 0, 100, 0.1f, 80, "%");
     add ("guardAttack", "Attack", 0, 10, 0.1f, 0, "ms");
+    add ("velvetLow", "Velvet low band", 0, 200, 0.1f, 100, "%");
+    add ("velvetMid", "Velvet mid band", 0, 200, 0.1f, 100, "%");
+    add ("velvetHigh", "Velvet high band", 0, 200, 0.1f, 100, "%");
+    add ("side", "Side", 0, 100, 0.1f, 100, "%");
     add ("output", "Output", -12, 12, 0.1f, 0, "dB");
     result.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "bypass", 1 }, "Bypass", false));
     return result;
@@ -33,25 +37,20 @@ void KuoVelvetProcessor::setStateInformation (const void* data, int size)
 {
     if (auto xml = getXmlFromBinary (data, size))
         if (xml->hasTagName (parameters.state.getType()))
-        {
-            auto state = juce::ValueTree::fromXml (*xml);
-            // Old presets retain the remaining controls; retired band settings
-            // no longer alter the full-band convolution input or future saves.
-            for (int i = state.getNumChildren(); --i >= 0;)
-            {
-                const auto id = state.getChild (i).getProperty ("id").toString();
-                if (id == "velvetLow" || id == "velvetMid" || id == "velvetHigh")
-                    state.removeChild (i, nullptr);
-            }
-            parameters.replaceState (state);
-        }
+            parameters.replaceState (juce::ValueTree::fromXml (*xml));
 }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new KuoVelvetProcessor(); }
 
 void KuoVelvetProcessor::prepareToPlay (double rate, int)
 {
     const auto sampleRate = static_cast<float> (std::isfinite (rate) && rate >= 8000 ? rate : 48000);
-    velvet.prepare (sampleRate, { 1, 1, 1 }, false);
+    const std::array<float, 3> bands {
+        parameters.getRawParameterValue ("velvetLow")->load() * 0.01f,
+        parameters.getRawParameterValue ("velvetMid")->load() * 0.01f,
+        parameters.getRawParameterValue ("velvetHigh")->load() * 0.01f };
+    velvet.prepare (sampleRate, bands, true, { 200.0f, 1000.0f });
+    sideLevel.reset (sampleRate, 0.015);
+    sideLevel.setCurrentAndTargetValue (parameters.getRawParameterValue ("side")->load() * 0.01f);
     setLatencySamples (velvet.getLatency());
     for (auto& history : dryHistory) history.assign (static_cast<size_t> (velvet.getLatency()), 0.0f);
     writePosition = 0;
@@ -72,7 +71,11 @@ void KuoVelvetProcessor::process (juce::AudioBuffer<float>& buffer, bool hostByp
         buffer.copyFrom (1,0,buffer,0,0,buffer.getNumSamples());
     velvet.setParameters (parameters.getRawParameterValue ("width")->load() * 0.01f,
         parameters.getRawParameterValue ("transientProtect")->load() * 0.01f,
-        parameters.getRawParameterValue ("guardAttack")->load(), { 1, 1, 1 });
+        parameters.getRawParameterValue ("guardAttack")->load(), {
+            parameters.getRawParameterValue ("velvetLow")->load() * 0.01f,
+            parameters.getRawParameterValue ("velvetMid")->load() * 0.01f,
+            parameters.getRawParameterValue ("velvetHigh")->load() * 0.01f });
+    sideLevel.setTargetValue (parameters.getRawParameterValue ("side")->load() * 0.01f);
     const auto gain = juce::Decibels::decibelsToGain (parameters.getRawParameterValue ("output")->load());
     const auto bypass = hostBypass || parameters.getRawParameterValue ("bypass")->load() >= 0.5f;
     auto* left = buffer.getWritePointer (0); auto* right = buffer.getWritePointer (1);
@@ -83,7 +86,9 @@ void KuoVelvetProcessor::process (juce::AudioBuffer<float>& buffer, bool hostByp
         const auto dryLeft = dryHistory[0][writePosition], dryRight = dryHistory[1][writePosition];
         dryHistory[0][writePosition] = inputLeft; dryHistory[1][writePosition] = inputRight;
         writePosition = (writePosition + 1) % dryHistory[0].size();
-        left[i] = bypass ? dryLeft : (dryLeft + result.side) * gain;
-        right[i] = bypass ? dryRight : (dryRight - result.side) * gain;
+        const auto mid = 0.5f * (dryLeft + dryRight);
+        const auto side = (0.5f * (dryLeft - dryRight) + result.side) * sideLevel.getNextValue();
+        left[i] = bypass ? dryLeft : (mid + side) * gain;
+        right[i] = bypass ? dryRight : (mid - side) * gain;
     }
 }
