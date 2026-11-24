@@ -11,11 +11,11 @@ const auto panelSilver=juce::Colour(0xffbcc4cc);
 const auto panelInk=juce::Colour(0xff192b3b);
 const auto secondaryRed=juce::Colour(0xff82313d);
 const auto plotRed=juce::Colour(0xfff3aab0);
-const auto curveBlue=juce::Colour(0xffa9d7e8);
+const auto curveGreen=juce::Colour(0xff83f5a0);
 const auto accent=secondaryRed;
 const auto highlightRed=plotRed;
 const auto buttonIdle=juce::Colour(0xff36414c);
-const auto buttonActive=juce::Colour(0xffef6d78);
+const auto buttonActive=juce::Colour(0xff90eaa4);
 struct Control { const char* id; const char* name; const char* hint; };
 constexpr std::array<Control,44> controls {{
     {"osc1Level","LEVEL","Sets oscillator one's contribution to the mix."},
@@ -50,7 +50,7 @@ constexpr std::array<Control,44> controls {{
     {"modRelease","RELEASE","Sets the modulation envelope release from 1 to 5000 ms on a logarithmic scale."},
     {"modDepth","MOD DEPTH","Sets the modulation amount, with negative values moving the destination downward."},
     {"filterCutoff","FREQ","Sets the filter's base cutoff on a logarithmic frequency scale."},
-    {"filterResonance","RESONANCE","Emphasizes the cutoff while a blue marker shows the MOD envelope's effective resonance."},
+    {"filterResonance","RESONANCE","Emphasizes the cutoff while a green marker shows the MOD envelope's effective resonance."},
     {"filterKeyFollow","KEY FOLLOW","Raises the cutoff with MIDI note pitch."},
     {"filterEnvAmount","ENV AMOUNT","Sets how far the filter envelope moves the cutoff."},
     {"keyPan","KEY PAN","Sets pitch panning from high notes left at -100% to high notes right at +100%."},
@@ -464,7 +464,7 @@ void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,in
         g.setColour(colour.withAlpha(selected ? 1.f : .52f));
         g.strokePath(active,juce::PathStrokeType(selected ? 2.8f : 2.2f));
     };
-    ring(radius,dual->getPostRing(),curveBlue,dual->isPostSelected());
+    ring(radius,dual->getPostRing(),curveGreen,dual->isPostSelected());
     ring(radius-7.f,dual->getPreRing(),accentColour,!dual->isPostSelected());
     const auto dial=juce::Rectangle<float>((radius-12.f)*2.f,(radius-12.f)*2.f).withCentre(centre);
     g.setColour(juce::Colours::black.withAlpha(.32f)); g.fillEllipse(dial.translated(0.f,2.f));
@@ -473,7 +473,7 @@ void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,in
     g.setColour(markColour.withAlpha(.3f)); g.drawEllipse(dial.reduced(1.f),.7f);
     const auto angle=start+value*(end-start);
     const auto tip=radius-13.f;
-    g.setColour(dual->isPostSelected() ? curveBlue : accentColour);
+    g.setColour(dual->isPostSelected() ? curveGreen : accentColour);
     g.fillEllipse(centre.x+std::sin(angle)*tip-2.f,
                   centre.y-std::cos(angle)*tip-2.f,4.f,4.f);
 }
@@ -1520,8 +1520,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
         const auto y=curveBottom-(curveBottom-curveTop)*qin::legatoCurve(t,glideShapeValue);
         if(point==0) glidePath.startNewSubPath(x,y); else glidePath.lineTo(x,y);
     }
-    g.setColour(curveBlue.withAlpha(.2f)); g.strokePath(glidePath,juce::PathStrokeType(4.f));
-    g.setColour(curveBlue); g.strokePath(glidePath,juce::PathStrokeType(1.8f));
+    g.setColour(curveGreen.withAlpha(.2f)); g.strokePath(glidePath,juce::PathStrokeType(4.f));
+    g.setColour(curveGreen); g.strokePath(glidePath,juce::PathStrokeType(1.8f));
     g.setColour(accent);
     g.drawText("OUTPUT",703,503,120,20,juce::Justification::centredLeft);
     const juce::Rectangle<float> filterPlot(455,140,218,85), envelopePlot(455,442,218,45);
@@ -1569,8 +1569,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
     juce::Path envelopeFill=envelopePath;
     envelopeFill.lineTo(envelopePlot.getRight()-5.f,levelY(0));
     envelopeFill.lineTo(plotLeft,levelY(0)); envelopeFill.closeSubPath();
-    g.setColour(curveBlue.withAlpha(.16f)); g.fillPath(envelopeFill);
-    g.setColour(curveBlue); g.strokePath(envelopePath,juce::PathStrokeType(1.7f));
+    g.setColour(curveGreen.withAlpha(.16f)); g.fillPath(envelopeFill);
+    g.setColour(curveGreen); g.strokePath(envelopePath,juce::PathStrokeType(1.7f));
     g.setColour(secondaryRed); g.setFont(juce::FontOptions(8.f));
     g.drawText("0",459,476,28,10,juce::Justification::centredLeft);
     g.drawText(juce::String(total*.5f,1)+"s",536,476,56,10,juce::Justification::centred);
@@ -1603,14 +1603,14 @@ void QinSynthEditor::paint(juce::Graphics& g)
     };
     if(liveCutoff>0)
     {
-        g.setColour(curveBlue.withAlpha(.38f)); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.f));
-        g.setColour(curveBlue); g.strokePath(trace(liveCutoff),juce::PathStrokeType(1.8f));
+        g.setColour(curveGreen.withAlpha(.38f)); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.f));
+        g.setColour(curveGreen); g.strokePath(trace(liveCutoff),juce::PathStrokeType(1.8f));
     }
     else
     {
         if(std::abs(peakCutoff-heldCutoff)>1.f)
-        { g.setColour(curveBlue.withAlpha(.42f)); g.strokePath(trace(peakCutoff),juce::PathStrokeType(1.f)); }
-        g.setColour(curveBlue); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.6f));
+        { g.setColour(curveGreen.withAlpha(.42f)); g.strokePath(trace(peakCutoff),juce::PathStrokeType(1.f)); }
+        g.setColour(curveGreen); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.6f));
     }
     g.setColour(secondaryRed); g.setFont(juce::FontOptions(8.f));
     for(const auto frequency:{100.f,1000.f,10000.f})
@@ -1652,8 +1652,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
         const auto x=36.f+point,y=225.f-18.f*shape;
         if(point==0) waveform.startNewSubPath(x,y); else waveform.lineTo(x,y);
     }
-    g.setColour(curveBlue.withAlpha(.22f)); g.strokePath(waveform,juce::PathStrokeType(4));
-    g.setColour(curveBlue); g.strokePath(waveform,juce::PathStrokeType(1.5f));
+    g.setColour(curveGreen.withAlpha(.22f)); g.strokePath(waveform,juce::PathStrokeType(4));
+    g.setColour(curveGreen); g.strokePath(waveform,juce::PathStrokeType(1.5f));
     g.setColour(secondaryRed); g.setFont(juce::FontOptions(10.f));
     if(currentFxSection==0)
     {
@@ -1663,7 +1663,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
         g.setColour(plotRed); g.setFont(juce::FontOptions(7.f));
         g.drawText("WAVE",805,249,30,10,juce::Justification::centredLeft);
         g.setColour(highlightRed); g.drawText("IN",839,249,16,10,juce::Justification::centred);
-        g.setColour(curveBlue); g.drawText("OUT",857,249,27,10,juce::Justification::centred);
+        g.setColour(curveGreen); g.drawText("OUT",857,249,27,10,juce::Justification::centred);
         g.setColour(stageStyle::grid); g.drawHorizontalLine(296,804,888);
         const auto window=liveScopeValid ? qin::waveformWindow(liveScope.input)
             : qin::WaveformWindow{0.f,float(previewInput.size()-1),true};
@@ -1694,8 +1694,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
             g.setColour(colour); g.strokePath(path,juce::PathStrokeType(1.3f));
         };
         if(liveScopeValid)
-        { drawWave(liveScope.input,highlightRed.withAlpha(.65f)); drawWave(liveScope.output,curveBlue); }
-        else { drawWave(previewInput,highlightRed.withAlpha(.65f)); drawWave(previewOutput,curveBlue); }
+        { drawWave(liveScope.input,highlightRed.withAlpha(.65f)); drawWave(liveScope.output,curveGreen); }
+        else { drawWave(previewInput,highlightRed.withAlpha(.65f)); drawWave(previewOutput,curveGreen); }
     }
     g.restoreState();
 }
