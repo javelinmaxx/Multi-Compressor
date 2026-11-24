@@ -5,8 +5,8 @@ namespace
 {
 // Keep this order aligned with raw[] and the positional reads in process().
 // The IDs themselves are persisted in host automation and saved sessions.
-constexpr std::array<const char*, 15> parameterIds { "mode", "frequency", "q", "attenuationFrequency",
-    "attenuationQ", "threshold", "depth", "attack", "release", "output", "stereoLink", "bypass", "listen", "smart", "relative" };
+constexpr std::array<const char*, 16> parameterIds { "mode", "frequency", "q", "attenuationFrequency",
+    "attenuationQ", "threshold", "depth", "attack", "release", "output", "stereoLink", "bypass", "listen", "smart", "relative", "deltaSolo" };
 constexpr float pi = 3.14159265358979323846f;
 }
 
@@ -40,6 +40,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ShunDeEsserProcessor::create
     // while smart=0/1 selects the conventional or spectral pair.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "smart", 1 }, "Brilliant / Smooth", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "relative", 1 }, "Relative detector", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "deltaSolo", 1 }, "Delta audition", false));
     return layout;
 }
 
@@ -55,6 +56,8 @@ ShunDeEsserProcessor::ShunDeEsserProcessor()
 void ShunDeEsserProcessor::prepareToPlay (double rate, int)
 {
     sampleRate = std::isfinite (rate) && rate >= 8000 ? static_cast<float> (rate) : 44100.0f;
+    deltaSoloBlend.reset (sampleRate, 0.015);
+    deltaSoloBlend.setCurrentAndTargetValue (raw[15]->load (std::memory_order_relaxed) >= 0.5f ? 1.0f : 0.0f);
     displaySampleRate.store (sampleRate, std::memory_order_relaxed);
     sparkleFrequencies = {};
     detectorState = {};
@@ -338,6 +341,7 @@ void ShunDeEsserProcessor::process (juce::AudioBuffer<float>& buffer, bool hostB
     spectralMode = value (13) >= 0.5f;
     const auto relative = value (14) >= 0.5f;
     const auto listen = ! relative && value (12) >= 0.5f;
+    deltaSoloBlend.setTargetValue (value (15) >= 0.5f ? 1.0f : 0.0f);
     const auto smoothMode = spectralMode && splitBand;
     const auto useShelf = ! listen && (spectralMode || ! splitBand);
     const auto useBell = ! listen && ! spectralMode && splitBand;
@@ -366,6 +370,7 @@ void ShunDeEsserProcessor::process (juce::AudioBuffer<float>& buffer, bool hostB
 
     for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
+        const auto deltaSolo = deltaSoloBlend.getNextValue();
         std::array<float, 2> dry {}, detected {}, detectorLevel {};
         for (int ch = 0; ch < channels; ++ch)
         {
@@ -428,7 +433,11 @@ void ShunDeEsserProcessor::process (juce::AudioBuffer<float>& buffer, bool hostB
                     wet += filterSample (dry[c], sparkleStates[c][peak], sparkleFilters[peak])
                          * spectralAmount * sparkleWeights[peak] * (smoothMode ? -1.0f : 1.0f);
             }
-            buffer.setSample (ch, i, bypass ? dry[c] : wet * outputGain);
+            // Audition only the attenuation difference, before output makeup gain.
+            // A short fade prevents a click when the history panel is toggled.
+            const auto audible = wet * outputGain;
+            buffer.setSample (ch, i, bypass ? dry[c]
+                : audible + deltaSolo * ((dry[c] - wet) - audible));
         }
         analysisPosition = (analysisPosition + 1) % 1024;
     }

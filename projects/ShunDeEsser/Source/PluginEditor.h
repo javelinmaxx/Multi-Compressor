@@ -70,6 +70,12 @@ private:
     juce::Colour accent { 0xff168aad }, ring { 0xff38434e };
     juce::Colour knobTop { 0xff46515e }, knobBottom { 0xff1b242d };
 };
+class DeltaHistoryButton final : public juce::Button
+{
+public:
+    DeltaHistoryButton() : juce::Button ("DELTA AUDITION") {}
+    void paintButton (juce::Graphics&, bool, bool) override {}
+};
 
 class ShunDeEsserEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
@@ -101,6 +107,7 @@ private:
     juce::TooltipWindow tooltipWindow { this };
     editorTooltips::TitleHint titleHint { JucePlugin_VersionString };
     AnimatedSwitch bypass { "BYPASS", true, false, true };
+    DeltaHistoryButton deltaHistory;
     DetectorModeSwitch detectorMode;
     juce::Slider algorithm;
     juce::Label algorithmLabel;
@@ -109,6 +116,7 @@ private:
     using State = juce::AudioProcessorValueTreeState;
     std::array<std::unique_ptr<State::SliderAttachment>, 10> attachments;
     std::unique_ptr<State::ButtonAttachment> bypassAttachment;
+    std::unique_ptr<State::ButtonAttachment> deltaHistoryAttachment;
     bool lastSpectralMode = false, lastSplitMode = false;
     int lastDetectorMode = 0;
     GainReductionHistory history;

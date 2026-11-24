@@ -907,7 +907,7 @@ int main (int argc, char** argv)
         }
         spectrumTests(); detailBandTests (juce::File ("/tmp/shun-detail-tests"));
         ShunDeEsserProcessor processor;
-        check (processor.getParameters().size() == 15, "all de-esser parameters are registered");
+        check (processor.getParameters().size() == 16, "all de-esser parameters are registered");
         check (processor.getName() == "Shun De-Esser", "plug-in identity is Shun De-Esser");
         for (int mode = 0; mode < 4; ++mode)
         {
@@ -1047,6 +1047,42 @@ int main (int argc, char** argv)
                 static_cast<size_t> (bypassed.getNumSamples()) * sizeof (float)) == 0;
         check (identical, "bypass preserves the input samples");
 
+        ShunDeEsserProcessor normal, removed;
+        for (auto* p : { &normal, &removed })
+        {
+            set (*p, "threshold", -48);
+            set (*p, "depth", 12);
+        }
+        set (removed, "deltaSolo", 1);
+        normal.prepareToPlay (48000, 256); removed.prepareToPlay (48000, 256);
+        juce::AudioBuffer<float> normalAudio (2, 8192), removedAudio (2, 8192);
+        double removedEnergy = 0, reconstructionError = 0;
+        for (int i = 0; i < normalAudio.getNumSamples(); ++i)
+        {
+            const auto input = 0.4f * std::sin (2.0f * juce::MathConstants<float>::pi * 6500.0f * i / 48000.0f);
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                normalAudio.setSample (ch, i, input);
+                removedAudio.setSample (ch, i, input);
+            }
+        }
+        normal.processBlock (normalAudio, midi); removed.processBlock (removedAudio, midi);
+        for (int i = 0; i < normalAudio.getNumSamples(); ++i)
+        {
+            const auto input = 0.4f * std::sin (2.0f * juce::MathConstants<float>::pi * 6500.0f * i / 48000.0f);
+            const auto delta = removedAudio.getSample (0, i);
+            removedEnergy += delta * delta;
+            reconstructionError = std::max (reconstructionError,
+                static_cast<double> (std::abs (normalAudio.getSample (0, i) + delta - input)));
+        }
+        check (removedEnergy > 1.0 && reconstructionError < 1.0e-5,
+               "delta audition outputs exactly the signal removed by the attenuator");
+        juce::MemoryBlock deltaState; removed.getStateInformation (deltaState);
+        ShunDeEsserProcessor restoredDelta;
+        restoredDelta.setStateInformation (deltaState.getData(), static_cast<int> (deltaState.getSize()));
+        check (restoredDelta.parameters.getRawParameterValue ("deltaSolo")->load() >= 0.5f,
+               "delta audition state survives host save and restore");
+
         ShunDeEsserProcessor smart;
         smart.prepareToPlay (48000, 256);
         set (smart, "smart", 1);
@@ -1105,8 +1141,19 @@ int main (int argc, char** argv)
                         if (auto* readout = dynamic_cast<juce::Label*> (nested))
                             check (readout->getTooltip() == hint, "Shun readout shares its control hint");
             }
-            check (tooltipWindows == 1 && hintedControls == 25,
+            check (tooltipWindows == 1 && hintedControls == 26,
                    "Shun has one tooltip window and hints for every control and caption");
+            juce::Button* deltaHistory = nullptr;
+            for (auto* child : editor->getChildren())
+                if (auto* button = dynamic_cast<juce::Button*> (child))
+                    if (button->getName() == "DELTA AUDITION") deltaHistory = button;
+            check (deltaHistory != nullptr, "attenuation history provides a clickable delta monitor");
+            if (deltaHistory != nullptr)
+            {
+                deltaHistory->setToggleState (true, juce::sendNotificationSync);
+                check (editorProcessor.parameters.getRawParameterValue ("deltaSolo")->load() >= 0.5f,
+                       "history click updates the host delta audition parameter");
+            }
             juce::Slider* modeKnob = nullptr;
             juce::Slider* detectorSwitch = nullptr;
             for (auto* child : editor->getChildren())

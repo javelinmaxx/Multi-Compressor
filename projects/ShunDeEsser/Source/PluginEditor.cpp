@@ -524,6 +524,11 @@ ShunDeEsserEditor::ShunDeEsserEditor (ShunDeEsserProcessor& p)
         "Selects Wideband, Split, Brilliant, or Smooth de-essing.");
     bypass.setTooltip ("Bypasses de-essing for a direct comparison.");
     bypassAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "bypass", bypass);
+    deltaHistory.setClickingTogglesState (true);
+    deltaHistory.setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    deltaHistory.setTooltip ("Click the attenuation history to audition the signal removed by de-essing.");
+    addAndMakeVisible (deltaHistory);
+    deltaHistoryAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "deltaSolo", deltaHistory);
 
     const std::array<const char*, 10> ids { "frequency", "q", "attenuationFrequency", "attenuationQ",
         "threshold", "depth", "attack", "release", "output", "stereoLink" };
@@ -822,7 +827,8 @@ void ShunDeEsserEditor::paintMeter (juce::Graphics& g)
     drawAnalogPanel (g, meterBounds.toFloat(), 10, theme.meterPanel, theme.grid);
     g.setColour (theme.secondary);
     g.setFont (juce::FontOptions (11.0f));
-    g.drawText ("GAIN REDUCTION", 356, 158, 156, 20, juce::Justification::centred);
+    g.drawText (deltaHistory.getToggleState() ? "GAIN REDUCTION / DELTA" : "GAIN REDUCTION",
+                350, 158, 170, 20, juce::Justification::centred);
     const juce::Rectangle<float> bar (360, 202, 14, 330), plot (410, 202, 98, 330);
     g.setColour (theme.gaugeTrack);
     g.fillRoundedRectangle (bar, 4);
@@ -894,6 +900,7 @@ void ShunDeEsserEditor::resized()
     titleHint.setBounds (24, 38, 410, 38);
     const auto up = [] (int y) { return y - 80; };
     bypass.setBounds (450, 33, 74, 28);
+    deltaHistory.setBounds (meterBounds.withHeight (460));
     const auto place = [this, &up] (size_t index, int x, int y, int width, int height)
     {
         labels[index].setBounds (x, up (y + 3), width, 17);
@@ -921,6 +928,7 @@ void ShunDeEsserEditor::resized()
     responseHint.setBounds (24, 340, 300, 105);
     responseHint.setTransform (scale);
     bypass.setTransform (scale);
+    deltaHistory.setTransform (scale);
     detectorMode.setTransform (scale);
     algorithm.setTransform (scale);
     algorithmLabel.setTransform (scale);

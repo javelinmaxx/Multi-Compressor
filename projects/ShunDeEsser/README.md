@@ -21,6 +21,7 @@ The first build provides:
   plus threshold and maximum reduction (0–18 dB).
 - Attack, release, output, stereo linking, a three-way detector switch, and bypass controls.
 - A timestamped three-second gain-reduction trace, a vertical GR meter, and a live stereo input spectrum behind the detector/attenuator curves.
+- Click the gain-reduction history panel to audition the removed signal; the Delta state is saved with the session and fades smoothly when toggled.
 - VST3 and Standalone targets; AU is also enabled when built on macOS.
 
 The vertical detector switch selects **Absolute** for a fixed input-level threshold,
@@ -38,6 +39,7 @@ in overlapping windows and drives the zero-latency filterbank. Existing sessions
 retain their Wideband, Split-band, or former Smart (now Brilliant) setting.
 
 Editor previews show [Absolute](Previews/shun-de-esser.png) and [Relative](Previews/shun-relative.png) detector modes.
+The [Delta preview](Previews/shun-delta.png) shows the gain-reduction history panel while audition is active.
 The editor resizes from 50% to 120% with a fixed aspect ratio.
 Six examples show the live response plot with different detector/attenuator
 settings: [Wideband default](Previews/ResponseExamples/wideband-default.png),
