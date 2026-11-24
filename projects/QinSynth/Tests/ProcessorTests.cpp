@@ -111,6 +111,15 @@ struct QinSynthTestAccess
 };
 struct QinSynthEditorTestAccess
 {
+    static bool brighterSelectedButtons(const QinSynthEditor& editor)
+    {
+        for(const juce::TextButton* button:{&editor.oscillatorTabs[0],&editor.envelopeTabs[0],
+                                             &editor.fxTabs[0],&editor.noiseButton,
+                                             &editor.tuneButton,&editor.syncButton,&editor.retrig[0]})
+            if(button->findColour(juce::TextButton::buttonOnColourId).getBrightness()
+               <=button->findColour(juce::TextButton::buttonColourId).getBrightness()) return false;
+        return true;
+    }
     static void oscillator(QinSynthEditor& editor,int index) { editor.showOscillator(index); }
     static void envelope(QinSynthEditor& editor,int index) { editor.showEnvelope(index); }
     static void fxSection(QinSynthEditor& editor,int index) { editor.showFxSection(index); }
@@ -1655,6 +1664,8 @@ int main(int argc,char** argv)
             auto previewOwner=std::make_unique<QinSynthProcessor>();
             auto& preview=*previewOwner;
             QinSynthEditor editor(preview);
+            if(!QinSynthEditorTestAccess::brighterSelectedButtons(editor))
+                throw std::runtime_error("Selected Qin buttons must be brighter than unselected buttons");
             if(editor.getWidth()!=920 || editor.getHeight()!=640
                || QinSynthEditorTestAccess::previewCycle()!=std::array<float,3>{0.f,.5f,0.f}
                || QinSynthEditorTestAccess::modDestinationCount(editor)

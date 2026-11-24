@@ -9,11 +9,13 @@ namespace
 {
 const auto panelSilver=juce::Colour(0xffbcc4cc);
 const auto panelInk=juce::Colour(0xff192b3b);
-const auto secondaryBlue=juce::Colour(0xff194b78);
-const auto plotBlue=juce::Colour(0xff8fc8f0);
-const auto curveRed=juce::Colour(0xfff05a68);
-const auto accent=secondaryBlue;
-const auto cyan=plotBlue;
+const auto secondaryRed=juce::Colour(0xff82313d);
+const auto plotRed=juce::Colour(0xfff3aab0);
+const auto curveBlue=juce::Colour(0xff5bb9f1);
+const auto accent=secondaryRed;
+const auto highlightRed=plotRed;
+const auto buttonIdle=juce::Colour(0xff36414c);
+const auto buttonActive=juce::Colour(0xffef6d78);
 struct Control { const char* id; const char* name; const char* hint; };
 constexpr std::array<Control,44> controls {{
     {"osc1Level","LEVEL","Sets oscillator one's contribution to the mix."},
@@ -74,10 +76,10 @@ juce::String gainDecibels(double percent)
 void styleTab(juce::TextButton& button,const juce::String& title,int group)
 {
     button.setButtonText(title); button.setClickingTogglesState(true); button.setRadioGroupId(group);
-    button.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-    button.setColour(juce::TextButton::buttonOnColourId,accent);
+    button.setColour(juce::TextButton::buttonColourId,buttonIdle);
+    button.setColour(juce::TextButton::buttonOnColourId,buttonActive);
     button.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-    button.setColour(juce::TextButton::textColourOnId,stageStyle::background);
+    button.setColour(juce::TextButton::textColourOnId,panelInk);
 }
 float filterMagnitude(int type,float frequency,float cutoff,float resonance)
 {
@@ -107,11 +109,11 @@ void QinTuningPanel::paint(juce::Graphics& g)
     g.fillAll(stageStyle::background);
     g.setColour(panelSilver);
     g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(2),9);
-    g.setColour(secondaryBlue.withAlpha(.7f));
+    g.setColour(secondaryRed.withAlpha(.7f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(2),9,1.2f);
     g.setColour(panelInk); g.setFont(juce::FontOptions(16.f).withStyle("bold"));
     g.drawText("TUNE",20,16,100,25,juce::Justification::centredLeft);
-    g.setColour(secondaryBlue); g.setFont(juce::FontOptions(10.f));
+    g.setColour(secondaryRed); g.setFont(juce::FontOptions(10.f));
     g.drawText("Drag keys to tune; changing ROOT transposes the pattern and locks it to 0 cents.",20,45,getWidth()-40,20,
                juce::Justification::centredLeft);
 }
@@ -146,7 +148,7 @@ void QinTuningKey::paint(juce::Graphics& g)
         g.fillRoundedRectangle(area.reduced(3.f),3.f);
     }
     const auto cents=rootKey ? 0.0 : getValue();
-    g.setColour(rootKey ? (blackKey ? plotBlue : secondaryBlue) : text);
+    g.setColour(rootKey ? (blackKey ? plotRed : secondaryRed) : text);
     g.setFont(juce::FontOptions(blackKey ? 10.f : 13.f).withStyle("bold"));
     g.drawText(noteName,3,getHeight()-(blackKey ? 51 : 75),getWidth()-6,18,juce::Justification::centred);
     g.setFont(juce::FontOptions(blackKey ? 8.f : 10.f));
@@ -169,8 +171,8 @@ void QinResonanceIndicator::paint(juce::Graphics& g)
     if(!active) return;
     const auto x=6.f+position*std::max(1.f,float(getWidth()-58));
     const auto y=float(getHeight())*.5f;
-    g.setColour(secondaryBlue.withAlpha(.3f)); g.fillEllipse(x-6.f,y-6.f,12.f,12.f);
-    g.setColour(secondaryBlue); g.fillEllipse(x-2.5f,y-2.5f,5.f,5.f);
+    g.setColour(secondaryRed.withAlpha(.3f)); g.fillEllipse(x-6.f,y-6.f,12.f,12.f);
+    g.setColour(secondaryRed); g.fillEllipse(x-2.5f,y-2.5f,5.f,5.f);
 }
 void QinModulationOverlay::setDisplay(juce::Rectangle<int> area,float x,float y,Shape nextShape,bool enabled)
 {
@@ -187,7 +189,7 @@ void QinModulationOverlay::paint(juce::Graphics& g)
 {
     if(!active) return;
     const auto w=float(getWidth()), h=float(getHeight());
-    g.setColour(cyan.withAlpha(.22f));
+    g.setColour(highlightRed.withAlpha(.22f));
     g.drawRoundedRectangle(juce::Rectangle<float>(1.f,1.f,w-2.f,h-2.f),4.f,1.4f);
     float x=w*.5f,y=h*.5f;
     switch(shape)
@@ -207,8 +209,8 @@ void QinModulationOverlay::paint(juce::Graphics& g)
             break;
         }
     }
-    g.setColour(cyan.withAlpha(.19f)); g.fillEllipse(x-7.f,y-7.f,14.f,14.f);
-    g.setColour(cyan); g.fillEllipse(x-3.f,y-3.f,6.f,6.f);
+    g.setColour(highlightRed.withAlpha(.19f)); g.fillEllipse(x-7.f,y-7.f,14.f,14.f);
+    g.setColour(highlightRed); g.fillEllipse(x-3.f,y-3.f,6.f,6.f);
 }
 QinVoiceSlider::QinVoiceSlider()
 {
@@ -232,7 +234,7 @@ void QinVoiceSlider::paint(juce::Graphics& g)
     const auto area=getLocalBounds().toFloat().reduced(1);
     g.setColour(stageStyle::grid);
     g.drawRoundedRectangle(area,4,1);
-    g.setColour(suffix=="VOICES" ? plotBlue : secondaryBlue);
+    g.setColour(suffix=="VOICES" ? plotRed : secondaryRed);
     g.setFont(juce::FontOptions(prefix.isEmpty() ? 12.f : prefix=="LEVEL" ? 11.f : 10.f).withStyle("bold"));
     g.drawText(getReadoutText(),getLocalBounds(),juce::Justification::centred);
 }
@@ -281,10 +283,10 @@ void QinWavePad::paint(juce::Graphics& g)
     g.drawLine(inset,square.getCentreY(),right,square.getCentreY(),.7f);
     const auto x=inset+(right-inset)*position.x;
     const auto y=bottom-(bottom-top)*position.y;
-    g.setColour(cyan.withAlpha(.35f)); g.drawLine(square.getCentreX(),square.getCentreY(),x,y,1.f);
+    g.setColour(highlightRed.withAlpha(.35f)); g.drawLine(square.getCentreX(),square.getCentreY(),x,y,1.f);
     g.setColour(accent.withAlpha(.3f)); g.fillEllipse(x-9.f,y-9.f,18.f,18.f);
     g.setColour(juce::Colour(0xfff4f0e6)); g.fillEllipse(x-5.f,y-5.f,10.f,10.f);
-    g.setColour(secondaryBlue); g.setFont(juce::FontOptions(9.f));
+    g.setColour(secondaryRed); g.setFont(juce::FontOptions(9.f));
     g.drawText("TRI",0,0,37,13,juce::Justification::centredLeft);
     g.drawText("SINE",getWidth()-39,0,39,13,juce::Justification::centredRight);
     g.drawText("SAW",0,juce::roundToInt(bottom)+2,37,13,juce::Justification::centredLeft);
@@ -358,16 +360,16 @@ void QinAnalogSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
     const auto pivotY=titleHeight+(float(getHeight())-titleHeight)*.5f;
     const auto nutRadius=compact ? 11.f : 14.f;
     const auto flangeRadius=compact ? 8.5f : 11.f;
-    g.setColour(getToggleState() ? panelInk : secondaryBlue);
+    g.setColour(getToggleState() ? panelInk : secondaryRed);
     g.setFont(juce::FontOptions(compact ? 8.f : 9.f).withStyle("bold"));
     if(!headerless)
         g.drawFittedText(getButtonText(),1,0,getWidth()-2,int(titleHeight),juce::Justification::centred,1);
     const auto onCaption=getButtonText()=="*5" ? "5X" : "ON";
     const auto offCaption=getButtonText()=="*5" ? "1X" : "OFF";
     g.setFont(juce::FontOptions(7.f).withStyle("bold"));
-    g.setColour(getToggleState() ? accent : secondaryBlue);
+    g.setColour(getToggleState() ? buttonActive : secondaryRed.withAlpha(.6f));
     g.drawText(onCaption,0,int(titleHeight)+1,getWidth(),9,juce::Justification::centred);
-    g.setColour(getToggleState() ? secondaryBlue : accent);
+    g.setColour(getToggleState() ? secondaryRed.withAlpha(.55f) : panelInk);
     g.drawText(offCaption,0,getHeight()-10,getWidth(),9,juce::Justification::centred);
     juce::Path nut;
     for(int corner=0;corner<6;++corner)
@@ -381,9 +383,11 @@ void QinAnalogSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xffb8bec2),cx-nutRadius,pivotY-nutRadius,
                                           juce::Colour(0xff596169),cx+nutRadius,pivotY+nutRadius,false));
     g.fillPath(nut);
-    g.setColour(secondaryBlue.darker(.3f)); g.strokePath(nut,juce::PathStrokeType(.8f));
+    g.setColour(secondaryRed.darker(.3f)); g.strokePath(nut,juce::PathStrokeType(.8f));
     const auto flange=juce::Rectangle<float>(cx-flangeRadius,pivotY-flangeRadius,2.f*flangeRadius,2.f*flangeRadius);
     g.setColour(stageStyle::inset); g.fillEllipse(flange.expanded(1.f));
+    g.setColour(getToggleState() ? buttonActive : juce::Colour(0xff6f7d8b));
+    g.drawEllipse(flange.expanded(2.f),getToggleState() ? 2.f : 1.f);
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xffc8cdd0),flange.getTopLeft(),
                                           juce::Colour(0xff717980),flange.getBottomRight(),false));
     g.fillEllipse(flange);
@@ -453,7 +457,7 @@ void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,in
         g.setColour(colour.withAlpha(selected ? 1.f : .52f));
         g.strokePath(active,juce::PathStrokeType(selected ? 2.8f : 2.2f));
     };
-    ring(radius,dual->getPostRing(),curveRed,dual->isPostSelected());
+    ring(radius,dual->getPostRing(),curveBlue,dual->isPostSelected());
     ring(radius-7.f,dual->getPreRing(),accentColour,!dual->isPostSelected());
     const auto dial=juce::Rectangle<float>((radius-12.f)*2.f,(radius-12.f)*2.f).withCentre(centre);
     g.setColour(juce::Colours::black.withAlpha(.32f)); g.fillEllipse(dial.translated(0.f,2.f));
@@ -462,7 +466,7 @@ void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,in
     g.setColour(markColour.withAlpha(.3f)); g.drawEllipse(dial.reduced(1.f),.7f);
     const auto angle=start+value*(end-start);
     const auto tip=radius-13.f;
-    g.setColour(dual->isPostSelected() ? curveRed : accentColour);
+    g.setColour(dual->isPostSelected() ? curveBlue : accentColour);
     g.fillEllipse(centre.x+std::sin(angle)*tip-2.f,
                   centre.y-std::cos(angle)*tip-2.f,4.f,4.f);
 }
@@ -522,8 +526,9 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
             "osc"+juce::String(int(i)+1)+"Fine",fine);
     }
     tuneButton.setClickingTogglesState(true);
-    tuneButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-    tuneButton.setColour(juce::TextButton::buttonOnColourId,accent);
+    tuneButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
+    tuneButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
+    tuneButton.setColour(juce::TextButton::textColourOnId,panelInk);
     tuneButton.setTooltip("Opens the custom tuning table and A4 reference controls.");
     addAndMakeVisible(tuneButton);
     tuneButton.onClick=[this]
@@ -534,7 +539,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     activeVoicesLabel.setText("0 ACTIVE",juce::dontSendNotification);
     activeVoicesLabel.setFont(juce::FontOptions(11.f).withStyle("bold"));
     activeVoicesLabel.setJustificationType(juce::Justification::centred);
-    activeVoicesLabel.setColour(juce::Label::textColourId,cyan);
+    activeVoicesLabel.setColour(juce::Label::textColourId,highlightRed);
     activeVoicesLabel.setTooltip("Shows the number of allocated voices, including release tails.");
     addAndMakeVisible(activeVoicesLabel);
     addAndMakeVisible(polyLegatoButton);
@@ -552,7 +557,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     {
         label->setFont(juce::FontOptions(9.f));
         label->setJustificationType(juce::Justification::centred);
-        label->setColour(juce::Label::textColourId,secondaryBlue);
+        label->setColour(juce::Label::textColourId,secondaryRed);
         addAndMakeVisible(*label);
     }
     addAndMakeVisible(legatoRule);
@@ -604,8 +609,9 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     }
     noiseButton.setClickingTogglesState(true);
     noiseButton.setTooltip("Enables the noise oscillator and opens its tuning, filter, and style controls.");
-    noiseButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-    noiseButton.setColour(juce::TextButton::buttonOnColourId,accent);
+    noiseButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
+    noiseButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
+    noiseButton.setColour(juce::TextButton::textColourOnId,panelInk);
     addAndMakeVisible(noiseButton);
     noiseAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"noise",noiseButton);
     noiseButton.onClick=[this] { showOscillator(3); };
@@ -616,7 +622,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     noiseStyleLabel.setText("NOISE STYLE",juce::dontSendNotification);
     noiseStyleLabel.setFont(juce::FontOptions(9.f));
     noiseStyleLabel.setJustificationType(juce::Justification::centred);
-    noiseStyleLabel.setColour(juce::Label::textColourId,secondaryBlue);
+    noiseStyleLabel.setColour(juce::Label::textColourId,secondaryRed);
     noiseStyleLabel.setTooltip("Selects white, pink, or sparse velvet noise before the tuned filter.");
     addAndMakeVisible(noiseStyle); addAndMakeVisible(noiseStyleLabel);
     noiseStyleAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"noiseStyle",noiseStyle);
@@ -633,7 +639,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         label.setText(noiseControls[i].name,juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
         label.setFont(juce::FontOptions(9.f));
-        label.setColour(juce::Label::textColourId,secondaryBlue);
+        label.setColour(juce::Label::textColourId,secondaryRed);
         addAndMakeVisible(slider); addAndMakeVisible(label);
         noiseSliderAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,noiseControls[i].id,slider);
         editorTooltips::setHint(slider,label,noiseControls[i].hint);
@@ -660,7 +666,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         label.setText("DETUNE SHAPE",juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
         label.setFont(juce::FontOptions(9.f));
-        label.setColour(juce::Label::textColourId,secondaryBlue);
+        label.setColour(juce::Label::textColourId,secondaryRed);
         addAndMakeVisible(slider); addAndMakeVisible(label);
         detuneShapeAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,
             "osc"+juce::String(int(i)+1)+"DetuneShape",slider);
@@ -680,7 +686,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         amountLabel.setText("FM AMT",juce::dontSendNotification);
         amountLabel.setJustificationType(juce::Justification::centred);
         amountLabel.setFont(juce::FontOptions(9.f));
-        amountLabel.setColour(juce::Label::textColourId,secondaryBlue);
+        amountLabel.setColour(juce::Label::textColourId,secondaryRed);
         addAndMakeVisible(amount); addAndMakeVisible(amountLabel);
         fmAmountAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,prefix+"FmAmount",amount);
         editorTooltips::setHint(amount,amountLabel,
@@ -701,7 +707,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         sourceLabel.setText("FM SOURCE",juce::dontSendNotification);
         sourceLabel.setJustificationType(juce::Justification::centred);
         sourceLabel.setFont(juce::FontOptions(9.f));
-        sourceLabel.setColour(juce::Label::textColourId,secondaryBlue);
+        sourceLabel.setColour(juce::Label::textColourId,secondaryRed);
         addAndMakeVisible(source); addAndMakeVisible(sourceLabel);
         fmSourceAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,prefix+"FmSource",source);
         source.updateText();
@@ -722,7 +728,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     filterMergeLabel.setText("MERGE",juce::dontSendNotification);
     filterMergeLabel.setJustificationType(juce::Justification::centred);
     filterMergeLabel.setFont(juce::FontOptions(9.f));
-    filterMergeLabel.setColour(juce::Label::textColourId,secondaryBlue);
+    filterMergeLabel.setColour(juce::Label::textColourId,secondaryRed);
     filterMergeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     filterMergeSlider.setComponentID("filterMerge");
     filterMergeSlider.setTextBoxStyle(juce::Slider::TextBoxRight,false,46,18);
@@ -747,8 +753,9 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         tab.onClick=[this,i]{showFxSection(int(i));}; addAndMakeVisible(tab);
     }
     syncButton.setClickingTogglesState(true);
-    syncButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-    syncButton.setColour(juce::TextButton::buttonOnColourId,accent);
+    syncButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
+    syncButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
+    syncButton.setColour(juce::TextButton::textColourOnId,panelInk);
     syncButton.setTooltip("Synchronizes Delay Time to the host tempo using straight, dotted, or triplet notes.");
     addAndMakeVisible(syncButton);
     syncAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"verbSync",syncButton);
@@ -770,7 +777,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     driveModeLabel.setText("CIRCUIT",juce::dontSendNotification);
     driveModeLabel.setFont(juce::FontOptions(9.f));
     driveModeLabel.setJustificationType(juce::Justification::centred);
-    driveModeLabel.setColour(juce::Label::textColourId,secondaryBlue);
+    driveModeLabel.setColour(juce::Label::textColourId,secondaryRed);
     driveModeLabel.setTooltip(driveMode.getTooltip());
     addAndMakeVisible(driveMode); addAndMakeVisible(driveModeLabel);
     driveModeAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"driveMode",driveMode);
@@ -795,7 +802,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     driveMixLabel.setText("MIX",juce::dontSendNotification);
     driveMixLabel.setFont(juce::FontOptions(9.f));
     driveMixLabel.setJustificationType(juce::Justification::centred);
-    driveMixLabel.setColour(juce::Label::textColourId,secondaryBlue);
+    driveMixLabel.setColour(juce::Label::textColourId,secondaryRed);
     editorTooltips::setHint(driveMix,driveMixLabel,"Blends the driven signal with the dry oscillator signal.");
     addAndMakeVisible(driveMix); addAndMakeVisible(driveMixLabel);
     driveMixAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"driveMix",driveMix);
@@ -819,7 +826,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         slider.setName(cutNames[i]); slider.setTitle(cutNames[i]);
         label.setFont(juce::FontOptions(9.f));
         label.setJustificationType(juce::Justification::centred);
-        label.setColour(juce::Label::textColourId,secondaryBlue);
+        label.setColour(juce::Label::textColourId,secondaryRed);
         editorTooltips::setHint(slider,label,cutHints[i]);
         addAndMakeVisible(slider); addAndMakeVisible(label);
         slider.onClick=[this,i]
@@ -852,7 +859,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         slider.setComponentID(controls[i].id);
         label.setText(controls[i].name,juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
-        label.setFont(juce::FontOptions(9.f)); label.setColour(juce::Label::textColourId,secondaryBlue);
+        label.setFont(juce::FontOptions(9.f)); label.setColour(juce::Label::textColourId,secondaryRed);
         addAndMakeVisible(slider); addAndMakeVisible(label);
         sliderAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,controls[i].id,slider);
         editorTooltips::setHint(slider,label,controls[i].hint);
@@ -864,7 +871,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     curveLabel.setText("CURVE",juce::dontSendNotification);
     curveLabel.setJustificationType(juce::Justification::centred);
     curveLabel.setFont(juce::FontOptions(9.f));
-    curveLabel.setColour(juce::Label::textColourId,secondaryBlue);
+    curveLabel.setColour(juce::Label::textColourId,secondaryRed);
     curveLabel.setTooltip("Negative curve values act sooner, while positive values delay attack, decay, and release movement.");
     addAndMakeVisible(curveLabel);
     constexpr std::array<const char*,3> curveIds {"ampCurve","fltCurve","modCurve"};
@@ -885,7 +892,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     }
     envelopeMergeLabel.setText("MERGE",juce::dontSendNotification);
     envelopeMergeLabel.setFont(juce::FontOptions(9.f));
-    envelopeMergeLabel.setColour(juce::Label::textColourId,secondaryBlue);
+    envelopeMergeLabel.setColour(juce::Label::textColourId,secondaryRed);
     envelopeMergeLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(envelopeMergeLabel);
     constexpr std::array<const char*,3> mergeIds {"ampMerge","fltMerge","modMerge"};
@@ -970,13 +977,13 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         wave.setComponentID("osc"+juce::String(int(i)+1)+"WaveX");
         wave.setTooltip("Drag within the square to blend oscillator "+juce::String(int(i)+1)+" between saw, pulse, triangle, and sine waves.");
         label.setText("WAVE",juce::dontSendNotification); label.setFont(juce::FontOptions(9.f));
-        label.setJustificationType(juce::Justification::centred); label.setColour(juce::Label::textColourId,secondaryBlue);
+        label.setJustificationType(juce::Justification::centred); label.setColour(juce::Label::textColourId,secondaryRed);
         retrigger.setButtonText("RETRIG");
         retrigger.setClickingTogglesState(true);
-        retrigger.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff29272c));
-        retrigger.setColour(juce::TextButton::buttonOnColourId,accent);
+        retrigger.setColour(juce::TextButton::buttonColourId,buttonIdle);
+        retrigger.setColour(juce::TextButton::buttonOnColourId,buttonActive);
         retrigger.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-        retrigger.setColour(juce::TextButton::textColourOnId,stageStyle::background);
+        retrigger.setColour(juce::TextButton::textColourOnId,panelInk);
         retrigger.setTooltip("Restarts this oscillator's waveform phase at each note onset when enabled.");
         addAndMakeVisible(wave); addAndMakeVisible(label); addAndMakeVisible(retrigger);
         addAndMakeVisible(phaseLine);
@@ -1019,7 +1026,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     for(auto* box:{&filterType,&modTarget})
     { box->setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff29272a)); box->setColour(juce::ComboBox::textColourId,stageStyle::foreground); addAndMakeVisible(*box); }
     modTargetLabel.setFont(juce::FontOptions(9.f));
-    modTargetLabel.setColour(juce::Label::textColourId,secondaryBlue);
+    modTargetLabel.setColour(juce::Label::textColourId,secondaryRed);
     addAndMakeVisible(modTargetLabel);
     modTargetLabel.setText("TARGET",juce::dontSendNotification);
     filterTypeAttachment=std::make_unique<State::ComboBoxAttachment>(synth.parameters,"filterType",filterType);
@@ -1049,7 +1056,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     {
         label->setFont(juce::FontOptions(9.f));
         label->setJustificationType(juce::Justification::centred);
-        label->setColour(juce::Label::textColourId,secondaryBlue);
+        label->setColour(juce::Label::textColourId,secondaryRed);
         tuningPanel.addAndMakeVisible(*label);
     }
     tuningRootLabel.setText("ROOT",juce::dontSendNotification);
@@ -1474,12 +1481,12 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xff263443),0,0,
                                            juce::Colour(0xff121c27),0,designHeight,false));
     g.fillRect(0,0,designWidth,designHeight);
-    g.setColour(plotBlue); g.setFont(juce::FontOptions(10.f));
+    g.setColour(plotRed); g.setFont(juce::FontOptions(10.f));
     g.drawText("J-SONIC / VIRTUAL ANALOG INSTRUMENT",18,12,500,16,juce::Justification::centredLeft);
     g.setColour(stageStyle::foreground); g.setFont(juce::FontOptions(25.f));
     g.drawText("QIN SYNTH",18,30,360,38,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(650,30,252,35),5);
-    g.setColour(cyan); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
+    g.setColour(highlightRed); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     stageStyle::drawPanel(g,{16,90,420,392},panelSilver);
     stageStyle::drawPanel(g,{16,492,420,138},panelSilver);
     stageStyle::drawPanel(g,{444,90,240,311},panelSilver);
@@ -1489,7 +1496,7 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("PLAY",30,492,120,20,juce::Justification::centredLeft);
     const juce::Rectangle<float> glidePlot(297,545,44,55);
-    g.setColour(secondaryBlue); g.setFont(juce::FontOptions(9.f));
+    g.setColour(secondaryRed); g.setFont(juce::FontOptions(9.f));
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(glidePlot,5);
     const auto curveLeft=glidePlot.getX()+5.f, curveRight=glidePlot.getRight()-5.f;
     const auto curveTop=glidePlot.getY()+5.f, curveBottom=glidePlot.getBottom()-5.f;
@@ -1506,8 +1513,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
         const auto y=curveBottom-(curveBottom-curveTop)*qin::legatoCurve(t,glideShapeValue);
         if(point==0) glidePath.startNewSubPath(x,y); else glidePath.lineTo(x,y);
     }
-    g.setColour(curveRed.withAlpha(.2f)); g.strokePath(glidePath,juce::PathStrokeType(4.f));
-    g.setColour(curveRed); g.strokePath(glidePath,juce::PathStrokeType(1.8f));
+    g.setColour(curveBlue.withAlpha(.2f)); g.strokePath(glidePath,juce::PathStrokeType(4.f));
+    g.setColour(curveBlue); g.strokePath(glidePath,juce::PathStrokeType(1.8f));
     g.setColour(accent);
     g.drawText("OUTPUT",703,503,120,20,juce::Justification::centredLeft);
     const juce::Rectangle<float> filterPlot(455,140,218,85), envelopePlot(455,442,218,45);
@@ -1555,9 +1562,9 @@ void QinSynthEditor::paint(juce::Graphics& g)
     juce::Path envelopeFill=envelopePath;
     envelopeFill.lineTo(envelopePlot.getRight()-5.f,levelY(0));
     envelopeFill.lineTo(plotLeft,levelY(0)); envelopeFill.closeSubPath();
-    g.setColour(curveRed.withAlpha(.16f)); g.fillPath(envelopeFill);
-    g.setColour(curveRed); g.strokePath(envelopePath,juce::PathStrokeType(1.7f));
-    g.setColour(secondaryBlue); g.setFont(juce::FontOptions(8.f));
+    g.setColour(curveBlue.withAlpha(.16f)); g.fillPath(envelopeFill);
+    g.setColour(curveBlue); g.strokePath(envelopePath,juce::PathStrokeType(1.7f));
+    g.setColour(secondaryRed); g.setFont(juce::FontOptions(8.f));
     g.drawText("0",459,476,28,10,juce::Justification::centredLeft);
     g.drawText(juce::String(total*.5f,1)+"s",536,476,56,10,juce::Justification::centred);
     g.drawText(juce::String(total,1)+"s",617,476,51,10,juce::Justification::centredRight);
@@ -1589,27 +1596,27 @@ void QinSynthEditor::paint(juce::Graphics& g)
     };
     if(liveCutoff>0)
     {
-        g.setColour(curveRed.withAlpha(.38f)); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.f));
-        g.setColour(curveRed); g.strokePath(trace(liveCutoff),juce::PathStrokeType(1.8f));
+        g.setColour(curveBlue.withAlpha(.38f)); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.f));
+        g.setColour(curveBlue); g.strokePath(trace(liveCutoff),juce::PathStrokeType(1.8f));
     }
     else
     {
         if(std::abs(peakCutoff-heldCutoff)>1.f)
-        { g.setColour(curveRed.withAlpha(.42f)); g.strokePath(trace(peakCutoff),juce::PathStrokeType(1.f)); }
-        g.setColour(curveRed); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.6f));
+        { g.setColour(curveBlue.withAlpha(.42f)); g.strokePath(trace(peakCutoff),juce::PathStrokeType(1.f)); }
+        g.setColour(curveBlue); g.strokePath(trace(heldCutoff),juce::PathStrokeType(1.6f));
     }
-    g.setColour(secondaryBlue); g.setFont(juce::FontOptions(8.f));
+    g.setColour(secondaryRed); g.setFont(juce::FontOptions(8.f));
     for(const auto frequency:{100.f,1000.f,10000.f})
     {
         const auto x=filterPlot.getX()+3.f+(filterPlot.getWidth()-6.f)
             *std::log(frequency/40.f)/std::log(450.f);
         g.setColour(stageStyle::grid.withAlpha(.55f));
         g.drawVerticalLine(juce::roundToInt(x),filterPlot.getY()+12.f,filterPlot.getBottom()-13.f);
-        g.setColour(secondaryBlue);
+        g.setColour(secondaryRed);
         g.drawText(frequency<1000 ? "100" : frequency<10000 ? "1k" : "10k",
                    juce::roundToInt(x)-15,227,30,11,juce::Justification::centred);
     }
-    g.setColour(secondaryBlue); g.setFont(juce::FontOptions(9.f));
+    g.setColour(secondaryRed); g.setFont(juce::FontOptions(9.f));
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(34,198,270,54),6);
     for(int line=1;line<4;++line)
     { g.setColour(stageStyle::grid); g.drawHorizontalLine(198+juce::roundToInt(line*13.5f),34,304); }
@@ -1638,18 +1645,18 @@ void QinSynthEditor::paint(juce::Graphics& g)
         const auto x=36.f+point,y=225.f-18.f*shape;
         if(point==0) waveform.startNewSubPath(x,y); else waveform.lineTo(x,y);
     }
-    g.setColour(curveRed.withAlpha(.22f)); g.strokePath(waveform,juce::PathStrokeType(4));
-    g.setColour(curveRed); g.strokePath(waveform,juce::PathStrokeType(1.5f));
-    g.setColour(secondaryBlue); g.setFont(juce::FontOptions(10.f));
+    g.setColour(curveBlue.withAlpha(.22f)); g.strokePath(waveform,juce::PathStrokeType(4));
+    g.setColour(curveBlue); g.strokePath(waveform,juce::PathStrokeType(1.5f));
+    g.setColour(secondaryRed); g.setFont(juce::FontOptions(10.f));
     if(currentFxSection==0)
     {
         const juce::Rectangle<float> scope{float(driveScopeX),float(driveScopeY),
             float(driveScopeWidth),float(driveScopeHeight)};
         g.setColour(stageStyle::inset); g.fillRoundedRectangle(scope,5);
-        g.setColour(plotBlue); g.setFont(juce::FontOptions(7.f));
+        g.setColour(plotRed); g.setFont(juce::FontOptions(7.f));
         g.drawText("WAVE",805,249,30,10,juce::Justification::centredLeft);
-        g.setColour(cyan); g.drawText("IN",839,249,16,10,juce::Justification::centred);
-        g.setColour(curveRed); g.drawText("OUT",857,249,27,10,juce::Justification::centred);
+        g.setColour(highlightRed); g.drawText("IN",839,249,16,10,juce::Justification::centred);
+        g.setColour(curveBlue); g.drawText("OUT",857,249,27,10,juce::Justification::centred);
         g.setColour(stageStyle::grid); g.drawHorizontalLine(296,804,888);
         const auto window=liveScopeValid ? qin::waveformWindow(liveScope.input)
             : qin::WaveformWindow{0.f,float(previewInput.size()-1),true};
@@ -1680,8 +1687,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
             g.setColour(colour); g.strokePath(path,juce::PathStrokeType(1.3f));
         };
         if(liveScopeValid)
-        { drawWave(liveScope.input,cyan.withAlpha(.65f)); drawWave(liveScope.output,curveRed); }
-        else { drawWave(previewInput,cyan.withAlpha(.65f)); drawWave(previewOutput,curveRed); }
+        { drawWave(liveScope.input,highlightRed.withAlpha(.65f)); drawWave(liveScope.output,curveBlue); }
+        else { drawWave(previewInput,highlightRed.withAlpha(.65f)); drawWave(previewOutput,curveBlue); }
     }
     g.restoreState();
 }
