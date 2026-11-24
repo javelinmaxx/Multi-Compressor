@@ -7,10 +7,13 @@
 
 namespace
 {
-const auto panelGranite=juce::Colour(0xff93989b);
-const auto panelInk=juce::Colour(0xff192b3b);
+const auto panelBlack=juce::Colour(0xff111215);
+const auto panelInk=juce::Colour(0xffe3e9ec);
+const auto buttonInk=juce::Colour(0xff192b3b);
+const auto keyInk=juce::Colour(0xff192b3b);
+const auto keyRootRed=juce::Colour(0xff82313d);
 const auto backgroundRed=juce::Colour(0xff2a1018);
-const auto secondaryRed=juce::Colour(0xff40101e);
+const auto secondaryRed=juce::Colour(0xffe99daa);
 const auto plotRed=juce::Colour(0xfff3aab0);
 const auto curveBlue=juce::Colour(0xff87c9ed);
 const auto accent=juce::Colour(0xffbd4e60);
@@ -81,7 +84,7 @@ void styleTab(juce::TextButton& button,const juce::String& title,int group)
     button.setColour(juce::TextButton::buttonColourId,buttonIdle);
     button.setColour(juce::TextButton::buttonOnColourId,buttonActive);
     button.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-    button.setColour(juce::TextButton::textColourOnId,panelInk);
+    button.setColour(juce::TextButton::textColourOnId,buttonInk);
 }
 float filterMagnitude(int type,float frequency,float cutoff,float resonance)
 {
@@ -109,7 +112,7 @@ float filterMagnitude(int type,float frequency,float cutoff,float resonance)
 void QinTuningPanel::paint(juce::Graphics& g)
 {
     g.fillAll(backgroundRed);
-    g.setColour(panelGranite);
+    g.setColour(panelBlack);
     g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(2),9);
     g.setColour(secondaryRed.withAlpha(.7f));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(2),9,1.2f);
@@ -137,7 +140,7 @@ void QinTuningKey::setIdentity(juce::String note,bool black,bool root)
 void QinTuningKey::paint(juce::Graphics& g)
 {
     const auto area=getLocalBounds().toFloat().reduced(1.f);
-    const auto text=blackKey ? stageStyle::foreground : panelInk;
+    const auto text=blackKey ? stageStyle::foreground : keyInk;
     g.setColour(juce::Colours::black.withAlpha(.45f));
     g.fillRoundedRectangle(area.translated(1.f,2.f),blackKey ? 4.f : 5.f);
     g.setGradientFill(juce::ColourGradient(
@@ -157,7 +160,7 @@ void QinTuningKey::paint(juce::Graphics& g)
         g.fillRoundedRectangle(area.reduced(3.f),3.f);
     }
     const auto cents=rootKey ? 0.0 : getValue();
-    g.setColour(rootKey ? (blackKey ? plotRed : secondaryRed) : text);
+    g.setColour(rootKey ? (blackKey ? plotRed : keyRootRed) : text);
     g.setFont(juce::FontOptions(blackKey ? 10.f : 13.f).withStyle("bold"));
     g.drawText(noteName,3,getHeight()-(blackKey ? 51 : 75),getWidth()-6,18,juce::Justification::centred);
     g.setFont(juce::FontOptions(blackKey ? 8.f : 10.f));
@@ -537,7 +540,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     tuneButton.setClickingTogglesState(true);
     tuneButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
     tuneButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
-    tuneButton.setColour(juce::TextButton::textColourOnId,panelInk);
+    tuneButton.setColour(juce::TextButton::textColourOnId,buttonInk);
     tuneButton.setTooltip("Opens the custom tuning table and A4 reference controls.");
     addAndMakeVisible(tuneButton);
     tuneButton.onClick=[this]
@@ -620,7 +623,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     noiseButton.setTooltip("Enables the noise oscillator and opens its tuning, filter, and style controls.");
     noiseButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
     noiseButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
-    noiseButton.setColour(juce::TextButton::textColourOnId,panelInk);
+    noiseButton.setColour(juce::TextButton::textColourOnId,buttonInk);
     addAndMakeVisible(noiseButton);
     noiseAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"noise",noiseButton);
     noiseButton.onClick=[this] { showOscillator(3); };
@@ -764,7 +767,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     syncButton.setClickingTogglesState(true);
     syncButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
     syncButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
-    syncButton.setColour(juce::TextButton::textColourOnId,panelInk);
+    syncButton.setColour(juce::TextButton::textColourOnId,buttonInk);
     syncButton.setTooltip("Synchronizes Delay Time to the host tempo using straight, dotted, or triplet notes.");
     addAndMakeVisible(syncButton);
     syncAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"verbSync",syncButton);
@@ -992,7 +995,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         retrigger.setColour(juce::TextButton::buttonColourId,buttonIdle);
         retrigger.setColour(juce::TextButton::buttonOnColourId,buttonActive);
         retrigger.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
-        retrigger.setColour(juce::TextButton::textColourOnId,panelInk);
+        retrigger.setColour(juce::TextButton::textColourOnId,buttonInk);
         retrigger.setTooltip("Restarts this oscillator's waveform phase at each note onset when enabled.");
         addAndMakeVisible(wave); addAndMakeVisible(label); addAndMakeVisible(retrigger);
         addAndMakeVisible(phaseLine);
@@ -1496,12 +1499,12 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.drawText("QIN SYNTH",18,30,360,38,juce::Justification::centredLeft);
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(juce::Rectangle<float>(650,30,252,35),5);
     g.setColour(highlightRed); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
-    stageStyle::drawPanel(g,{16,90,420,392},panelGranite);
-    stageStyle::drawPanel(g,{16,492,420,138},panelGranite);
-    stageStyle::drawPanel(g,{444,90,240,311},panelGranite);
-    stageStyle::drawPanel(g,{444,409,240,221},panelGranite);
-    stageStyle::drawPanel(g,{692,90,212,400},panelGranite);
-    stageStyle::drawPanel(g,{692,500,212,130},panelGranite);
+    stageStyle::drawPanel(g,{16,90,420,392},panelBlack);
+    stageStyle::drawPanel(g,{16,492,420,138},panelBlack);
+    stageStyle::drawPanel(g,{444,90,240,311},panelBlack);
+    stageStyle::drawPanel(g,{444,409,240,221},panelBlack);
+    stageStyle::drawPanel(g,{692,90,212,400},panelBlack);
+    stageStyle::drawPanel(g,{692,500,212,130},panelBlack);
     g.setColour(accent); g.setFont(juce::FontOptions(12.f).withStyle("bold"));
     g.drawText("PLAY",30,492,120,20,juce::Justification::centredLeft);
     const juce::Rectangle<float> glidePlot(297,545,44,55);
