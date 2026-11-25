@@ -31,7 +31,7 @@ public:
 
 private:
     pluginGpu::Renderer gpu;
-    static constexpr int designWidth = 548, designHeight = 721;
+    static constexpr int designWidth = 548, designHeight = 658;
     void timerCallback() override;
     void paintScope (juce::Graphics&, int, juce::Rectangle<float>);
     KuoStereoProcessor& processor;

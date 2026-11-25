@@ -779,8 +779,8 @@ int main (int argc, char** argv)
                    "each frequency-split goniometer receives its own processed band");
             std::unique_ptr<juce::AudioProcessorEditor> editor (preview.createEditor());
             editor->setVisible (true);
-            check (editor && editor->getWidth() == 548 && editor->getHeight() == 721,
-                   "editor is 20 px shorter after reducing the sound field meters");
+            check (editor && editor->getWidth() == 548 && editor->getHeight() == 658,
+                   "editor fits the square sound-field meters");
             int tooltipWindows = 0, hintedControls = 0;
             for (auto* child : editor->getChildren())
             {
@@ -848,7 +848,7 @@ int main (int argc, char** argv)
                        && juce::File (argv[2]).replaceWithData (png.getData(), png.getDataSize()),
                        "editor preview writes");
             }
-            for (const auto size : { juce::Point<int> (274, 361), juce::Point<int> (658, 865) })
+            for (const auto size : { juce::Point<int> (274, 329), juce::Point<int> (658, 790) })
             {
                 editor->setSize (size.x, size.y);
                 const auto control = editor->getLocalArea (firstKnob, firstKnob->getLocalBounds());

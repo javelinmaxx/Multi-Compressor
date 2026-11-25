@@ -127,7 +127,7 @@ KuoStereoEditor::KuoStereoEditor (KuoStereoProcessor& p)
         auto& slider = sliders[i];
         slider.setLookAndFeel (&look);
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 104, 17);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 82, 17);
         slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         slider.setColour (juce::Slider::textBoxTextColourId, secondary);
         slider.setTextValueSuffix (units[i]);
@@ -190,14 +190,14 @@ void KuoStereoEditor::resized()
     titleHint.setBounds (24, 38, 410, 38);
     bypass.setBounds (450, 33, 74, 28);
     const std::array<juce::Rectangle<int>, 8> positions {
-        juce::Rectangle<int> (38, 163, 104, 70),
-        juce::Rectangle<int> (161, 163, 104, 70),
-        juce::Rectangle<int> (283, 163, 104, 70),
-        juce::Rectangle<int> (406, 163, 104, 70),
-        juce::Rectangle<int> (38, 319, 104, 75),
-        juce::Rectangle<int> (161, 319, 104, 75),
-        juce::Rectangle<int> (283, 319, 104, 75),
-        juce::Rectangle<int> (406, 319, 104, 75)
+        juce::Rectangle<int> (55, 158, 82, 76),
+        juce::Rectangle<int> (175, 158, 82, 76),
+        juce::Rectangle<int> (295, 158, 82, 76),
+        juce::Rectangle<int> (415, 158, 82, 76),
+        juce::Rectangle<int> (55, 318, 82, 76),
+        juce::Rectangle<int> (175, 318, 82, 76),
+        juce::Rectangle<int> (295, 318, 82, 76),
+        juce::Rectangle<int> (415, 318, 82, 76)
     };
     for (size_t i = 0; i < sliders.size(); ++i)
     {
@@ -206,7 +206,7 @@ void KuoStereoEditor::resized()
     }
     constexpr std::array<int, 3> bandX { 168, 329, 490 };
     for (size_t i = 0; i < bandSliders.size(); ++i)
-        bandSliders[i].setBounds (bandX[i], 504, 16, 131);
+        bandSliders[i].setBounds (bandX[i], 482, 16, 100);
 
     const auto scale = editorScaling::transform (*this, designWidth, designHeight);
     titleHint.setTransform (scale);
@@ -219,7 +219,9 @@ void KuoStereoEditor::resized()
 void KuoStereoEditor::timerCallback()
 {
     repaint (editorScaling::repaintArea (*this, designWidth, designHeight,
-                                        { 24, 90, 500, 607 }));
+                                        { 360, 100, 150, 28 }));
+    repaint (editorScaling::repaintArea (*this, designWidth, designHeight,
+                                        { 39, 470, 446, 124 }));
 }
 
 void KuoStereoEditor::paint (juce::Graphics& g)
@@ -238,7 +240,7 @@ void KuoStereoEditor::paint (juce::Graphics& g)
     g.drawText ("KUO STEREO", 24, 38, 410, 38, juce::Justification::centredLeft);
     drawPanel (g, { 24, 90, 500, 150 });
     drawPanel (g, { 24, 250, 500, 150 });
-    drawPanel (g, { 24, 410, 500, 287 });
+    drawPanel (g, { 24, 410, 500, 224 });
     g.setColour (secondary);
     g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
     g.drawText ("SMART HAAS", 38, 102, 250, 20, juce::Justification::centredLeft);
@@ -261,14 +263,14 @@ void KuoStereoEditor::paint (juce::Graphics& g)
     const auto displayedDelayMs = std::abs (activeDelayMs) < 0.05f ? 0.0f : activeDelayMs;
     g.drawText (juce::String (displayedDelayMs, 1) + " ms", 391, 101, 116, 22,
                 juce::Justification::centredRight);
-    paintScope (g, 0, { 39, 474, 124, 182 });
-    paintScope (g, 1, { 200, 474, 124, 182 });
-    paintScope (g, 2, { 361, 474, 124, 182 });
+    paintScope (g, 0, { 39, 470, 124, 124 });
+    paintScope (g, 1, { 200, 470, 124, 124 });
+    paintScope (g, 2, { 361, 470, 124, 124 });
     g.setColour (secondary);
     g.setFont (juce::FontOptions (9.0f));
-    g.drawText ("BELOW 250 Hz", 39, 664, 148, 16, juce::Justification::centred);
-    g.drawText ("250 Hz - 2.5 kHz", 200, 664, 148, 16, juce::Justification::centred);
-    g.drawText ("ABOVE 2.5 kHz", 361, 664, 148, 16, juce::Justification::centred);
+    g.drawText ("BELOW 250 Hz", 39, 601, 148, 16, juce::Justification::centred);
+    g.drawText ("250 Hz - 2.5 kHz", 200, 601, 148, 16, juce::Justification::centred);
+    g.drawText ("ABOVE 2.5 kHz", 361, 601, 148, 16, juce::Justification::centred);
     g.restoreState();
 }
 
