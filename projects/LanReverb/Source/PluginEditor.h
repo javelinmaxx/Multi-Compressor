@@ -1,4 +1,5 @@
 #pragma once
+#include "../../EditorDimming.h"
 #include "../../PluginGpuRenderer.h"
 #include "PluginProcessor.h"
 #include "SpectrumShelfHandle.h"
@@ -39,5 +40,6 @@ private:
     lan::SpectrumDisplaySmoother spectrumDisplay;
     double lastSpectrumTick=0;
     float reduction = 0, outputPeak = 0;
+    editorDimming::Overlay dimmer;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LanReverbEditor)
 };

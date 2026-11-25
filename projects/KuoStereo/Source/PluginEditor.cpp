@@ -49,7 +49,7 @@ void KuoLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int widt
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
     panelSurface::drawMetalKnobFace (g, dial, juce::Colour (0xffd6eef7),
-                                     juce::Colour (0xffa9d0e5), secondary);
+                                     juce::Colour (0xffa9d0e5), secondary, angle);
     g.setColour (accent);
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,
@@ -182,6 +182,7 @@ KuoStereoEditor::KuoStereoEditor (KuoStereoProcessor& p)
     editorScaling::enable (*this, designWidth, designHeight);
     gpu.attach (*this);
     startTimerHz (30);
+    dimmer.attach (*this, p.parameters, &bypass);
 }
 
 void KuoStereoEditor::resized()

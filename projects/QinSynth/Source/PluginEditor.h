@@ -1,4 +1,5 @@
 #pragma once
+#include "../../EditorDimming.h"
 #include "PluginProcessor.h"
 #include "PresetManager.h"
 #include "../../StagePluginStyle.h"
@@ -267,5 +268,6 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>,3> fmSourceAttachments;
     std::unique_ptr<State::ComboBoxAttachment> noiseStyleAttachment;
     std::unique_ptr<State::SliderAttachment> filterMergeAttachment;
+    editorDimming::Overlay dimmer;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(QinSynthEditor)
 };

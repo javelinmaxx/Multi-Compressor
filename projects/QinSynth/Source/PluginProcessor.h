@@ -60,6 +60,7 @@ public:
     int getActiveVoiceCount() const noexcept { return activeVoiceCount.load(std::memory_order_relaxed); }
     uint32_t getPresetStateEpoch() const noexcept { return presetStateEpoch.load(std::memory_order_acquire); }
     double getHostTempo() const noexcept { return hostTempo.load(std::memory_order_relaxed); }
+    const std::atomic<bool>& bypassActivity() const noexcept { return hostBypassed; }
     juce::AudioProcessorValueTreeState parameters;
 private:
     friend struct QinSynthTestAccess;
@@ -195,6 +196,7 @@ private:
     uint64_t voiceAge=0, onsetCount=0;
     double sampleRate=48000;
     std::atomic<double> hostTempo {120.0};
+    std::atomic<bool> hostBypassed {false};
     float glideShapeSmoothing=.002f;
     float waveSmoothing=.002f;
     float onsetTap=0, onsetPhase=0;

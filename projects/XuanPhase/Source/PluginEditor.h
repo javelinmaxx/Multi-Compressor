@@ -1,4 +1,5 @@
 #pragma once
+#include "../../EditorDimming.h"
 #include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
@@ -33,4 +34,5 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>, 6> attachments;
     std::unique_ptr<State::ButtonAttachment> bypassAttachment, autoAttachment;
     XuanPhaseMeter meter;
+    editorDimming::Overlay dimmer;
 };

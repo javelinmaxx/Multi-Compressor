@@ -1,5 +1,6 @@
 #include "StagePluginStyle.h"
 #include "PanelSurface.h"
+#include "ToggleShine.h"
 #include <cmath>
 
 namespace stageStyle
@@ -38,7 +39,7 @@ void StageLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int wi
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    panelSurface::drawMetalKnobFace (g, dial, dialTopColour, dialBottomColour, markColour);
+    panelSurface::drawMetalKnobFace (g, dial, dialTopColour, dialBottomColour, markColour, angle);
     g.setColour (accentColour);
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,
@@ -96,6 +97,7 @@ void StageTransformerSwitch::paintButton (juce::Graphics& g, bool, bool)
     g.setGradientFill (juce::ColourGradient (juce::Colour (0xffe0e3e5), cap.getTopLeft(),
                                              juce::Colour (0xff777f86), cap.getBottomRight(), false));
     g.fillEllipse (cap);
+    toggleShine::draw (g, cx, pivotY, tipY, 11.0f, 4.4f);
     g.setColour (getToggleState() ? amber : secondary);
     g.setFont (juce::FontOptions (9.0f).withStyle ("bold"));
     g.drawText (getToggleState() ? "ON" : "OFF", 0, 76, getWidth(), 18, juce::Justification::centred);

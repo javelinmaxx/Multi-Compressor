@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "../../EditorScaling.h"
 #include "../../PanelSurface.h"
+#include "../../ToggleShine.h"
 #include "../../EditorTooltips.h"
 #include "RatioMapping.h"
 #include "HistoryDisplayScale.h"
@@ -122,6 +123,7 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
     if (! softwareFallback) openGLContext.attachTo (*this);
     timerCallback();
     startTimerHz (30);
+    dimmer.attach (*this, p.parameters, &bypass);
 }
 
 namespace
@@ -362,6 +364,7 @@ void AnimatedSwitch::paintButton (juce::Graphics& g, bool highlighted, bool down
     g.fillEllipse (cap);
     g.setColour (juce::Colour (0xff515a61));
     g.drawEllipse (cap, 0.8f);
+    toggleShine::draw (g, cx, pivot.y, tipY, 12.0f, 4.4f);
     if (hasKeyboardFocus (true))
     {
         g.setColour (accent);
@@ -406,7 +409,7 @@ void CompressorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     g.fillEllipse (rim);
     g.setColour (ring.withAlpha (0.70f));
     g.drawEllipse (rim, 0.8f);
-    panelSurface::drawMetalKnobFace (g, dial, knobTop, knobBottom, ring);
+    panelSurface::drawMetalKnobFace (g, dial, knobTop, knobBottom, ring, angle);
     const auto outer = dial.getWidth() * 0.40f;
     const auto inner = outer * 0.58f;
     g.setColour (accent);

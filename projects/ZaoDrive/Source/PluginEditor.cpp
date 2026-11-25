@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "../../EditorScaling.h"
 #include "../../PanelSurface.h"
+#include "../../ToggleShine.h"
 #include "../../EditorTooltips.h"
 #include <cmath>
 
@@ -47,7 +48,7 @@ void ZaoLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int widt
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
     panelSurface::drawMetalKnobFace (g, dial, juce::Colour (0xfffffff8),
-                                     juce::Colour (0xffe9e3d9), juce::Colour (0xff6c3615));
+                                     juce::Colour (0xffe9e3d9), juce::Colour (0xff6c3615), angle);
     g.setColour (juce::Colour (0xff6c3615));
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,
@@ -105,6 +106,7 @@ void ZaoTransformerSwitch::paintButton (juce::Graphics& g, bool, bool)
     g.setGradientFill (juce::ColourGradient (juce::Colour (0xffe0e3e5), cap.getTopLeft(),
                                              juce::Colour (0xff777f86), cap.getBottomRight(), false));
     g.fillEllipse (cap);
+    toggleShine::draw (g, cx, pivotY, tipY, 11.0f, 4.4f);
     g.setColour (getToggleState() ? accent : secondary);
     g.setFont (juce::FontOptions (9.0f).withStyle ("bold"));
     g.drawText (getToggleState() ? "ON" : "OFF", 0, 88, getWidth(), 18, juce::Justification::centred);
@@ -200,6 +202,7 @@ ZaoDriveEditor::ZaoDriveEditor (ZaoDriveProcessor& p) : AudioProcessorEditor (&p
     gpu.attach (*this);
     timerCallback();
     startTimerHz (30);
+    dimmer.attach (*this, p.parameters, &bypass);
 }
 
 void ZaoDriveEditor::updateInputControl (int circuit)

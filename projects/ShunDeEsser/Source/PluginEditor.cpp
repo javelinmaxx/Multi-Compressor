@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "../../EditorScaling.h"
 #include "../../PanelSurface.h"
+#include "../../ToggleShine.h"
 #include "../../EditorTooltips.h"
 
 namespace
@@ -196,6 +197,7 @@ void AnimatedSwitch::paintButton (juce::Graphics& g, bool highlighted, bool down
     g.fillEllipse (cap);
     g.setColour (juce::Colour (0xff515a61));
     g.drawEllipse (cap, 0.8f);
+    toggleShine::draw (g, cx, pivot.y, tipY, 12.0f, 4.4f);
     if (hasKeyboardFocus (true))
     {
         g.setColour (accent);
@@ -301,6 +303,7 @@ void DetectorModeSwitch::paint (juce::Graphics& g)
     g.fillEllipse (cap);
     g.setColour (juce::Colour (0xff515a61));
     g.drawEllipse (cap, 0.8f);
+    toggleShine::draw (g, cx, pivotY, tipY, 11.0f, 4.4f);
     for (int index = 0; index < 3; ++index)
     {
         g.setColour (index == position ? theme.control : theme.secondary.withAlpha (0.55f));
@@ -352,7 +355,7 @@ void CompressorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     g.fillEllipse (rim);
     g.setColour (ring.withAlpha (0.70f));
     g.drawEllipse (rim, 0.8f);
-    panelSurface::drawMetalKnobFace (g, dial, knobTop, knobBottom, ring);
+    panelSurface::drawMetalKnobFace (g, dial, knobTop, knobBottom, ring, angle);
     const auto outer = dial.getWidth() * 0.40f;
     const auto inner = outer * 0.58f;
     g.setColour (accent);
@@ -504,6 +507,7 @@ ShunDeEsserEditor::ShunDeEsserEditor (ShunDeEsserProcessor& p)
     responseHint.setTooltip ("Shows the stereo input spectrum from minus 120 to 0 dBFS behind the response curves, with active Brilliant restoration or Smooth suppression bands shaded in gold.");
     addAndMakeVisible (responseHint);
     startTimerHz (30);
+    dimmer.attach (*this, p.parameters, &bypass, &deltaHistory, "deltaSolo", &responseHint, 0.11f);
 }
 
 void ShunDeEsserEditor::paint (juce::Graphics& g)

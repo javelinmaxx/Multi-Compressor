@@ -32,7 +32,8 @@ template <typename Processor> void stateTests (int parameterCount)
                "all host parameters survive state restoration");
     check (p.getBypassParameter() == p.parameters.getParameter ("bypass"), "host bypass parameter is exposed");
 }
-template <typename Processor> void editorTests (const juce::File& destination, int height, int sliderCount, int width = 548)
+template <typename Processor> void editorTests (const juce::File& destination, int height, int sliderCount,
+                                                int width = 548, const juce::File* cleanDestination = nullptr)
 {
     Processor p; p.prepareToPlay (48000, 128);
     juce::MidiBuffer midi;
@@ -85,6 +86,15 @@ template <typename Processor> void editorTests (const juce::File& destination, i
     for (int tick = 0; tick < 3; ++tick) { juce::Thread::sleep (10); juce::Timer::callPendingTimersSynchronously(); }
     check (std::abs (first->getValue() - p.parameters.getRawParameterValue (id)->load()) < 0.01,
            "host automation updates its control");
+    if (cleanDestination != nullptr)
+    {
+        const auto cleanImage = editor->createComponentSnapshot (editor->getLocalBounds());
+        juce::MemoryOutputStream cleanPng;
+        cleanDestination->getParentDirectory().createDirectory();
+        check (cleanImage.isValid() && juce::PNGImageFormat().writeImageToStream (cleanImage, cleanPng)
+            && cleanDestination->replaceWithData (cleanPng.getData(), cleanPng.getDataSize()),
+            "clean preview is saved");
+    }
     tooltip->displayTip (editor->localPointToGlobal (first->getBounds().getCentre()), first->getTooltip());
     check (tooltip->isVisible(), "native tooltip is visible in the preview");
     auto image = editor->createComponentSnapshot (editor->getLocalBounds());

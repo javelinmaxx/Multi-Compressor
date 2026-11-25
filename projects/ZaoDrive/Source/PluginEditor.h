@@ -1,4 +1,5 @@
 #pragma once
+#include "../../EditorDimming.h"
 #include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
@@ -56,5 +57,6 @@ private:
     int inputControlCircuit = -1;
     zao::PreviewFrame previewFrame;
     zao::PreviewAnimation previewAnimation;
+    editorDimming::Overlay dimmer;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ZaoDriveEditor)
 };

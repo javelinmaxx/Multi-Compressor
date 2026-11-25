@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../../EditorDimmingPreview.h"
 #include "../Source/AtanLookup.h"
 #include "../Source/PluginEditor.h"
 #include "../../ParameterRetentionTests.h"
@@ -87,6 +88,11 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        if (argc > 2 && juce::String (argv[1]) == "--dim-preview")
+        {
+            editorDimmingPreview::render<NianSaturatorProcessor> (juce::File (argv[2]));
+            return 0;
+        }
         for(int i=0;i<=20000;++i)
         {
             const auto input=-20.f+40.f*i/20000.f;

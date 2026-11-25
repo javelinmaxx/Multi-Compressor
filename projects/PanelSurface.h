@@ -75,34 +75,33 @@ inline void drawBeveledPanel (juce::Graphics& g, juce::Rectangle<float> bounds,
     g.drawVerticalLine (juce::roundToInt (bounds.getRight() - 1), bevelY, bevelBottom);
 }
 
-// Neutral radial brushing adds a metal face without replacing each plugin's dial colour.
-inline const juce::Image& radialKnobGrain()
+// A single grain image is rotated with the dial, as a physical face would be.
+inline const juce::Image& knobNoise()
 {
-    static const auto grain = []
+    static const auto noise = []
     {
         juce::Image image (juce::Image::ARGB, 128, 128, true);
-        juce::Graphics texture (image);
         auto state = 0x873b5e29u;
-        for (int ray = 0; ray < 96; ++ray)
+        for (int y = 0; y < 128; y += 2)
+            for (int x = 0; x < 128; x += 2)
         {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
-            const auto angle = juce::MathConstants<float>::twoPi * float (ray) / 96.f;
-            const auto inner = 4.f + float (state % 12u);
-            const auto outer = 62.f;
-            texture.setColour ((ray & 1 ? juce::Colours::black : juce::Colours::white)
-                                   .withAlpha (0.05f + float (state % 8u) * 0.007f));
-            texture.drawLine (64.f + std::cos (angle) * inner, 64.f + std::sin (angle) * inner,
-                              64.f + std::cos (angle) * outer, 64.f + std::sin (angle) * outer, 1.1f);
+            const auto value = state & 255u;
+            const auto colour = (value & 1u) == 0u ? juce::Colours::white : juce::Colours::black;
+            const auto opacity = static_cast<juce::uint8> (10u + (value >> 3) % 20u);
+            for (int dy = 0; dy < 2; ++dy)
+                for (int dx = 0; dx < 2; ++dx)
+                    image.setPixelAt (x + dx, y + dy, colour.withAlpha (opacity));
         }
         return image;
     }();
-    return grain;
+    return noise;
 }
 
 inline void drawMetalKnobFace (juce::Graphics& g, juce::Rectangle<float> dial,
-                              juce::Colour top, juce::Colour bottom, juce::Colour rim)
+                              juce::Colour top, juce::Colour bottom, juce::Colour rim, float angle)
 {
     const auto material = top.withAlpha (1.f).interpolatedWith (bottom.withAlpha (1.f), 0.5f);
     g.setGradientFill (juce::ColourGradient (material.interpolatedWith (top, 0.12f), dial.getTopLeft(),
@@ -111,8 +110,9 @@ inline void drawMetalKnobFace (juce::Graphics& g, juce::Rectangle<float> dial,
     juce::Path clip;
     clip.addEllipse (dial);
     g.saveState();
+    g.addTransform (juce::AffineTransform::rotation (angle, dial.getCentreX(), dial.getCentreY()));
     g.reduceClipRegion (clip);
-    g.drawImageWithin (radialKnobGrain(), juce::roundToInt (dial.getX()), juce::roundToInt (dial.getY()),
+    g.drawImageWithin (knobNoise(), juce::roundToInt (dial.getX()), juce::roundToInt (dial.getY()),
                        juce::roundToInt (dial.getWidth()), juce::roundToInt (dial.getHeight()),
                        juce::RectanglePlacement::stretchToFit);
     g.restoreState();

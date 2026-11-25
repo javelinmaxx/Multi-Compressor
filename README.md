@@ -33,6 +33,8 @@ fallback. See [GPU rendering and validation](projects/GPU_RENDERING.md).
 | [Nian Saturator](projects/NianSaturator/README.md) | `NianSaturator` | Two-band saturation | 4× twelve-band transient enhancement with 5 ms lookahead or dynamically softened tube-style drive, Mix, and crossover spectrum display |
 | [Qin Synth](projects/QinSynth/README.md) | `QinSynth` | MIDI instrument | Adjustable 1–16-voice virtual-analog synthesis, mono legato, three eightfold-unison oscillators, key panning, four Zao circuits, Ren transformer, MIDI-steered Lan delay-reverb |
 
+[Current UI gallery](docs/flattened-ui-preview.png) · [Bypass and delta views](docs/dimming-ui-preview.png)
+
 ### Yinyang Compressor
 
 ![Yinyang Compressor in FET mode, showing dynamics controls, gain-reduction history, sidechain, and transformer sections](projects/YinyangCompressor/Previews/fet.png)

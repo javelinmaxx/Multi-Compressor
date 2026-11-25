@@ -1,4 +1,5 @@
 #pragma once
+#include "../../EditorDimming.h"
 #include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
@@ -31,5 +32,6 @@ private:
     std::array<std::unique_ptr<State::SliderAttachment>, 5> attachments;
     std::array<std::unique_ptr<State::SliderAttachment>, 3> bandAttachments;
     std::unique_ptr<State::ButtonAttachment> bypassAttachment;
+    editorDimming::Overlay dimmer;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KuoVelvetEditor)
 };

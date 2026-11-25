@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../../EditorDimmingPreview.h"
 #include "../../ParameterRetentionTests.h"
 #include "../Source/PluginEditor.h"
 #include "../Source/PresetManager.h"
@@ -482,6 +483,23 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        if(argc>2 && juce::String(argv[1])=="--dim-preview")
+        {
+            editorDimmingPreview::renderHostBypass<QinSynthProcessor>(juce::File(argv[2]));
+            return 0;
+        }
+        {
+            QinSynthProcessor instrument;
+            instrument.prepareToPlay(48000,64);
+            juce::AudioBuffer<float> audio(2,64);
+            juce::MidiBuffer midi;
+            instrument.processBlockBypassed(audio,midi);
+            if(!instrument.bypassActivity().load(std::memory_order_relaxed))
+                throw std::runtime_error("Host bypass must dim the Qin editor");
+            instrument.processBlock(audio,midi);
+            if(instrument.bypassActivity().load(std::memory_order_relaxed))
+                throw std::runtime_error("Qin editor must clear bypass dimming after processing resumes");
+        }
         {
             const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory)
                 .getChildFile("qin-preset-test-"+juce::Uuid().toString());

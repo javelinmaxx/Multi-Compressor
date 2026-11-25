@@ -126,7 +126,11 @@ int main (int argc, char** argv)
         stateTests<RenTransformerProcessor> (7); transformerTests();
         blockSizeTests<RenTransformerProcessor>();
         if (argc > 2 && juce::String (argv[1]) == "--editor")
-            editorTests<RenTransformerProcessor> (juce::File (argv[2]), 260, 5, 444);
+        {
+            const juce::File clean (argc > 3 ? argv[3] : "");
+            editorTests<RenTransformerProcessor> (juce::File (argv[2]), 260, 5, 444,
+                                                   argc > 3 ? &clean : nullptr);
+        }
         std::cout << checks << " Ren Transformer checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

@@ -1,4 +1,5 @@
 #pragma once
+#include "../../EditorDimming.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
 #include "GainReductionHistory.h"
@@ -124,5 +125,6 @@ private:
     double lastTick = 0;
     float displayedReduction = 0;
     CompressorTheme theme;
+    editorDimming::Overlay dimmer;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ShunDeEsserEditor)
 };

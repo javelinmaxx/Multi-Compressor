@@ -67,6 +67,7 @@ NianSaturatorEditor::NianSaturatorEditor (NianSaturatorProcessor& p) : AudioProc
     editorScaling::enable (*this, designWidth, designHeight);
     gpu.attach (*this);
     signalDisplay.refresh();
+    dimmer.attach (*this, p.parameters, &bypass, &signalDisplay, "deltaSolo");
 }
 void NianSaturatorEditor::resized()
 {

@@ -41,6 +41,7 @@ RenTransformerEditor::RenTransformerEditor (RenTransformerProcessor& p) : AudioP
     }
     editorScaling::enable (*this, designWidth, designHeight);
     gpu.attach (*this);
+    dimmer.attach (*this, p.parameters, &bypass);
 }
 void RenTransformerEditor::resized()
 {

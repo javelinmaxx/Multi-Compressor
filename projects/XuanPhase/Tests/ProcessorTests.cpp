@@ -1,4 +1,5 @@
 #include "../Source/PluginEditor.h"
+#include "../../EditorDimmingPreview.h"
 #include "../../ParameterRetentionTests.h"
 #include "../../StagePluginTests.h"
 #include <complex>
@@ -1031,6 +1032,11 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI gui;
     try
     {
+        if (argc > 2 && juce::String (argv[1]) == "--dim-preview")
+        {
+            editorDimmingPreview::render<XuanPhaseProcessor> (juce::File (argv[2]));
+            return 0;
+        }
         if (argc > 2 && juce::String (argv[1]) == "--surface-preview")
         {
             XuanPhaseProcessor processor;

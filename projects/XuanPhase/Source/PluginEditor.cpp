@@ -50,6 +50,7 @@ XuanPhaseEditor::XuanPhaseEditor (XuanPhaseProcessor& p) : AudioProcessorEditor 
     }
     editorScaling::enable (*this, designWidth, designHeight);
     gpu.attach (*this);
+    dimmer.attach (*this, p.parameters, &bypass, &meter, "deltaSolo");
 }
 void XuanPhaseEditor::visibilityChanged() { updateVisibility(); }
 void XuanPhaseEditor::updateVisibility()

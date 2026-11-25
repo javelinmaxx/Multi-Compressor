@@ -84,6 +84,7 @@ KuoVelvetEditor::KuoVelvetEditor (KuoVelvetProcessor& p) : AudioProcessorEditor 
     }
     editorScaling::enable (*this, designWidth, designHeight);
     gpu.attach (*this);
+    dimmer.attach (*this, p.parameters, &bypass);
 }
 void KuoVelvetEditor::resized()
 {

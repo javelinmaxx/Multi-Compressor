@@ -1,4 +1,5 @@
 #pragma once
+#include "../../EditorDimming.h"
 #include "../../EditorTooltips.h"
 #include "PluginProcessor.h"
 #include "GainReductionHistory.h"
@@ -123,5 +124,6 @@ private:
     bool lastUpwardMode = false;
     int lastModelIndex = -1;
     CompressorTheme theme;
+    editorDimming::Overlay dimmer;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (YinyangCompressorEditor)
 };

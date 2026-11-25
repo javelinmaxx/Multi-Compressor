@@ -78,6 +78,7 @@ LanReverbEditor::LanReverbEditor (LanReverbProcessor& p) : AudioProcessorEditor(
     updateTimeMode();
     processor.setSpectrumMonitor(true);
     editorScaling::enable(*this,designWidth,designHeight); gpu.attach(*this); startTimerHz(20);
+    dimmer.attach(*this,p.parameters,&bypass);
 }
 void LanReverbEditor::updateTimeMode()
 {

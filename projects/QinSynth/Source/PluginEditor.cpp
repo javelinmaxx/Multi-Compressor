@@ -3,6 +3,7 @@
 #include "WaveformSync.h"
 #include "../../EditorScaling.h"
 #include "../../PanelSurface.h"
+#include "../../ToggleShine.h"
 #include <cmath>
 #include <complex>
 
@@ -424,6 +425,7 @@ void QinAnalogSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
                                           juce::Colour(0xff777f86),cap.getBottomRight(),false));
     g.fillEllipse(cap);
     g.setColour(highlighted ? accent : stageStyle::grid); g.drawEllipse(cap,.8f);
+    toggleShine::draw(g,cx,pivotY,tipY,flangeRadius,4.5f);
     if(hasKeyboardFocus(true)) { g.setColour(accent); g.drawEllipse(flange.expanded(3.f),1.f); }
 }
 void QinDualFilterSlider::setRingValues(float pre,float post)
@@ -484,8 +486,8 @@ void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,in
     ring(radius-7.f,dual->getPreRing(),accentColour,!dual->isPostSelected());
     const auto dial=juce::Rectangle<float>((radius-12.f)*2.f,(radius-12.f)*2.f).withCentre(centre);
     g.setColour(juce::Colours::black.withAlpha(.32f)); g.fillEllipse(dial.translated(0.f,2.f));
-    panelSurface::drawMetalKnobFace(g,dial,dialTopColour,dialBottomColour,markColour);
     const auto angle=start+value*(end-start);
+    panelSurface::drawMetalKnobFace(g,dial,dialTopColour,dialBottomColour,markColour,angle);
     const auto tip=radius-13.f;
     g.setColour(dual->isPostSelected() ? postFilterAccent : accentColour);
     g.fillEllipse(centre.x+std::sin(angle)*tip-2.f,
@@ -1147,6 +1149,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     transformerButton.snapToState();
     updateVisibility(); editorScaling::enable(*this,designWidth,designHeight);
     updateDrivePreview(); gpu.attach(*this); startTimerHz(40);
+    dimmer.attachHostBypass(*this,processor.bypassActivity());
 }
 void QinSynthEditor::bindDriveCut(size_t index)
 {

@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include "../../EditorDimmingPreview.h"
 #include "../../ParameterRetentionTests.h"
 #include <cmath>
 #include <cstring>
@@ -885,6 +886,11 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        if (argc > 2 && juce::String (argv[1]) == "--dim-preview")
+        {
+            editorDimmingPreview::render<ShunDeEsserProcessor> (juce::File (argv[2]));
+            return 0;
+        }
         verifyParameterRetention<ShunDeEsserProcessor>();
         inactivePathTests();
         if (argc > 2 && juce::String (argv[1]) == "--response-previews")

@@ -1285,6 +1285,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
 }
 void QinSynthProcessor::process(juce::AudioBuffer<float>& buffer,juce::MidiBuffer& midi,bool bypass)
 {
+    hostBypassed.store(bypass,std::memory_order_relaxed);
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     if(auto* transport=getPlayHead())

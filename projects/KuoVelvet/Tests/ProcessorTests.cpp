@@ -257,7 +257,12 @@ int main (int argc, char** argv)
         monoStereoTests::run<KuoVelvetProcessor> (nullptr,true);
         stateTests<KuoVelvetProcessor> (9); referenceTests(); velvetTests(); bandStateTests(); bandAndSideTests();
         blockSizeTests<KuoVelvetProcessor>();
-        if (argc > 2 && juce::String (argv[1]) == "--editor") editorTests<KuoVelvetProcessor> (juce::File (argv[2]), 382, 8, 444);
+        if (argc > 2 && juce::String (argv[1]) == "--editor")
+        {
+            const juce::File clean (argc > 3 ? argv[3] : "");
+            editorTests<KuoVelvetProcessor> (juce::File (argv[2]), 382, 8, 444,
+                                             argc > 3 ? &clean : nullptr);
+        }
         std::cout << checks << " Kuo Velvet checks passed\n"; return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }
