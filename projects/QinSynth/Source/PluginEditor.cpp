@@ -3,7 +3,7 @@
 #include "WaveformSync.h"
 #include "../../EditorScaling.h"
 #include "../../PanelSurface.h"
-#include "../../ToggleShine.h"
+#include "../../AnalogToggleHardware.h"
 #include <cmath>
 #include <complex>
 
@@ -395,37 +395,10 @@ void QinAnalogSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
     g.drawText(onCaption,0,int(titleHeight)+1,getWidth(),9,juce::Justification::centred);
     g.setColour(getToggleState() ? buttonActive.withAlpha(.55f) : buttonIdle);
     g.drawText(offCaption,0,getHeight()-10,getWidth(),9,juce::Justification::centred);
-    juce::Path nut;
-    for(int corner=0;corner<6;++corner)
-    {
-        const auto angle=juce::MathConstants<float>::twoPi*float(corner)/6.f;
-        const auto point=juce::Point<float>(cx+std::cos(angle)*nutRadius,pivotY+std::sin(angle)*nutRadius);
-        if(corner==0) nut.startNewSubPath(point); else nut.lineTo(point);
-    }
-    nut.closeSubPath();
-    g.setColour(juce::Colours::black.withAlpha(.3f)); g.fillPath(nut,juce::AffineTransform::translation(0,1.5f));
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xffb8bec2),cx-nutRadius,pivotY-nutRadius,
-                                          juce::Colour(0xff596169),cx+nutRadius,pivotY+nutRadius,false));
-    g.fillPath(nut);
-    g.setColour(secondaryRed.darker(.3f)); g.strokePath(nut,juce::PathStrokeType(.8f));
-    const auto flange=juce::Rectangle<float>(cx-flangeRadius,pivotY-flangeRadius,2.f*flangeRadius,2.f*flangeRadius);
-    g.setColour(stageStyle::inset); g.fillEllipse(flange.expanded(1.f));
-    g.setColour(getToggleState() ? buttonActive : buttonIdle);
-    g.drawEllipse(flange.expanded(2.f),getToggleState() ? 2.f : 1.f);
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xffc8cdd0),flange.getTopLeft(),
-                                          juce::Colour(0xff717980),flange.getBottomRight(),false));
-    g.fillEllipse(flange);
-    g.setColour(stageStyle::inset); g.fillEllipse(flange.reduced(3.f));
     const auto tipY=pivotY+(.5f-position)*(compact ? 12.f : 17.f);
-    g.setColour(juce::Colours::black.withAlpha(.4f)); g.drawLine(cx+1,pivotY+1,cx+1,tipY+1,5.6f);
-    g.setColour(down ? juce::Colours::white : juce::Colour(0xffc6cbd0));
-    g.drawLine(cx,pivotY,cx,tipY,4.8f);
-    const auto cap=juce::Rectangle<float>(cx-4.5f,tipY-4.5f,9.f,9.f);
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xffe0e3e5),cap.getTopLeft(),
-                                          juce::Colour(0xff777f86),cap.getBottomRight(),false));
-    g.fillEllipse(cap);
-    g.setColour(highlighted ? accent : stageStyle::grid); g.drawEllipse(cap,.8f);
-    toggleShine::draw(g,cx,pivotY,tipY,flangeRadius,4.5f);
+    const auto flange=analogToggleHardware::draw(g,cx,pivotY,tipY,nutRadius,flangeRadius,4.5f,
+                                                 buttonActive,buttonIdle,stageStyle::inset,
+                                                 getToggleState(),highlighted,down);
     if(hasKeyboardFocus(true)) { g.setColour(accent); g.drawEllipse(flange.expanded(3.f),1.f); }
 }
 void QinDualFilterSlider::setRingValues(float pre,float post)

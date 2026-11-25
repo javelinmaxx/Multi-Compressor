@@ -1,7 +1,7 @@
 #include "PluginEditor.h"
 #include "../../EditorScaling.h"
 #include "../../PanelSurface.h"
-#include "../../ToggleShine.h"
+#include "../../AnalogToggleHardware.h"
 #include "../../EditorTooltips.h"
 #include "RatioMapping.h"
 #include "HistoryDisplayScale.h"
@@ -300,71 +300,10 @@ void AnimatedSwitch::paintButton (juce::Graphics& g, bool highlighted, bool down
     g.drawText (offCaption, 0, juce::roundToInt (pivotY) + 20, getWidth(), 10,
                 juce::Justification::centred);
 
-    const auto pivot = juce::Point<float> (cx, pivotY);
-    juce::Path nut, innerNut;
-    for (int corner = 0; corner < 6; ++corner)
-    {
-        const auto angle = juce::MathConstants<float>::twoPi * static_cast<float> (corner) / 6.0f;
-        const juce::Point<float> point (cx + std::cos (angle) * 16.0f,
-                                        pivot.y + std::sin (angle) * 16.0f);
-        const juce::Point<float> inset (cx + std::cos (angle) * 13.2f,
-                                        pivot.y + std::sin (angle) * 13.2f);
-        if (corner == 0)
-        {
-            nut.startNewSubPath (point);
-            innerNut.startNewSubPath (inset);
-        }
-        else
-        {
-            nut.lineTo (point);
-            innerNut.lineTo (inset);
-        }
-    }
-    nut.closeSubPath();
-    innerNut.closeSubPath();
-    g.setColour (juce::Colours::black.withAlpha (0.30f));
-    g.fillPath (nut, juce::AffineTransform::translation (0.0f, 1.5f));
-    g.setGradientFill (juce::ColourGradient (secondary.brighter (0.16f), cx - 12.0f, pivot.y - 13.0f,
-                                             secondary.darker (0.34f), cx + 10.0f, pivot.y + 13.0f, false));
-    g.fillPath (nut);
-    g.setColour (secondary.darker (0.15f));
-    g.strokePath (nut, juce::PathStrokeType (0.8f));
-    g.setColour (secondary.darker (0.20f));
-    g.fillPath (innerNut);
-    g.setColour (secondary.darker (0.34f).withAlpha (0.8f));
-    g.strokePath (innerNut, juce::PathStrokeType (0.65f));
-
-    const auto flange = juce::Rectangle<float> (cx - 12.0f, pivot.y - 12.0f, 24.0f, 24.0f);
-    g.setColour (surface.darker (0.42f));
-    g.fillEllipse (flange.expanded (1.0f));
-    g.setGradientFill (juce::ColourGradient (secondary.brighter (0.18f), flange.getTopLeft(),
-                                             secondary.darker (0.28f), flange.getBottomLeft(), false));
-    g.fillEllipse (flange);
-    g.setColour (surface.darker (0.35f));
-    g.fillEllipse (flange.reduced (3.0f));
-    g.setColour (secondary.brighter (0.12f).withAlpha (0.85f));
-    g.drawEllipse (flange, 0.7f);
-
-    g.setColour (surface.darker (0.50f));
-    g.fillEllipse (pivot.x - 6.0f, pivot.y - 6.0f, 12.0f, 12.0f);
-    g.setColour (secondary.darker (0.18f));
-    g.drawEllipse (pivot.x - 5.3f, pivot.y - 5.3f, 10.6f, 10.6f, 1.0f);
-    const auto leverLength = 17.0f;
-    const auto tipY = pivot.y + (0.5f - position) * leverLength;
-    const juce::Point<float> tip (cx, tipY);
-    g.setColour (juce::Colours::black.withAlpha (0.35f));
-    g.drawLine (pivot.x + 1.0f, pivot.y + 1.0f, tip.x + 1.0f, tip.y + 1.0f, 5.6f);
-    g.setColour (juce::Colour (0xffc6cbd0));
-    g.drawLine (pivot.x, pivot.y, tip.x, tip.y, 4.8f);
-    g.setColour (juce::Colour (0xff8e969d));
-    g.drawLine (pivot.x - 0.8f, pivot.y, tip.x - 0.8f, tip.y, 1.0f);
-    const auto cap = juce::Rectangle<float> (cx - 4.4f, tip.y - 4.4f, 8.8f, 8.8f);
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffe0e3e5), cap.getTopLeft(),
-                                             juce::Colour (0xff777f86), cap.getBottomRight(), false));
-    g.fillEllipse (cap);
-    g.setColour (juce::Colour (0xff515a61));
-    g.drawEllipse (cap, 0.8f);
-    toggleShine::draw (g, cx, pivot.y, tipY, 12.0f, 4.4f);
+    const auto tipY = pivotY + (0.5f - position) * 17.0f;
+    const auto flange = analogToggleHardware::draw (g, cx, pivotY, tipY, 16.0f, 12.0f, 4.4f,
+                                                    accent, secondary, surface.darker (0.42f),
+                                                    getToggleState(), highlighted, down);
     if (hasKeyboardFocus (true))
     {
         g.setColour (accent);

@@ -1,6 +1,6 @@
 #include "StagePluginStyle.h"
 #include "PanelSurface.h"
-#include "ToggleShine.h"
+#include "AnalogToggleHardware.h"
 #include <cmath>
 
 namespace stageStyle
@@ -67,41 +67,21 @@ void StageBypassButton::paintButton (juce::Graphics& g, bool highlighted, bool d
     g.drawText (getButtonText(), bounds.toNearestInt(), juce::Justification::centred);
 }
 
-void StageTransformerSwitch::paintButton (juce::Graphics& g, bool, bool)
+void StageTransformerSwitch::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     const auto cx = static_cast<float> (getWidth()) * 0.5f;
     constexpr auto pivotY = static_cast<float> (StageTransformerSwitch::pivotOffsetY);
     g.setColour (secondary);
     g.setFont (juce::FontOptions (9.0f));
     g.drawText ("CORE", 0, 0, getWidth(), 15, juce::Justification::centred);
-    juce::Path nut;
-    for (int corner = 0; corner < 6; ++corner)
-    {
-        const auto angle = juce::MathConstants<double>::pi * 2.0 * corner / 6.0;
-        const juce::Point<float> point (cx + 15.0f * static_cast<float> (std::cos (angle)),
-                                        pivotY + 15.0f * static_cast<float> (std::sin (angle)));
-        if (corner == 0) nut.startNewSubPath (point); else nut.lineTo (point);
-    }
-    nut.closeSubPath();
-    g.setGradientFill (juce::ColourGradient (secondary.brighter (0.16f), cx - 12, pivotY - 13,
-                                             secondary.darker (0.34f), cx + 10, pivotY + 13, false));
-    g.fillPath (nut);
-    g.setColour (panel.darker (0.5f));
-    g.fillEllipse (cx - 11, pivotY - 11, 22, 22);
-    g.setColour (secondary);
-    g.drawEllipse (cx - 11, pivotY - 11, 22, 22, 1);
     const auto tipY = pivotY + (getToggleState() ? -9.0f : 9.0f);
-    g.setColour (juce::Colour (0xffc6cbd0));
-    g.drawLine (cx, pivotY, cx, tipY, 4.8f);
-    const auto cap = juce::Rectangle<float> (cx - 4.4f, tipY - 4.4f, 8.8f, 8.8f);
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffe0e3e5), cap.getTopLeft(),
-                                             juce::Colour (0xff777f86), cap.getBottomRight(), false));
-    g.fillEllipse (cap);
-    toggleShine::draw (g, cx, pivotY, tipY, 11.0f, 4.4f);
+    const auto flange = analogToggleHardware::draw (g, cx, pivotY, tipY, 15.0f, 11.0f, 4.4f,
+                                                    amber, secondary, panel.darker (0.5f),
+                                                    getToggleState(), highlighted, down);
     g.setColour (getToggleState() ? amber : secondary);
     g.setFont (juce::FontOptions (9.0f).withStyle ("bold"));
     g.drawText (getToggleState() ? "ON" : "OFF", 0, 76, getWidth(), 18, juce::Justification::centred);
-    if (hasKeyboardFocus (true)) g.drawEllipse (cx - 18, pivotY - 18, 36, 36, 1);
+    if (hasKeyboardFocus (true)) { g.setColour (amber); g.drawEllipse (flange.expanded (3.0f), 1.0f); }
 }
 
 void StageLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
