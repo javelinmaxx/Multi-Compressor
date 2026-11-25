@@ -39,7 +39,9 @@ inline juce::Rectangle<float> draw (juce::Graphics& g, float cx, float pivotY, f
                                             juce::Colour (0xff717980), flange.getBottomRight(), false));
     g.fillEllipse (flange);
     g.setColour (recess);
-    g.fillEllipse (flange.reduced (3.0f));
+    // Leave a substantial steel annulus around the lever rather than a wide
+    // dark socket, including on the compact Qin switches.
+    g.fillEllipse (flange.reduced (flangeRadius * 0.48f));
 
     g.setColour (juce::Colours::black.withAlpha (0.4f));
     g.drawLine (cx + 1.0f, pivotY + 1.0f, cx + 1.0f, tipY + 1.0f, 5.6f);
