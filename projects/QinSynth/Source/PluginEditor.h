@@ -48,12 +48,6 @@ private:
     bool showPositiveSign=false;
 };
 
-class QinRetrigButton final : public juce::TextButton
-{
-public:
-    void paintButton(juce::Graphics&,bool,bool) override;
-};
-
 class QinWavePad final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -241,14 +235,14 @@ private:
     std::array<QinPhaseStartLine,3> phaseStartLines;
     std::array<juce::RangedAudioParameter*,3> waveXParameters {}, waveYParameters {};
     std::array<juce::RangedAudioParameter*,3> phaseStartParameters {};
-    std::array<QinRetrigButton,3> retrig;
+    std::array<QinVoiceSlider,3> retrig;
     std::array<juce::Label,3> waveLabels;
     juce::ComboBox filterType, modTarget;
     juce::Label modTargetLabel;
     using State=juce::AudioProcessorValueTreeState;
     std::array<std::unique_ptr<State::SliderAttachment>,44> sliderAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> curveAttachments;
-    std::array<std::unique_ptr<State::ButtonAttachment>,3> retrigAttachments;
+    std::array<std::unique_ptr<State::SliderAttachment>,3> retrigAttachments;
     std::unique_ptr<State::SliderAttachment> voiceCountAttachment;
     std::array<std::unique_ptr<State::SliderAttachment>,3> levelAttachments;
     std::array<std::unique_ptr<State::SliderAttachment>,3> octaveAttachments;

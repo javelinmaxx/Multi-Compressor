@@ -120,13 +120,14 @@ struct QinSynthEditorTestAccess
     {
         for(const juce::TextButton* button:{&editor.oscillatorTabs[0],&editor.envelopeTabs[0],
                                              &editor.fxTabs[0],&editor.noiseButton,
-                                             &editor.tuneButton,&editor.syncButton,
-                                             static_cast<const juce::TextButton*>(&editor.retrig[0])})
+                                             &editor.tuneButton,&editor.syncButton})
             if(button->findColour(juce::TextButton::buttonColourId)!=juce::Colour(0xffe8edf0)
                || button->findColour(juce::TextButton::buttonOnColourId)!=juce::Colour(0xffe8a4af))
                 return false;
-        return editor.retrig[0].getClickingTogglesState()
-            && editor.retrig[0].getWidth()==68
+        return editor.retrig[0].getSliderStyle()==juce::Slider::RotaryVerticalDrag
+            && editor.retrig[0].getReadoutText()=="RETRIG OFF"
+            && editor.retrig[0].getWidth()==85
+            && editor.retrig[0].getHeight()==editor.octaveDisplays[0].getHeight()
             && editor.oscillatorTabs[0].getWidth()==82
             && editor.presetMenuButton.getWidth()==40
             && editor.transformerButton.getWidth()==72;
@@ -153,7 +154,25 @@ struct QinSynthEditorTestAccess
     static qin::WavePosition wavePosition(const QinSynthEditor& editor,int index)
     { return editor.waves[size_t(index)].getPosition(); }
     static void setRetrig(QinSynthEditor& editor,int index,bool enabled)
-    { editor.retrig[size_t(index)].setToggleState(enabled,juce::sendNotificationSync); }
+    { editor.retrig[size_t(index)].setValue(enabled ? 1 : 0,juce::sendNotificationSync); }
+    static juce::String retrigReadout(const QinSynthEditor& editor,int index)
+    { return editor.retrig[size_t(index)].getReadoutText(); }
+    static void dragRetrig(QinSynthEditor& editor,int index,int dy)
+    {
+        auto& slider=editor.retrig[size_t(index)];
+        const juce::Point<float> start{slider.getWidth()*.5f,slider.getHeight()*.5f};
+        const auto end=start.translated(0.f,float(dy));
+        const auto now=juce::Time::getCurrentTime();
+        auto makeEvent=[&](juce::Point<float> point,bool dragged)
+        {
+            return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),point,
+                juce::ModifierKeys::leftButtonModifier,1.f,0.f,0.f,0.f,0.f,
+                &slider,&slider,now,start,now,1,dragged);
+        };
+        slider.mouseDown(makeEvent(start,false));
+        slider.mouseDrag(makeEvent(end,true));
+        slider.mouseUp(makeEvent(end,true));
+    }
     static void setPhaseStart(QinSynthEditor& editor,int index,float position)
     {
         auto& line=editor.phaseStartLines[size_t(index)];
@@ -186,8 +205,8 @@ struct QinSynthEditorTestAccess
         && editor.dutySliders[0].getRight()<editor.waves[0].getX()
         && editor.dutySliders[0].getHeight()==editor.sliders[2].getHeight()
         && editor.levelDisplays[0].getRight()<editor.fineDisplays[0].getX()
-        && editor.retrig[0].getButtonText()=="RETRIG"
-        && editor.retrig[0].getHeight()<=30; }
+        && editor.retrig[0].getReadoutText().startsWith("RETRIG ")
+        && editor.retrig[0].getHeight()==editor.octaveDisplays[0].getHeight(); }
     static bool presetHeaderLayout(const QinSynthEditor& editor)
     {
         return editor.presetMenuButton.getX()>editor.titleHint.getRight()
@@ -1923,6 +1942,16 @@ int main(int argc,char** argv)
             QinSynthEditorTestAccess::setVoiceCount(editor,4);
             QinSynthEditorTestAccess::setWave(editor,1,{.75f,.5f});
             QinSynthEditorTestAccess::setRetrig(editor,2,true);
+            QinSynthEditorTestAccess::dragRetrig(editor,0,-35);
+            if(preview.parameters.getRawParameterValue("osc1Retrig")->load()<.5f
+               || QinSynthEditorTestAccess::retrigReadout(editor,0)!="RETRIG ON")
+                throw std::runtime_error("Dragging the Retrig readout up must enable the oscillator parameter");
+            QinSynthEditorTestAccess::dragRetrig(editor,0,35);
+            if(preview.parameters.getRawParameterValue("osc1Retrig")->load()>.5f)
+                throw std::runtime_error("Dragging the Retrig readout down must disable the oscillator parameter");
+            QinSynthEditorTestAccess::dragRetrig(editor,0,0);
+            if(preview.parameters.getRawParameterValue("osc1Retrig")->load()>.5f)
+                throw std::runtime_error("Clicking the Retrig readout must leave its value unchanged");
             QinSynthEditorTestAccess::setPhaseStart(editor,2,.375f);
             QinSynthEditorTestAccess::setPhaseStart(editor,0,.35f);
             if(std::abs(preview.parameters.getRawParameterValue("voiceCount")->load()-4)>1.e-6

@@ -243,6 +243,7 @@ QinVoiceSlider::QinVoiceSlider()
 juce::String QinVoiceSlider::getReadoutText() const
 {
     if(prefix=="LEVEL") return prefix+" "+gainDecibels(getValue());
+    if(prefix=="RETRIG") return prefix+(getValue()>=.5 ? " ON" : " OFF");
     auto number=decimalPlaces>0 ? juce::String(getValue(),decimalPlaces)
         : juce::String(juce::roundToInt(getValue()));
     if(showPositiveSign && getValue()>0) number="+"+number;
@@ -254,21 +255,10 @@ void QinVoiceSlider::paint(juce::Graphics& g)
     const auto area=getLocalBounds().toFloat().reduced(1);
     g.setColour(stageStyle::grid);
     g.drawRoundedRectangle(area,4,1);
-    g.setColour(suffix=="VOICES" ? plotRed : secondaryRed);
+    g.setColour(prefix=="RETRIG" ? (getValue()>=.5 ? buttonActive : buttonIdle)
+                              : suffix=="VOICES" ? plotRed : secondaryRed);
     g.setFont(juce::FontOptions(prefix.isEmpty() ? 12.f : prefix=="LEVEL" ? 11.f : 10.f).withStyle("bold"));
     g.drawText(getReadoutText(),getLocalBounds(),juce::Justification::centred);
-}
-void QinRetrigButton::paintButton(juce::Graphics& g,bool highlighted,bool down)
-{
-    const auto area=getLocalBounds().toFloat().reduced(1);
-    g.setColour(stageStyle::inset);
-    g.fillRoundedRectangle(area,4);
-    g.setColour(stageStyle::grid);
-    g.drawRoundedRectangle(area,4,1);
-    const auto textColour=getToggleState() ? buttonActive : buttonIdle;
-    g.setColour(highlighted || down ? textColour.brighter(.12f) : textColour);
-    g.setFont(juce::FontOptions(10.f).withStyle("bold"));
-    g.drawText(getButtonText(),getLocalBounds(),juce::Justification::centred);
 }
 QinWavePad::QinWavePad()
 {
@@ -1057,13 +1047,11 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         wave.setTooltip("Drag within the square to blend oscillator "+juce::String(int(i)+1)+" between saw, pulse, triangle, and sine waves.");
         label.setText("WAVE",juce::dontSendNotification); label.setFont(juce::FontOptions(9.f));
         label.setJustificationType(juce::Justification::centred); label.setColour(juce::Label::textColourId,secondaryRed);
-        retrigger.setButtonText("RETRIG");
-        retrigger.setClickingTogglesState(true);
-        retrigger.setColour(juce::TextButton::buttonColourId,buttonIdle);
-        retrigger.setColour(juce::TextButton::buttonOnColourId,buttonActive);
-        retrigger.setColour(juce::TextButton::textColourOffId,buttonInk);
-        retrigger.setColour(juce::TextButton::textColourOnId,buttonInk);
-        retrigger.setTooltip("Restarts this oscillator's waveform phase at each note onset when enabled.");
+        retrigger.setRange(0,1,1);
+        retrigger.setSuffix("");
+        retrigger.setReadoutFormat("RETRIG",0,false);
+        retrigger.setMouseDragSensitivity(40);
+        retrigger.setTooltip("Drag up to enable phase retriggering at note onset or down to disable it.");
         addAndMakeVisible(wave); addAndMakeVisible(label); addAndMakeVisible(retrigger);
         addAndMakeVisible(phaseLine);
         const auto prefix="osc"+juce::String(int(i)+1);
@@ -1092,7 +1080,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
             if(int(i)==currentOscillator)
                 repaint(editorScaling::repaintArea(*this,designWidth,designHeight,{oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight}));
         };
-        retrigAttachments[i]=std::make_unique<State::ButtonAttachment>(synth.parameters,"osc"+juce::String(int(i)+1)+"Retrig",retrig[i]);
+        retrigAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,"osc"+juce::String(int(i)+1)+"Retrig",retrig[i]);
     }
     for(const auto* option:{"Bypass","TB-303 ladder","Sallen-Key 18 dB","Digital 12 dB","Digital 24 dB"})
         filterType.addItem(option,filterType.getNumItems()+1);
@@ -1522,7 +1510,7 @@ void QinSynthEditor::resized()
         dutyLabels[size_t(i)].setBounds(218,185,86,15);
         dutySliders[size_t(i)].setBounds(218,200,86,65);
         phaseStartLines[size_t(i)].setBounds(oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight);
-        setCompactButtonBounds(retrig[size_t(i)],333,139,85,26);
+        retrig[size_t(i)].setBounds(333,139,85,26);
         levelDisplays[size_t(i)].setBounds(34,139,105,26);
         fineDisplays[size_t(i)].setBounds(143,139,102,26);
         octaveDisplays[size_t(i)].setBounds(249,139,78,26);
