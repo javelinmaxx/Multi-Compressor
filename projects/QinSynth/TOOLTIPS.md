@@ -3,6 +3,10 @@
 | Control | Hint |
 | --- | --- |
 | Plugin title | Developer: J-Sonic Team; Year: 2026; Version: 0.7.5 |
+| Preset Menu | Opens factory and saved presets, with commands to save or delete your own presets. |
+| Preset Name | Shows the current preset name saved with this project. |
+| Previous Preset | Loads the previous preset in the list. |
+| Next Preset | Loads the next preset in the list. |
 | OSC 1/2/3 tabs | Opens the selected oscillator in the OSC panel. |
 | Voices | Drag up or down to set the maximum number of simultaneous notes from one to sixteen. |
 | TUNE | Opens the custom tuning table and A4 reference controls. |

@@ -18,7 +18,7 @@ juce_add_plugin(QinSynth
     IS_SYNTH TRUE NEEDS_MIDI_INPUT TRUE NEEDS_MIDI_OUTPUT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE NEEDS_WEB_BROWSER FALSE NEEDS_CURL FALSE
     VST3_CATEGORIES Instrument Synth)
-target_sources(QinSynth PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp
+target_sources(QinSynth PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/PresetManager.cpp
     ../LanReverb/Source/ReverbEngine.cpp ../StagePluginStyle.cpp)
 target_compile_features(QinSynth PUBLIC cxx_std_17)
 target_compile_definitions(QinSynth PUBLIC

@@ -1,5 +1,6 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "PresetManager.h"
 #include "../../StagePluginStyle.h"
 #include "../../PluginGpuRenderer.h"
 #include "../../EditorTooltips.h"
@@ -163,7 +164,13 @@ private:
     void updateEnvelopeTimePresentation();
     void updatePlayAvailability();
     void updateTuningLabels();
+    void refreshPresetName();
+    void showPresetMenu();
+    void stepPreset(int direction);
+    void promptSavePreset();
     QinSynthProcessor& processor;
+    QinPresetManager presets;
+    uint32_t lastPresetStateEpoch=0;
     int currentOscillator=0, currentEnvelope=0, currentFxSection=0;
     bool lastTimesFive=false, lastPolyLegato=false, lastVerbSync=false;
     bool resonanceModulated=false;
@@ -176,6 +183,8 @@ private:
     pluginGpu::Renderer gpu;
     juce::TooltipWindow tooltipWindow {this};
     editorTooltips::TitleHint titleHint {JucePlugin_VersionString};
+    juce::TextButton presetMenuButton {"MENU"},presetPreviousButton {"<"},presetNextButton {">"};
+    juce::Label presetNameLabel;
     std::array<juce::TextButton,3> oscillatorTabs, envelopeTabs;
     std::array<juce::TextButton,2> fxTabs;
     juce::TextButton noiseButton {"N"};

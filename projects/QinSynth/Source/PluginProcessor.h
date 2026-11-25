@@ -57,6 +57,7 @@ public:
     LiveModulation getLiveModulation() const noexcept
     { return {liveModTarget.load(std::memory_order_acquire),liveModNormalized.load(std::memory_order_relaxed)}; }
     int getActiveVoiceCount() const noexcept { return activeVoiceCount.load(std::memory_order_relaxed); }
+    uint32_t getPresetStateEpoch() const noexcept { return presetStateEpoch.load(std::memory_order_acquire); }
     double getHostTempo() const noexcept { return hostTempo.load(std::memory_order_relaxed); }
     juce::AudioProcessorValueTreeState parameters;
 private:
@@ -152,6 +153,7 @@ private:
     void stopVoiceWorker();
     void voiceWorkerLoop();
     std::array<Voice,maxVoices> voices {};
+    std::atomic<uint32_t> presetStateEpoch {0};
     std::vector<SharedFrame> sharedFrames;
     std::array<std::vector<VoiceFrame>,maxVoices> voiceFrames;
     juce::WaitableEvent voiceWorkerWake;

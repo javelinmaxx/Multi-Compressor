@@ -1,6 +1,7 @@
 #include "../Source/PluginProcessor.h"
 #include "../../ParameterRetentionTests.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/PresetManager.h"
 #include "../Source/WaveformSync.h"
 #include "../Source/UnisonDetune.h"
 #include "../Source/CurveLookup.h"
@@ -177,9 +178,21 @@ struct QinSynthEditorTestAccess
         && editor.phaseStartLines[0].getWidth()==168
         && editor.dutySliders[0].getX()>editor.phaseStartLines[0].getRight()
         && editor.dutySliders[0].getRight()<editor.waves[0].getX()
+        && editor.dutySliders[0].getHeight()==editor.sliders[2].getHeight()
         && editor.levelDisplays[0].getRight()<editor.fineDisplays[0].getX()
         && editor.retrig[0].getButtonText()=="RETRIG"
         && editor.retrig[0].getHeight()<=30; }
+    static bool presetHeaderLayout(const QinSynthEditor& editor)
+    {
+        return editor.presetMenuButton.getX()>editor.titleHint.getRight()
+            && editor.presetMenuButton.getRight()<editor.presetNameLabel.getX()
+            && editor.presetNameLabel.getRight()<editor.presetPreviousButton.getX()
+            && editor.presetPreviousButton.getRight()<editor.presetNextButton.getX()
+            && editor.presetNextButton.getRight()<editor.tuneButton.getX()
+            && editor.presetNameLabel.getText()=="Init";
+    }
+    static void stepPreset(QinSynthEditor& editor,int direction) { editor.stepPreset(direction); }
+    static juce::String presetName(const QinSynthEditor& editor) { return editor.presetNameLabel.getText(); }
     static bool fineReadoutLayout(const QinSynthEditor& editor,int osc)
     {
         const auto& fine=editor.fineDisplays[size_t(osc)];
@@ -442,6 +455,42 @@ int main(int argc,char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        {
+            const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory)
+                .getChildFile("qin-preset-test-"+juce::Uuid().toString());
+            struct Cleanup { juce::File file; ~Cleanup() { file.deleteRecursively(); } } cleanup {folder};
+            auto instrument=std::make_unique<QinSynthProcessor>();
+            QinPresetManager manager(*instrument,folder);
+            const auto factory=manager.entries();
+            if(factory.size()!=5 || manager.currentName()!="Init"
+               || manager.currentIndex(factory)!=0)
+                throw std::runtime_error("Preset browser must start on Init with factory sounds");
+            set(*instrument,"osc1Duty",88);
+            if(!manager.load(factory[2]) || manager.currentName()!="Warm Pad"
+               || std::abs(instrument->parameters.getRawParameterValue("attack")->load()-1.5f)>.01f
+               || std::abs(instrument->parameters.getRawParameterValue("osc1Duty")->load()-50.f)>.01f)
+                throw std::runtime_error("Factory presets must reset old settings before applying a new sound");
+            set(*instrument,"osc1Duty",73);
+            if(!manager.saveAs("Test Sound") || manager.saveAs("Test Sound")
+               || !manager.currentIsUser() || manager.currentName()!="Test Sound")
+                throw std::runtime_error("User presets must save and reject accidental overwrites");
+            const auto all=manager.entries();
+            if(all.size()!=6 || manager.currentIndex(all)!=5
+               || !manager.load(factory[0]) || !manager.load(all[5])
+               || std::abs(instrument->parameters.getRawParameterValue("osc1Duty")->load()-73.f)>.01f)
+                throw std::runtime_error("Preset browser must reload user sounds and their parameters");
+            juce::MemoryBlock session;
+            instrument->getStateInformation(session);
+            auto restored=std::make_unique<QinSynthProcessor>();
+            restored->setStateInformation(session.getData(),int(session.getSize()));
+            QinPresetManager restoredManager(*restored,folder);
+            if(restoredManager.currentName()!="Test Sound" || restoredManager.currentIndex(all)!=5
+               || std::abs(restored->parameters.getRawParameterValue("osc1Duty")->load()-73.f)>.01f)
+                throw std::runtime_error("Preset names and sounds must survive host session restoration");
+            if(!manager.deleteCurrentUser() || manager.currentName()!="Custom"
+               || manager.entries().size()!=5)
+                throw std::runtime_error("Deleting a user preset must retain the current sound");
+        }
         {
             auto tunedOwner=std::make_unique<QinSynthProcessor>();
             auto& tuned=*tunedOwner;
@@ -1747,10 +1796,28 @@ int main(int argc,char** argv)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,1)
                || !QinSynthEditorTestAccess::wavePadEnabled(editor,2)
                || !QinSynthEditorTestAccess::oscillatorLayout(editor)
+               || !QinSynthEditorTestAccess::presetHeaderLayout(editor)
                || !QinSynthEditorTestAccess::fmGridLayout(editor))
                 throw std::runtime_error("Polyphony readout and oscillator pads must be available");
             if(!QinSynthEditorTestAccess::compactDriveLayout(editor))
                 throw std::runtime_error("Drive input cuts must fit below Mix");
+            QinSynthEditorTestAccess::stepPreset(editor,1);
+            if(QinSynthEditorTestAccess::presetName(editor)!="Glass Keys"
+               || std::abs(preview.parameters.getRawParameterValue("osc1WaveX")->load()-100.f)>.01f)
+                throw std::runtime_error("Preset next arrow must load and name the next sound");
+            QinSynthEditorTestAccess::stepPreset(editor,-1);
+            if(QinSynthEditorTestAccess::presetName(editor)!="Init"
+               || std::abs(preview.parameters.getRawParameterValue("osc1WaveX")->load())>.01f)
+                throw std::runtime_error("Preset previous arrow must restore Init");
+            QinSynthEditorTestAccess::stepPreset(editor,1);
+            juce::MemoryBlock presetSession;
+            preview.getStateInformation(presetSession);
+            QinSynthEditorTestAccess::stepPreset(editor,-1);
+            preview.setStateInformation(presetSession.getData(),int(presetSession.getSize()));
+            QinSynthEditorTestAccess::tick(editor);
+            if(QinSynthEditorTestAccess::presetName(editor)!="Glass Keys")
+                throw std::runtime_error("Preset name must refresh when the host restores a session");
+            QinSynthEditorTestAccess::stepPreset(editor,-1);
             if(!QinSynthEditorTestAccess::driveCutsOffText(editor))
                 throw std::runtime_error("Drive input cuts must show OFF at neutral endpoints");
             if(!QinSynthEditorTestAccess::fmVisible(editor,0)

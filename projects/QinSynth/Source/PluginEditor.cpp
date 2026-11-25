@@ -496,13 +496,33 @@ void QinLookAndFeel::drawLinearSlider(juce::Graphics& g,int x,int y,int width,in
     g.setColour(accentColour); g.fillRoundedRectangle(position-3.f,center-6.f,6.f,12.f,2.f);
 }
 QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
-    : AudioProcessorEditor(&synth), processor(synth)
+    : AudioProcessorEditor(&synth), processor(synth),presets(synth)
 {
     setOpaque(true); look.accentColour=accent; look.markColour=panelInk;
     look.trackColour=juce::Colour(0xff6f7c89);
     look.dialTopColour=juce::Colour(0xffe8edf0);
     look.dialBottomColour=juce::Colour(0xff8d9aa7); setLookAndFeel(&look);
     addAndMakeVisible(titleHint);
+    for(auto* button:{&presetMenuButton,&presetPreviousButton,&presetNextButton})
+    {
+        button->setColour(juce::TextButton::buttonColourId,buttonIdle);
+        button->setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
+        addAndMakeVisible(*button);
+    }
+    presetMenuButton.setTooltip("Opens factory and saved presets, with commands to save or delete your own presets.");
+    presetPreviousButton.setTooltip("Loads the previous preset in the list.");
+    presetNextButton.setTooltip("Loads the next preset in the list.");
+    presetNameLabel.setJustificationType(juce::Justification::centred);
+    presetNameLabel.setFont(juce::FontOptions(12.f).withStyle("bold"));
+    presetNameLabel.setColour(juce::Label::backgroundColourId,stageStyle::inset);
+    presetNameLabel.setColour(juce::Label::textColourId,curveBlue);
+    presetNameLabel.setColour(juce::Label::outlineColourId,stageStyle::grid);
+    presetNameLabel.setTooltip("Shows the current preset name saved with this project.");
+    addAndMakeVisible(presetNameLabel);
+    presetMenuButton.onClick=[this] { showPresetMenu(); };
+    presetPreviousButton.onClick=[this] { stepPreset(-1); };
+    presetNextButton.onClick=[this] { stepPreset(1); };
+    refreshPresetName();
     addAndMakeVisible(voiceCount);
     voiceCountAttachment=std::make_unique<State::SliderAttachment>(synth.parameters,"voiceCount",voiceCount);
     for(size_t i=0;i<octaveDisplays.size();++i)
@@ -1192,6 +1212,7 @@ void QinSynthEditor::updateDrivePreview()
 }
 void QinSynthEditor::timerCallback()
 {
+    if(processor.getPresetStateEpoch()!=lastPresetStateEpoch) refreshPresetName();
     updateDriveCutRings();
     polyLegatoButton.advance(1.f/40.f);
     for(auto& button:timesFiveButtons) button.advance(1.f/40.f);
@@ -1327,6 +1348,89 @@ void QinSynthEditor::showEnvelope(int index)
 { currentEnvelope=juce::jlimit(0,2,index); for(size_t i=0;i<3;++i) envelopeTabs[i].setToggleState(int(i)==currentEnvelope,juce::dontSendNotification); updateVisibility(); updateEnvelopeTimePresentation(); repaint(); }
 void QinSynthEditor::showFxSection(int index)
 { currentFxSection=juce::jlimit(0,1,index); for(size_t i=0;i<2;++i) fxTabs[i].setToggleState(int(i)==currentFxSection,juce::dontSendNotification); updateVisibility(); repaint(); }
+void QinSynthEditor::refreshPresetName()
+{
+    const auto name=presets.currentName();
+    if(presetNameLabel.getText()!=name) presetNameLabel.setText(name,juce::dontSendNotification);
+    lastPresetStateEpoch=processor.getPresetStateEpoch();
+}
+void QinSynthEditor::stepPreset(int direction)
+{
+    const auto list=presets.entries();
+    if(list.empty()) return;
+    const auto current=presets.currentIndex(list);
+    const auto next=current<0 ? (direction>0 ? 0 : int(list.size())-1)
+        : (current+direction+int(list.size()))%int(list.size());
+    if(presets.load(list[size_t(next)])) { refreshPresetName(); repaint(); }
+}
+void QinSynthEditor::promptSavePreset()
+{
+    auto* dialog=new juce::AlertWindow("Save Qin preset","Choose a name for this sound.",
+                                       juce::AlertWindow::NoIcon);
+    dialog->addTextEditor("name",presets.currentIsUser() ? presets.currentName() : "New Preset","Name");
+    dialog->addButton("Save",1);
+    dialog->addButton("Cancel",0);
+    const juce::Component::SafePointer<QinSynthEditor> safe(this);
+    dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog](int result)
+    {
+        if(result!=1 || safe==nullptr) return;
+        if(safe->presets.saveAs(dialog->getTextEditorContents("name"))) safe->refreshPresetName();
+        else juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Preset not saved",
+            "Choose a new name and make sure the preset folder is writable.","OK",safe.getComponent());
+    }),true);
+}
+void QinSynthEditor::showPresetMenu()
+{
+    const auto list=presets.entries();
+    const auto selected=presets.currentIndex(list);
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Factory presets");
+    for(size_t index=0;index<list.size();++index)
+    {
+        if(index==QinPresetManager::factoryPresetCount)
+        { menu.addSeparator(); menu.addSectionHeader("User presets"); }
+        menu.addItem(int(index)+1,list[index].name,true,int(index)==selected);
+    }
+    const auto saveId=int(list.size())+1;
+    const auto overwriteId=saveId+1;
+    const auto deleteId=saveId+2;
+    menu.addSeparator();
+    menu.addItem(saveId,"Save As...");
+    if(presets.currentIsUser())
+    {
+        menu.addItem(overwriteId,"Overwrite Current Preset");
+        menu.addItem(deleteId,"Delete Current Preset");
+    }
+    const juce::Component::SafePointer<QinSynthEditor> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&presetMenuButton),
+        [safe,list,saveId,overwriteId,deleteId](int result)
+        {
+            if(safe==nullptr || result==0) return;
+            if(result>=1 && result<=int(list.size()))
+            {
+                if(safe->presets.load(list[size_t(result-1)])) { safe->refreshPresetName(); safe->repaint(); }
+                return;
+            }
+            if(result==saveId) { safe->promptSavePreset(); return; }
+            if(result==overwriteId)
+            {
+                if(safe->presets.saveAs(safe->presets.currentName(),true)) safe->refreshPresetName();
+                else juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                    "Preset not saved","The preset folder is not writable.","OK",safe.getComponent());
+                return;
+            }
+            if(result==deleteId)
+            {
+                juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,"Delete Qin preset",
+                    "Delete this saved preset?", "Delete", "Cancel",safe.getComponent(),
+                    juce::ModalCallbackFunction::create([safe](int choice)
+                    {
+                        if(choice==1 && safe!=nullptr && safe->presets.deleteCurrentUser())
+                            safe->refreshPresetName();
+                    }));
+            }
+        });
+}
 void QinSynthEditor::updateVisibility()
 {
     for(int osc=0;osc<3;++osc)
@@ -1371,7 +1475,11 @@ void QinSynthEditor::updateVisibility()
 }
 void QinSynthEditor::resized()
 {
-    titleHint.setBounds(18,29,360,38);
+    titleHint.setBounds(18,29,195,38);
+    presetMenuButton.setBounds(226,34,50,27);
+    presetNameLabel.setBounds(281,34,204,27);
+    presetPreviousButton.setBounds(490,34,31,27);
+    presetNextButton.setBounds(527,34,31,27);
     tuneButton.setBounds(574,34,74,27);
     tuningPanel.setBounds(430,78,472,416);
     updateTuningLabels();
@@ -1388,8 +1496,8 @@ void QinSynthEditor::resized()
         oscillatorTabs[size_t(i)].setBounds(31+i*109,101,103,27);
         envelopeTabs[size_t(i)].setBounds(455+i*55,413,52,27);
         waveLabels[size_t(i)].setBounds(318,164,96,11); waves[size_t(i)].setBounds(318,175,96,96);
-        dutyLabels[size_t(i)].setBounds(218,164,86,11);
-        dutySliders[size_t(i)].setBounds(218,175,86,96);
+        dutyLabels[size_t(i)].setBounds(218,185,86,15);
+        dutySliders[size_t(i)].setBounds(218,200,86,65);
         phaseStartLines[size_t(i)].setBounds(oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight);
         retrig[size_t(i)].setBounds(333,139,85,26);
         levelDisplays[size_t(i)].setBounds(34,139,105,26);
@@ -1465,6 +1573,10 @@ void QinSynthEditor::resized()
     labels[38].setBounds(706,145,42,14);
     const auto scale=editorScaling::transform(*this,designWidth,designHeight);
     titleHint.setTransform(scale);
+    presetMenuButton.setTransform(scale);
+    presetNameLabel.setTransform(scale);
+    presetPreviousButton.setTransform(scale);
+    presetNextButton.setTransform(scale);
     tuneButton.setTransform(scale);
     tuningPanel.setTransform(scale);
     syncButton.setTransform(scale); verbNoteSlider.setTransform(scale);

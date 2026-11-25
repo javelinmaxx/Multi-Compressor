@@ -200,6 +200,8 @@ QinSynthProcessor::QinSynthProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output",juce::AudioChannelSet::stereo(),true)),
       parameters(*this,nullptr,"QinSynthState",layout())
 {
+    parameters.state.setProperty("qinPresetName","Init",nullptr);
+    parameters.state.setProperty("qinPresetKind","factory",nullptr);
     for(auto& point:driveScopeInput) point.store(0,std::memory_order_relaxed);
     for(auto& point:driveScopeOutput) point.store(0,std::memory_order_relaxed);
 }
@@ -312,7 +314,14 @@ void QinSynthProcessor::prepareToPlay(double rate,int expectedBlockSize)
 void QinSynthProcessor::getStateInformation(juce::MemoryBlock& data)
 { if(auto xml=parameters.copyState().createXml()) copyXmlToBinary(*xml,data); }
 void QinSynthProcessor::setStateInformation(const void* data,int size)
-{ if(auto xml=getXmlFromBinary(data,size)) if(xml->hasTagName(parameters.state.getType())) parameters.replaceState(juce::ValueTree::fromXml(*xml)); }
+{
+    if(auto xml=getXmlFromBinary(data,size))
+        if(xml->hasTagName(parameters.state.getType()))
+        {
+            parameters.replaceState(juce::ValueTree::fromXml(*xml));
+            presetStateEpoch.fetch_add(1,std::memory_order_release);
+        }
+}
 QinSynthProcessor::DriveScope QinSynthProcessor::getDriveScope() const noexcept
 {
     DriveScope result;
