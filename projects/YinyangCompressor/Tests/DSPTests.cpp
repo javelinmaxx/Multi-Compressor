@@ -163,7 +163,13 @@ int main()
     for (int m = 0; m < 4; ++m)
         check (std::abs (steadyGain (static_cast<Model> (m), 1) - 1) < 0.0001f, "1:1 is unity");
 
-    const auto transientTrace = [] (float variTransient, bool releasePhase)
+    check (Compressor::variTransientWeight (2.99f) == 0.0f
+           && Compressor::variTransientWeight (3.0f) == 0.0f
+           && std::abs (Compressor::variTransientWeight (4.5f) - 0.5f) < 1.e-6f
+           && Compressor::variTransientWeight (6.0f) == 1.0f
+           && Compressor::variTransientWeight (12.0f) == 1.0f,
+           "VariTransient follows detector overshoot from 3 to 6 dB above threshold");
+    const auto transientTrace = [] (float variTransient, bool releasePhase, float highDb, float lowDb)
     {
         Compressor dsp;
         dsp.prepare (48000);
@@ -186,12 +192,12 @@ int main()
                 trace.push_back (dsp.reductionDb());
             }
         };
-        if (releasePhase) render (-6, 500);
-        render (releasePhase ? -36.0f : -6.0f, 500);
+        if (releasePhase) render (highDb, 500);
+        render (releasePhase ? lowDb : highDb, 500);
         return trace;
     };
-    const auto attackOff = transientTrace (0, false);
-    const auto attackMax = transientTrace (400, false);
+    const auto attackOff = transientTrace (0, false, -6.0f, -36.0f);
+    const auto attackMax = transientTrace (400, false, -6.0f, -36.0f);
     const auto attackEnd = attackOff.back();
     const auto crossing = [attackEnd] (const std::vector<float>& trace)
     {
@@ -200,18 +206,28 @@ int main()
         return trace.size();
     };
     check (crossing (attackMax) > crossing (attackOff) * 2,
-           "VariTransient at 400% slows attack after gain reduction passes 3 dB");
-    const auto releaseOff = transientTrace (0, true);
-    const auto releaseMax = transientTrace (400, true);
+           "VariTransient at 400% slows attack immediately above 6 dB detector overshoot");
+    const auto belowOff = transientTrace (0, false, -16.0f, -36.0f);
+    const auto belowMax = transientTrace (400, false, -16.0f, -36.0f);
+    check (std::abs (belowOff.back() - belowMax.back()) < 0.001f,
+           "VariTransient remains inactive at steady overshoot below 3 dB even with gain reduction");
+    const auto releaseOff = transientTrace (0, true, -6.0f, -14.0f);
+    const auto releaseMax = transientTrace (400, true, -6.0f, -14.0f);
     const auto releaseDistance = [] (const std::vector<float>& trace)
     {
-        const auto peak = *std::max_element (trace.begin(), trace.end());
+        const auto start = trace[499], end = trace.back();
+        const auto halfway = end + (start - end) * 0.5f;
         for (size_t i = 500; i < trace.size(); ++i)
-            if (trace[i] <= peak * 0.1f) return i - 500;
+            if (trace[i] <= halfway) return i - 500;
         return trace.size() - 500;
     };
     check (releaseDistance (releaseMax) < releaseDistance (releaseOff) * 0.85,
-           "VariTransient at 400% shortens release as gain reduction clears");
+           "VariTransient at 400% shortens release while overshoot remains between 3 and 6 dB");
+    const auto belowReleaseOff = transientTrace (0, true, -6.0f, -36.0f);
+    const auto belowReleaseMax = transientTrace (400, true, -6.0f, -36.0f);
+    check (std::abs (static_cast<float> (releaseDistance (belowReleaseMax))
+                     / static_cast<float> (releaseDistance (belowReleaseOff)) - 1.0f) < 0.03f,
+           "VariTransient stops accelerating release when the detector falls below threshold");
     Parameters transientUp;
     transientUp.upward = true; transientUp.variTransient = 400;
     check (transientUp.variTransient == 400, "VariTransient range reaches 400% in upward mode");

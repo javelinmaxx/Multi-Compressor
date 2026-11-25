@@ -63,7 +63,7 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
         "Increases saturation in the enabled output transformer.",
         "Blends each channel's detector toward the louder channel's detector.",
         "Adds transformer asymmetry to increase even harmonics.",
-        "Slows attack and speeds release as Yang gain reduction increases.",
+        "Slows attack and speeds release when the detector is three to six decibels above Threshold.",
         "Boosts high frequencies in the sidechain to increase their compression sensitivity."
     };
     for (size_t i = 0; i < sliders.size(); ++i)

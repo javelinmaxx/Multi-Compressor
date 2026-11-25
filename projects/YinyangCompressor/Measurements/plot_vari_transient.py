@@ -72,7 +72,7 @@ fig.subplots_adjust(left=.075, right=.98, bottom=.13, top=.79, wspace=.22)
 fig.suptitle('06  /  VariTransient attack and release', x=.06, ha='left',
              fontsize=21, fontweight='bold', y=.96)
 fig.text(.06, .865,
-         'Measured production C++ DSP • 48 kHz • 4:1 • attack 10 ms • release 150 ms • 3 dB GR knee (3–6 dB)',
+         'Measured production C++ DSP • 48 kHz • 4:1 • attack 10 ms • release 150 ms • 3–6 dB detector overshoot transition',
          fontsize=9.5)
 for model, (name, color) in enumerate(zip(MODELS, COLORS)):
     for setting, (amount, label) in enumerate(SETTINGS):
@@ -94,16 +94,12 @@ setting_handles = [Line2D([0], [0], color='#333333', lw=2, linestyle='--', label
                    Line2D([0], [0], color='#333333', lw=2, linestyle='-', label='400%')]
 axes[0].legend(handles=model_handles, loc='lower right', fontsize=8, framealpha=.92)
 axes[1].legend(handles=setting_handles, title='VariTransient', loc='upper right', fontsize=8)
-axes[0].axhline(3, color='#777777', lw=1, linestyle=':', alpha=.8)
-axes[0].axhline(6, color='#777777', lw=1, linestyle=':', alpha=.8)
-axes[0].text(2, 3.15, '3 dB trigger', fontsize=8, color='#555555')
-axes[0].text(2, 6.15, '6 dB full effect', fontsize=8, color='#555555')
 axes[0].set(title='Attack after the upward step', xlabel='Time after step (ms)',
             ylabel='Gain reduction (dB)', xlim=(0, 150), ylim=(-.2, 10))
 axes[1].set(title='Recovery after the downward step', xlabel='Time after step (ms)',
             ylabel='Gain reduction (dB)', xlim=(0, 2400), ylim=(-.2, 10))
 fig.text(.06, .035,
-         'Solid: 400% (4× slower attack, up to ¼ release). Dashed: 0%. Upward compression disabled.',
+         'Solid: 400% (up to 4× slower attack). Below 3 dB detector overshoot, release uses its normal timing. Dashed: 0%.',
          fontsize=9)
 for ext in ('png', 'svg'):
     figure_path = OUT / f'06_vari_transient.{ext}'
@@ -127,6 +123,7 @@ metadata = {
     'sample_rate_hz': FS, 'threshold_dbfs': -18, 'ratio_control': 4,
     'attack_control_ms': 10, 'release_control_ms': 150, 'knee_db': 6,
     'vari_transient_percent': [0, 400], 'detector_hpf_hz': 0,
+    'vari_transient_overshoot_transition_db': [3, 6],
     'oversampling_factor': 4, 'latency_samples_removed': latency,
     'stimulus': 'DC step -36 dBFS to -6 dBFS at 0.1 s, back to -36 dBFS at 1.1 s',
     'dsp_sha256': {name: hashlib.sha256((HERE.parent / 'Source' / name).read_bytes()).hexdigest()

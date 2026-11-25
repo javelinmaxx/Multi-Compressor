@@ -61,9 +61,9 @@ four models through this branch; it does not EQ the audio output.
   Ratio control determines the below-threshold slope (for example, 4:1 raises
   a signal 3 dB for each 4 dB it falls below threshold). The Knee smooths the
   transition, and Attack/Release control the gain envelope.
-- **VariTransient:** scales attack and release according to current downward
-  gain reduction. It is inactive through 3 dB GR, then ramps smoothly across a
-  3 dB knee to full effect at 6 dB GR. At 400%, attack can reach 4× its set
+- **VariTransient:** scales attack and release according to the detector signal's
+  level above Threshold. It starts above 3 dB overshoot and ramps smoothly to
+  full effect at 6 dB overshoot. At 400%, attack can reach 4× its set
   time while release can fall to ¼; 0% leaves both times unchanged. It is
   inactive in Upward mode and defaults to 0%.
 - **Auto Gain:** estimates the static gain change at a −12 dBFS input from

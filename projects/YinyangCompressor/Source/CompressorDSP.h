@@ -87,6 +87,12 @@ public:
                         : slope * softKnee (over, knee);
     }
 
+    static float variTransientWeight (float overshootDb) noexcept
+    {
+        const auto position = std::clamp ((overshootDb - 3.0f) / 3.0f, 0.0f, 1.0f);
+        return position * position * (3.0f - 2.0f * position);
+    }
+
     void prepare (double newSampleRate) noexcept
     {
         // Ignore invalid host rates. Prepare filters once here so the audio
@@ -329,93 +335,93 @@ private:
             // remain alive through the fade, then stop until selected again.
             std::array<float, 2> combinedGain {}, reduction {};
             for (int ch = 0; ch < channelCount; ++ch)
-            for (size_t m = 0; m < states[0].size(); ++m)
             {
-                if (weights[m] <= 0.0f) continue;
                 const auto c = static_cast<size_t> (ch);
-                auto& s = states[c][m];
-                // Feedback senses the previous compressed sidechain sample, before
-                // makeup gain and transformer. This gives a causal one-sample loop.
-                // FET and optical use feed-forward input level. VCA and mu use
-                // their own previous gain-reduced detector value as feedback.
-                const auto feedbackMix = (m == 1 || m == 2) ? 1.0f - values[upward] : 0.0f;
-                const auto sensed = detector[c] + feedbackMix * (s.feedback - detector[c]);
-                s.energy = rmsCoefficient * s.energy + (1 - rmsCoefficient) * sensed * sensed;
-                // FET/VCA use peak level. Mu/optical use a 10 ms exponential
-                // mean-square detector, converted back to RMS amplitude.
-                const auto level = db ((m == 2 || m == 3) ? std::sqrt (s.energy) : sensed);
-                const auto over = level - values[threshold];
-                const auto ratioMaximum = values[upward] > 0.0f ? 2.0f : 20.0f;
-                float effectiveRatio = std::clamp (values[ratio], 1.0f, ratioMaximum);
-                if (m == 2)
+                // Use the pre-compression sidechain level, including HPF and
+                // stereo link, so feedback models share the same overshoot scale.
+                const auto transientWeight = values[variTransient] > 0.0f && values[upward] < 0.5f
+                    ? variTransientWeight (db (detector[c]) - values[threshold]) : 0.0f;
+                for (size_t m = 0; m < states[0].size(); ++m)
                 {
-                    // Mu ratio rises from 1:1 toward its maximum on the active
-                    // side of threshold: above for downward, below for upward.
-                    const auto activeOver = over * (1 - 2 * values[upward]);
-                    effectiveRatio = 1 + (effectiveRatio - 1)
-                                       * (1 - controlCurves.exp (-std::max (activeOver, 0.0f) / 12));
-                }
+                    if (weights[m] <= 0.0f) continue;
+                    auto& s = states[c][m];
+                    // Feedback senses the previous compressed sidechain sample, before
+                    // makeup gain and transformer. This gives a causal one-sample loop.
+                    // FET and optical use feed-forward input level. VCA and mu use
+                    // their own previous gain-reduced detector value as feedback.
+                    const auto feedbackMix = (m == 1 || m == 2) ? 1.0f - values[upward] : 0.0f;
+                    const auto sensed = detector[c] + feedbackMix * (s.feedback - detector[c]);
+                    s.energy = rmsCoefficient * s.energy + (1 - rmsCoefficient) * sensed * sensed;
+                    // FET/VCA use peak level. Mu/optical use a 10 ms exponential
+                    // mean-square detector, converted back to RMS amplitude.
+                    const auto level = db ((m == 2 || m == 3) ? std::sqrt (s.energy) : sensed);
+                    const auto over = level - values[threshold];
+                    const auto ratioMaximum = values[upward] > 0.0f ? 2.0f : 20.0f;
+                    float effectiveRatio = std::clamp (values[ratio], 1.0f, ratioMaximum);
+                    if (m == 2)
+                    {
+                        // Mu ratio rises from 1:1 toward its maximum on the active
+                        // side of threshold: above for downward, below for upward.
+                        const auto activeOver = over * (1 - 2 * values[upward]);
+                        effectiveRatio = 1 + (effectiveRatio - 1)
+                                           * (1 - controlCurves.exp (-std::max (activeOver, 0.0f) / 12));
+                    }
 
-                // Feed-forward curves use slope 1 - 1/R. Feedback curves use
-                // R - 1 to compensate for the level reduction returning through
-                // the detector; this keeps the steady-state ratio near R:1.
-                const auto slope = (m == 1 || m == 2) ? effectiveRatio - 1
-                                                                     : 1 - 1 / effectiveRatio;
-                const auto downward = std::clamp (slope * softKnee (over, values[knee]), 0.0f, 80.0f);
-                // Upward compression holds the above-threshold region at unity
-                // gain and raises quieter levels toward threshold with a
-                // below-threshold slope of 1/R. Negative reduction is gain.
-                const auto upwardSlope = 1 - 1 / effectiveRatio;
-                const auto upwardGain = std::max (-12.0f, -upwardSlope * softKnee (-over, values[knee]));
-                const auto desired = downward * (1 - values[upward]) + upwardGain * values[upward];
-                auto attack = attacks[m];
-                // Keep the discrete feedback loop stable at high ratios / low rates.
-                if (m == 1 || m == 2)
-                    // Bound the feedback attack coefficient for stability at
-                    // high ratios, where a one-sample loop can otherwise ring.
-                    attack = std::max (attack, 1 - 0.5f / effectiveRatio);
-                // Mu recovery gets slower as stored gain reduction deepens.
-                auto releaseExponent = m == 2 ? releaseLogs[m]/(1 + std::abs (s.reduction) * 0.06f)
-                                              : releaseLogs[m];
-                // VariTransient uses a 3 dB soft knee from 3 to 6 dB GR.
-                // At 400%, attack reaches 4x and release reaches 1/4x.
-                auto transientFactor = 1.0f;
-                if (values[upward] < 0.5f)
-                {
-                    const auto kneePosition = std::clamp ((std::abs (s.reduction) - 3.0f) / 3.0f, 0.0f, 1.0f);
-                    const auto grWeight = kneePosition * kneePosition * (3.0f - 2.0f * kneePosition);
-                    transientFactor += 3.0f * values[variTransient] * grWeight;
+                    // Feed-forward curves use slope 1 - 1/R. Feedback curves use
+                    // R - 1 to compensate for the level reduction returning through
+                    // the detector; this keeps the steady-state ratio near R:1.
+                    const auto slope = (m == 1 || m == 2) ? effectiveRatio - 1
+                                                                         : 1 - 1 / effectiveRatio;
+                    const auto downward = std::clamp (slope * softKnee (over, values[knee]), 0.0f, 80.0f);
+                    // Upward compression holds the above-threshold region at unity
+                    // gain and raises quieter levels toward threshold with a
+                    // below-threshold slope of 1/R. Negative reduction is gain.
+                    const auto upwardSlope = 1 - 1 / effectiveRatio;
+                    const auto upwardGain = std::max (-12.0f, -upwardSlope * softKnee (-over, values[knee]));
+                    const auto desired = downward * (1 - values[upward]) + upwardGain * values[upward];
+                    auto attack = attacks[m];
+                    // Keep the discrete feedback loop stable at high ratios / low rates.
+                    if (m == 1 || m == 2)
+                        // Bound the feedback attack coefficient for stability at
+                        // high ratios, where a one-sample loop can otherwise ring.
+                        attack = std::max (attack, 1 - 0.5f / effectiveRatio);
+                    // Mu recovery gets slower as stored gain reduction deepens.
+                    auto releaseExponent = m == 2 ? releaseLogs[m]/(1 + std::abs (s.reduction) * 0.06f)
+                                                  : releaseLogs[m];
+                    // VariTransient ramps between 3 and 6 dB of detector overshoot.
+                    // At 400%, attack reaches 4x and release reaches 1/4x.
+                    const auto transientFactor = 1.0f + 3.0f * values[variTransient] * transientWeight;
+                    if (transientFactor > 1.0f)
+                    {
+                        attack = controlCurves.exp ((m == 1 || m == 2 ? controlCurves.log(attack) : attackLogs[m]) / transientFactor);
+                        releaseExponent *= transientFactor;
+                    }
+                    const auto release = m != 2 && transientFactor <= 1.0f
+                        ? releases[m] : controlCurves.exp (releaseExponent);
+                    // In upward mode the control state goes negative as gain rises,
+                    // so attack/release must compare gain magnitude, not sign.
+                    const auto a = std::abs (desired) > std::abs (s.reduction) ? attack : release;
+                    s.reduction = desired + a * (s.reduction - desired);
+                    auto gr = s.reduction;
+                    if (m == 3)
+                    {
+                        // Optical combines its main envelope with a slower memory:
+                        // the latter recovers at six times the Release setting.
+                        const auto slowAttack = transientFactor > 1.0f
+                            ? controlCurves.exp (attackLogs[m] / transientFactor) : attacks[m];
+                        const auto slowRecovery = transientFactor > 1.0f
+                            ? controlCurves.exp (slowReleaseLog * transientFactor) : slowRelease;
+                        const auto slow = std::abs (desired) > std::abs (s.memory) ? slowAttack : slowRecovery;
+                        s.memory = desired + slow * (s.memory - desired);
+                        gr = 0.65f * gr + 0.35f * s.memory;
+                    }
+                    const auto g = gain (-gr);
+                    // Store this model's previous compressed detector level for
+                    // the next feedback-model sample. Makeup gain is not in the loop.
+                    s.feedback = detector[c] * g;
+                    combinedGain[c] += weights[m] * g;
+                    reduction[c] += weights[m] * gr;
                 }
-                if (transientFactor > 1.0f)
-                {
-                    attack = controlCurves.exp ((m == 1 || m == 2 ? controlCurves.log(attack) : attackLogs[m]) / transientFactor);
-                    releaseExponent *= transientFactor;
-                }
-                const auto release = m != 2 && transientFactor <= 1.0f
-                    ? releases[m] : controlCurves.exp (releaseExponent);
-                // In upward mode the control state goes negative as gain rises,
-                // so attack/release must compare gain magnitude, not sign.
-                const auto a = std::abs (desired) > std::abs (s.reduction) ? attack : release;
-                s.reduction = desired + a * (s.reduction - desired);
-                auto gr = s.reduction;
-                if (m == 3)
-                {
-                    // Optical combines its main envelope with a slower memory:
-                    // the latter recovers at six times the Release setting.
-                    const auto slowAttack = transientFactor > 1.0f
-                        ? controlCurves.exp (attackLogs[m] / transientFactor) : attacks[m];
-                    const auto slowRecovery = transientFactor > 1.0f
-                        ? controlCurves.exp (slowReleaseLog * transientFactor) : slowRelease;
-                    const auto slow = std::abs (desired) > std::abs (s.memory) ? slowAttack : slowRecovery;
-                    s.memory = desired + slow * (s.memory - desired);
-                    gr = 0.65f * gr + 0.35f * s.memory;
-                }
-                const auto g = gain (-gr);
-                // Store this model's previous compressed detector level for
-                // the next feedback-model sample. Makeup gain is not in the loop.
-                s.feedback = detector[c] * g;
-                combinedGain[c] += weights[m] * g;
-                reduction[c] += weights[m] * gr;
             }
             for (int ch = 0; ch < channelCount; ++ch)
                 meterReduction = std::max (meterReduction, std::abs (reduction[static_cast<size_t> (ch)]) * (1 - values[bypass]));

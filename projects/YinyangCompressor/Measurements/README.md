@@ -14,7 +14,7 @@ reports were also regenerated from the current source.
 
 - [Compression curves](plots/01_compression_curves.png): DC transfer and 1 kHz sine gain reduction.
 - [Attack and recovery](plots/02_attack_release.png): a controlled upward/downward level step.
-- [VariTransient attack/release](plots/06_vari_transient.png): direct 0% vs 400% comparison for all four compressor models, with the 3 dB trigger and 6 dB full-effect level marked.
+- [VariTransient attack/release](plots/06_vari_transient.png): direct 0% vs 400% comparison for all four compressor models, with the 3–6 dB detector-overshoot transition described in the figure.
 - [Transformer character](plots/03_transformer.png): waveforms, harmonics, small-signal response, and aliasing.
 - [Upward compression](plots/04_upward_compression.png): measured transfer and gain curves for all four models with upward mode enabled.
 - [Transformer Even harmonics](plots/05_transformer_even_harmonics.png): waveform asymmetry and even-order harmonics as simulated DC current increases.
@@ -56,7 +56,8 @@ progressive steady-state curve and transient gain-reduction overshoot.
 
 The VariTransient figure uses the same DC step and compressor settings, with
 Upward disabled, and overlays the default 0% setting with the maximum 400%
-setting. The change starts above 3 dB GR and eases to full strength at 6 dB GR.
+setting. The change starts above 3 dB detector overshoot beyond Threshold and
+eases to full strength at 6 dB overshoot.
 Attack is measured to 90% of the final step reduction; recovery is measured to
 10% of the reduction at the downward step.
 

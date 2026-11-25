@@ -44,7 +44,7 @@ sustain, and recovery. **Yang** reduces levels above threshold; **Yin** raises
 quieter material toward it.
 
 - Tune Threshold, Ratio, Knee, Attack, and Release, with **VariTransient** to
-  adapt timing as downward gain reduction increases.
+  adapt timing as the detector rises 3–6 dB above Threshold.
 - Shape the detector with a high-pass filter and **SC High Tilt**; use stereo
   linking and Mid/Side operation to control the stereo response.
 - Add optional oversampled transformer coloration with Core Drive and DC Bias,
