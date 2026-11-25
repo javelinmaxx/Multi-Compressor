@@ -53,7 +53,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout QinSynthProcessor::layout()
         add(prefix+"Duty",title+" duty cycle",0,100,.1f,50.f,"%");
         addGainLevel(prefix+"Level",title+" level",osc==0 ? 80.f : 0.f);
         add(prefix+"Octave",title+" octave",-2,2,1,0,"oct");
-        add(prefix+"Fine",title+" fine pitch",-1200,1200,.1f,0,"cents");
+        add(prefix+"Fine",title+" fine pitch",-700,700,.1f,0,"cents");
         add(prefix+"Unison",title+" unison",1,8,1,1,"voices");
         add(prefix+"Detune",title+" detune",0,30,.1f,10,"cents");
         add(prefix+"DetuneShape",title+" detune shape",-100,100,.1f,0,"%");
@@ -353,7 +353,7 @@ QinSynthProcessor::Settings QinSynthProcessor::readSettings(const char* override
         target.retrig=get(prefix+"Retrig")>=.5f;
         target.phaseStart=std::clamp(get(prefix+"PhaseStart")*.01f,0.f,1.f);
         target.octave=std::clamp(juce::roundToInt(get(prefix+"Octave")),-2,2);
-        target.fineCents=std::clamp(get(prefix+"Fine"),-1200.f,1200.f);
+        target.fineCents=std::clamp(get(prefix+"Fine"),-700.f,700.f);
         target.unison=std::clamp(juce::roundToInt(get(prefix+"Unison")),1,maxUnison);
         target.level=std::clamp(get(prefix+"Level")*.01f,0.f,1.f);
         target.detune=std::clamp(get(prefix+"Detune"),0.f,30.f);
@@ -658,7 +658,7 @@ void QinSynthProcessor::handleMidi(const juce::MidiMessage& message,const Settin
                 const auto filterEnvelope=sharedEnvelopes[1].value*smoothedEnvelopeMerge[1];
                 const auto modEnvelope=sharedEnvelopes[2].value*smoothedEnvelopeMerge[2];
                 const auto octaves=settings.keyFollow*float((note-60)/12.0)
-                    +settings.filterEnv*filterEnvelope*4.f
+                    +settings.filterEnv*filterEnvelope*filterEnvOctaves
                     +(settings.modTarget==3 ? settings.modDepth*modEnvelope*4.f : 0.f);
                 selected->cutoff=std::clamp(settings.cutoff*std::exp2(octaves),
                                              30.f,float(sampleRate*.44));
@@ -1085,7 +1085,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         if(settings.filterType!=0)
         {
             const auto octaves=settings.keyFollow*float((currentPitch-60.0)/12.0)
-                +settings.filterEnv*filterEnv*4.f
+                +settings.filterEnv*filterEnv*filterEnvOctaves
                 +(settings.modTarget==3 ? sharedFrame.modDepth*modEnv*4.f : 0.f);
             const auto target=std::clamp(settings.cutoff*(std::abs(octaves)<1.e-6f ? 1.f : std::exp2(octaves)),
                                          30.f,float(sampleRate*.44));

@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "../../EditorScaling.h"
+#include "../../PanelSurface.h"
 #include "../../EditorTooltips.h"
 #include <cmath>
 
@@ -13,50 +14,9 @@ const auto secondary = juce::Colour (0xfffff1df);
 const auto accent = juce::Colour (0xffffefad);
 const auto grid = juce::Colour (0xff6c3615);
 
-const juce::Image& analogGrain()
-{
-    static const auto grain = []
-    {
-        juce::Image image (juce::Image::ARGB, 96, 96, true);
-        image.clear (image.getBounds(), juce::Colours::transparentBlack);
-        auto state = 0x6d2b79f5u;
-        for (int i = 0; i < 1500; ++i)
-        {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            const auto x = static_cast<int> (state % 96u);
-            state = state * 1664525u + 1013904223u;
-            const auto y = static_cast<int> ((state >> 8) % 96u);
-            const auto alpha = static_cast<juce::uint8> (3 + ((state >> 20) % 10u));
-            image.setPixelAt (x, y, juce::Colour::fromRGBA (220, 211, 190, alpha));
-        }
-        return image;
-    }();
-    return grain;
-}
-
 void drawPanel (juce::Graphics& g, juce::Rectangle<float> bounds)
 {
-    g.setColour (juce::Colours::black.withAlpha (0.24f));
-    g.fillRoundedRectangle (bounds.translated (0, 3), 10);
-    g.setGradientFill (juce::ColourGradient (panel.brighter (0.03f), bounds.getTopLeft(),
-                                            panel.darker (0.12f), bounds.getBottomLeft(), false));
-    g.fillRoundedRectangle (bounds, 10);
-    juce::Path clip;
-    clip.addRoundedRectangle (bounds, 10);
-    g.saveState();
-    g.reduceClipRegion (clip);
-    const auto& grain = analogGrain();
-    for (auto y = juce::roundToInt (bounds.getY()); y < juce::roundToInt (bounds.getBottom()); y += 96)
-        for (auto x = juce::roundToInt (bounds.getX()); x < juce::roundToInt (bounds.getRight()); x += 96)
-            g.drawImageAt (grain, x, y);
-    g.restoreState();
-    g.setColour (grid.withAlpha (0.72f));
-    g.drawRoundedRectangle (bounds, 10, 1.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.1f));
-    g.drawHorizontalLine (juce::roundToInt (bounds.getY() + 1), bounds.getX() + 10,
-                          bounds.getRight() - 10);
+    panelSurface::drawBeveledPanel (g, bounds, 10.0f, panel, grid);
 }
 }
 
@@ -86,11 +46,8 @@ void ZaoLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int widt
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xfffffff8), dial.getTopLeft(),
-                                            juce::Colour (0xffe9e3d9), dial.getBottomRight(), false));
-    g.fillEllipse (dial);
-    g.setColour (juce::Colour (0xff6c3615).withAlpha (0.45f));
-    g.drawEllipse (dial.reduced (2), 0.7f);
+    panelSurface::drawMetalKnobFace (g, dial, juce::Colour (0xfffffff8),
+                                     juce::Colour (0xffe9e3d9), juce::Colour (0xff6c3615));
     g.setColour (juce::Colour (0xff6c3615));
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,
@@ -325,8 +282,8 @@ void ZaoDriveEditor::paint (juce::Graphics& g)
 {
     g.fillAll (background);
     g.addTransform (editorScaling::transform (*this, designWidth, designHeight));
-    g.setGradientFill (juce::ColourGradient (background.brighter (0.08f), 0, 0,
-                                            background.darker (0.13f), 0, designHeight, false));
+    g.setGradientFill (juce::ColourGradient (background.brighter (0.02f), 0, 0,
+                                            background.darker (0.06f), 0, designHeight, false));
     g.fillRect (0, 0, designWidth, designHeight);
     g.setColour (secondary); g.setFont (juce::FontOptions (10.0f));
     g.drawText ("J-SONIC / CIRCUIT OVERDRIVE", 24, 20, 350, 16, juce::Justification::centredLeft);

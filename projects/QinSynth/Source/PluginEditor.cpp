@@ -2,6 +2,7 @@
 #include "LegatoCurve.h"
 #include "WaveformSync.h"
 #include "../../EditorScaling.h"
+#include "../../PanelSurface.h"
 #include <cmath>
 #include <complex>
 
@@ -25,19 +26,19 @@ const auto buttonActive=juce::Colour(0xffe8a4af);
 struct Control { const char* id; const char* name; const char* hint; };
 constexpr std::array<Control,44> controls {{
     {"osc1Level","LEVEL","Sets oscillator one's contribution to the mix."},
-    {"osc1Fine","FINE","Offsets oscillator one by up to 1200 cents in either direction."},
+    {"osc1Fine","FINE","Offsets oscillator one by up to 700 cents in either direction."},
     {"osc1Unison","UNISON","Sets the number of oscillator one copies."},
     {"osc1Detune","DETUNE","Offsets oscillator one's unison copies in cents."},
     {"osc1Spread","SPREAD","Sets how far oscillator one's detuned copies spread across stereo."},
     {"osc1Pan","PAN","Positions oscillator one as a whole in stereo."},
     {"osc2Level","LEVEL","Sets oscillator two's contribution to the mix."},
-    {"osc2Fine","FINE","Offsets oscillator two by up to 1200 cents in either direction."},
+    {"osc2Fine","FINE","Offsets oscillator two by up to 700 cents in either direction."},
     {"osc2Unison","UNISON","Sets the number of oscillator two copies."},
     {"osc2Detune","DETUNE","Offsets oscillator two's unison copies in cents."},
     {"osc2Spread","SPREAD","Sets how far oscillator two's detuned copies spread across stereo."},
     {"osc2Pan","PAN","Positions oscillator two as a whole in stereo."},
     {"osc3Level","LEVEL","Sets oscillator three's contribution to the mix."},
-    {"osc3Fine","FINE","Offsets oscillator three by up to 1200 cents in either direction."},
+    {"osc3Fine","FINE","Offsets oscillator three by up to 700 cents in either direction."},
     {"osc3Unison","UNISON","Sets the number of oscillator three copies."},
     {"osc3Detune","DETUNE","Offsets oscillator three's unison copies in cents."},
     {"osc3Spread","SPREAD","Sets how far oscillator three's detuned copies spread across stereo."},
@@ -58,7 +59,7 @@ constexpr std::array<Control,44> controls {{
     {"filterCutoff","FREQ","Sets the filter's base cutoff on a logarithmic frequency scale."},
     {"filterResonance","RESONANCE","Emphasizes the cutoff while a blue marker shows the MOD envelope's effective resonance."},
     {"filterKeyFollow","KEY FOLLOW","Raises the cutoff with MIDI note pitch."},
-    {"filterEnvAmount","ENV AMOUNT","Sets how far the filter envelope moves the cutoff."},
+    {"filterEnvAmount","ENV AMOUNT","Moves the filter cutoff by up to ten octaves in either direction."},
     {"keyPan","KEY PAN","Sets pitch panning from high notes left at -100% to high notes right at +100%."},
     {"output","OUTPUT","Sets the final synth level."},
     {"drive","DRIVE","Sets how hard the oscillator signal drives the selected circuit."},
@@ -483,9 +484,7 @@ void QinLookAndFeel::drawRotarySlider(juce::Graphics& g,int x,int y,int width,in
     ring(radius-7.f,dual->getPreRing(),accentColour,!dual->isPostSelected());
     const auto dial=juce::Rectangle<float>((radius-12.f)*2.f,(radius-12.f)*2.f).withCentre(centre);
     g.setColour(juce::Colours::black.withAlpha(.32f)); g.fillEllipse(dial.translated(0.f,2.f));
-    g.setGradientFill(juce::ColourGradient(dialTopColour,dial.getTopLeft(),dialBottomColour,dial.getBottomRight(),false));
-    g.fillEllipse(dial);
-    g.setColour(markColour.withAlpha(.3f)); g.drawEllipse(dial.reduced(1.f),.7f);
+    panelSurface::drawMetalKnobFace(g,dial,dialTopColour,dialBottomColour,markColour);
     const auto angle=start+value*(end-start);
     const auto tip=radius-13.f;
     g.setColour(dual->isPostSelected() ? postFilterAccent : accentColour);
@@ -556,12 +555,12 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         octaveAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,
             "osc"+juce::String(int(i)+1)+"Octave",display);
         auto& fine=fineDisplays[i];
-        fine.setRange(-1200,1200,.1);
+        fine.setRange(-700,700,.1);
         fine.setSuffix("c");
         fine.setReadoutFormat("FINE",1,true);
-        fine.setMouseDragSensitivity(360);
+        fine.setMouseDragSensitivity(1400);
         fine.setDoubleClickReturnValue(true,0);
-        fine.setTooltip("Drag to shift this oscillator by up to 1200 cents in either direction; double-click to reset.");
+        fine.setTooltip("Drag slowly to shift this oscillator by up to 700 cents in either direction; double-click to reset.");
         fine.setComponentID("osc"+juce::String(int(i)+1)+"Fine");
         addAndMakeVisible(fine);
         fineAttachments[i]=std::make_unique<State::SliderAttachment>(synth.parameters,
@@ -1642,7 +1641,7 @@ void QinSynthEditor::resized()
 void QinSynthEditor::paint(juce::Graphics& g)
 {
     g.fillAll(backgroundBlack); g.saveState(); g.addTransform(editorScaling::transform(*this,designWidth,designHeight));
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff282a2c),0,0,
+    g.setGradientFill(juce::ColourGradient(backgroundBlack.brighter(.08f),0,0,
                                            backgroundBlack,0,designHeight,false));
     g.fillRect(0,0,designWidth,designHeight);
     g.setColour(plotRed); g.setFont(juce::FontOptions(10.f));
@@ -1741,8 +1740,8 @@ void QinSynthEditor::paint(juce::Graphics& g)
     const auto fltSustain=std::clamp(float(sliders[24].getValue())*.01f,0.f,1.f);
     // C5 makes key follow visible; the solid trace shows the held envelope,
     // while the faint trace shows its peak at the start of a note.
-    const auto heldCutoff=std::clamp(baseCutoff*std::exp2(keyFollow+4.f*envelopeAmount*fltSustain),30.f,18000.f);
-    const auto peakCutoff=std::clamp(baseCutoff*std::exp2(keyFollow+4.f*envelopeAmount),30.f,18000.f);
+    const auto heldCutoff=std::clamp(baseCutoff*std::exp2(keyFollow+QinSynthProcessor::filterEnvOctaves*envelopeAmount*fltSustain),30.f,18000.f);
+    const auto peakCutoff=std::clamp(baseCutoff*std::exp2(keyFollow+QinSynthProcessor::filterEnvOctaves*envelopeAmount),30.f,18000.f);
     const auto trace=[&](float cutoff)
     {
         juce::Path path;

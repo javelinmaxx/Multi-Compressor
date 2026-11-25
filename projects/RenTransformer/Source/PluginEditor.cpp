@@ -63,8 +63,8 @@ void RenTransformerEditor::paint (juce::Graphics& g)
     g.fillAll (background);
     g.saveState();
     g.addTransform (editorScaling::transform (*this, designWidth, designHeight));
-    g.setGradientFill (juce::ColourGradient (background.brighter (0.035f), 0, 0,
-                                            background.darker (0.13f), 0, designHeight, false));
+    g.setGradientFill (juce::ColourGradient (background.brighter (0.015f), 0, 0,
+                                            background.darker (0.06f), 0, designHeight, false));
     g.fillRect (0, 0, designWidth, designHeight);
     g.setColour (secondary); g.setFont (juce::FontOptions (10.0f));
     g.drawText ("J-SONIC / TRANSFORMER COLOR", 16, 12, 310, 16, juce::Justification::centredLeft);

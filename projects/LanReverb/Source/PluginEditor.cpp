@@ -155,7 +155,7 @@ void LanReverbEditor::timerCallback()
 void LanReverbEditor::paint (juce::Graphics& g)
 {
     g.fillAll(background); g.saveState(); g.addTransform(editorScaling::transform(*this,designWidth,designHeight));
-    g.setGradientFill(juce::ColourGradient(background.brighter(.035f),0,0,background.darker(.13f),0,designHeight,false)); g.fillRect(0,0,designWidth,designHeight);
+    g.setGradientFill(juce::ColourGradient(background.brighter(.015f),0,0,background.darker(.06f),0,designHeight,false)); g.fillRect(0,0,designWidth,designHeight);
     g.setColour(secondary); g.setFont(juce::FontOptions(10.f)); g.drawText("J-SONIC / ADAPTIVE REVERB + DELAY",24,12,470,16,juce::Justification::centredLeft);
     g.setColour(foreground); g.setFont(juce::FontOptions(25.f)); g.drawText("LAN REVERB",24,30,420,36,juce::Justification::centredLeft);
     const auto magentaPanel=juce::Colour(0xff38263f);

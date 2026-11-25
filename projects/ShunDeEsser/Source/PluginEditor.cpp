@@ -1,88 +1,20 @@
 #include "PluginEditor.h"
 #include "../../EditorScaling.h"
+#include "../../PanelSurface.h"
 #include "../../EditorTooltips.h"
 
 namespace
 {
-const juce::Image& analogGrain()
-{
-    static const auto grain = []
-    {
-        juce::Image image (juce::Image::ARGB, 96, 96, true);
-        image.clear (image.getBounds(), juce::Colours::transparentBlack);
-        auto state = 0x6d2b79f5u;
-        for (int i = 0; i < 1500; ++i)
-        {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            const auto x = static_cast<int> (state % 96u);
-            state = state * 1664525u + 1013904223u;
-            const auto y = static_cast<int> ((state >> 8) % 96u);
-            const auto alpha = static_cast<juce::uint8> (3 + ((state >> 20) % 10u));
-            image.setPixelAt (x, y, juce::Colour::fromRGBA (220, 211, 190, alpha));
-        }
-        return image;
-    }();
-    return grain;
-}
-
 void drawAnalogPanel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius,
                       juce::Colour material, juce::Colour edge)
 {
-    g.setColour (juce::Colours::black.withAlpha (0.24f));
-    g.fillRoundedRectangle (bounds.translated (0, 3), radius + 1);
-    g.setGradientFill (juce::ColourGradient (material.brighter (0.10f), bounds.getTopLeft(),
-        material.darker (0.12f), bounds.getBottomLeft(), false));
-    g.fillRoundedRectangle (bounds, radius);
-    auto path = juce::Path();
-    path.addRoundedRectangle (bounds, radius);
-    g.saveState();
-    g.reduceClipRegion (path);
-    const auto& grain = analogGrain();
-    for (auto y = juce::roundToInt (bounds.getY()); y < juce::roundToInt (bounds.getBottom()); y += grain.getHeight())
-        for (auto x = juce::roundToInt (bounds.getX()); x < juce::roundToInt (bounds.getRight()); x += grain.getWidth())
-            g.drawImageAt (grain, x, y);
-    g.restoreState();
-    g.setColour (edge.withAlpha (0.72f));
-    g.drawRoundedRectangle (bounds, radius, 1.0f);
-    g.setColour (juce::Colours::white.withAlpha (material.getPerceivedBrightness() > 0.45f ? 0.17f : 0.10f));
-    g.drawHorizontalLine (juce::roundToInt (bounds.getY() + 1), bounds.getX() + radius, bounds.getRight() - radius);
-    g.setColour (juce::Colours::black.withAlpha (0.14f));
-    g.drawHorizontalLine (juce::roundToInt (bounds.getBottom() - 1), bounds.getX() + radius, bounds.getRight() - radius);
+    panelSurface::drawBeveledPanel (g, bounds, radius, material, edge);
 }
 
 void drawBrushedMetalPanel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius,
                             juce::Colour material, juce::Colour edge)
 {
     drawAnalogPanel (g, bounds, radius, material, edge);
-    juce::Path clip;
-    clip.addRoundedRectangle (bounds.reduced (2), std::max (0.0f, radius - 2));
-    g.saveState();
-    g.reduceClipRegion (clip);
-    const auto lightSurface = material.getPerceivedBrightness() > 0.45f;
-    g.setGradientFill (juce::ColourGradient (
-        juce::Colours::white.withAlpha (lightSurface ? 0.12f : 0.09f), bounds.getX(), bounds.getY(),
-        juce::Colours::transparentBlack, bounds.getRight() * 0.78f, bounds.getBottom() * 0.88f, false));
-    g.fillRoundedRectangle (bounds.reduced (1), std::max (0.0f, radius - 1));
-    auto state = 0x9e3779b9u;
-    for (int streak = 0; streak < 360; ++streak)
-    {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-        const auto y = juce::roundToInt (bounds.getY()) + 2
-                     + static_cast<int> (state % static_cast<unsigned int> (std::max (1, juce::roundToInt (bounds.getHeight()) - 4)));
-        state = state * 1664525u + 1013904223u;
-        const auto x = juce::roundToInt (bounds.getX()) + 3
-                     + static_cast<int> (state % static_cast<unsigned int> (std::max (1, juce::roundToInt (bounds.getWidth()) - 8)));
-        state = state * 1664525u + 1013904223u;
-        const auto length = 8 + static_cast<int> (state % 130u);
-        const auto alpha = 0.008f + static_cast<float> ((state >> 16) % 23u) * 0.0012f;
-        g.setColour ((lightSurface ? juce::Colours::black : juce::Colours::white).withAlpha (alpha));
-        g.drawHorizontalLine (y, static_cast<float> (x), std::min (bounds.getRight() - 3, static_cast<float> (x + length)));
-    }
-    g.restoreState();
 }
 
 CompressorTheme ebonyTheme()
@@ -420,11 +352,7 @@ void CompressorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, i
     g.fillEllipse (rim);
     g.setColour (ring.withAlpha (0.70f));
     g.drawEllipse (rim, 0.8f);
-    g.setGradientFill (juce::ColourGradient (knobTop.withAlpha (0.66f), dial.getTopLeft(),
-                                            knobBottom.brighter (0.12f), dial.getBottomLeft(), false));
-    g.fillEllipse (dial);
-    g.setColour (ring.withAlpha (0.45f));
-    g.drawEllipse (dial.reduced (2.0f), 0.7f);
+    panelSurface::drawMetalKnobFace (g, dial, knobTop, knobBottom, ring);
     const auto outer = dial.getWidth() * 0.40f;
     const auto inner = outer * 0.58f;
     g.setColour (accent);
@@ -583,8 +511,8 @@ void ShunDeEsserEditor::paint (juce::Graphics& g)
     g.fillAll (theme.background);
     g.saveState();
     g.addTransform (editorScaling::transform (*this, designWidth, designHeight));
-    g.setGradientFill (juce::ColourGradient (theme.background.brighter (0.035f), 0, 0,
-        theme.background.darker (0.13f), 0, static_cast<float> (designHeight), false));
+    g.setGradientFill (juce::ColourGradient (theme.background.brighter (0.015f), 0, 0,
+        theme.background.darker (0.06f), 0, static_cast<float> (designHeight), false));
     g.fillRect (0, 0, designWidth, designHeight);
     g.setColour (theme.secondary);
     g.setFont (juce::FontOptions (10.0f));

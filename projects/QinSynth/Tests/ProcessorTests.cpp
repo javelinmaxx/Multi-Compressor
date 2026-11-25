@@ -224,6 +224,8 @@ struct QinSynthEditorTestAccess
         const auto& octave=editor.octaveDisplays[size_t(osc)];
         return fine.isVisible() && fine.getRight()<octave.getX()
             && fine.getY()==octave.getY() && fine.getReadoutText().startsWith("FINE ")
+            && std::abs(fine.getMinimum()+700)<.001 && std::abs(fine.getMaximum()-700)<.001
+            && fine.getMouseDragSensitivity()==1400
             && !editor.sliders[size_t(osc*6+1)].isVisible();
     }
     static bool compactHeaderLayout(const QinSynthEditor& editor)
@@ -548,11 +550,12 @@ int main(int argc,char** argv)
                 throw std::runtime_error("Custom tuning must survive project recall");
             auto fineOwner=std::make_unique<QinSynthProcessor>();
             auto& fine=*fineOwner;
-            set(fine,"osc1Retrig",1); set(fine,"osc1Fine",1200); set(fine,"osc1Octave",-1);
+            set(fine,"osc1Retrig",1); set(fine,"osc1Fine",700); set(fine,"osc1Octave",-1);
             set(fine,"verbMix",0); fine.prepareToPlay(48000,32);
             juce::MidiBuffer fineNote; fineNote.addEvent(juce::MidiMessage::noteOn(1,69,.8f),0);
             fine.processBlock(audio,fineNote);
-            if(std::abs(QinSynthTestAccess::oscillatorPhase(fine,0,0)-440.0*32/48000)>.0001)
+            const auto expectedPhase=440.0*std::exp2(700.0/1200.0)*.5*32/48000;
+            if(std::abs(QinSynthTestAccess::oscillatorPhase(fine,0,0)-expectedPhase)>.0001)
                 throw std::runtime_error("Fine pitch and octave transpose must combine in cents");
         }
         {
@@ -1376,6 +1379,20 @@ int main(int argc,char** argv)
                 throw std::runtime_error("An overlapping note must not pull the shared filter away from a fixed cutoff");
         }
         {
+            auto sweepOwner=std::make_unique<QinSynthProcessor>();
+            auto& sweep=*sweepOwner;
+            set(sweep,"verbMix",0); set(sweep,"filterType",3);
+            set(sweep,"filterCutoff",30); set(sweep,"filterEnvAmount",100);
+            set(sweep,"fltAttack",1); set(sweep,"fltSustain",100);
+            sweep.prepareToPlay(48000,256);
+            QinSynthTestAccess::noteOn(sweep,60);
+            juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer empty;
+            for(int blockIndex=0;blockIndex<24;++blockIndex) sweep.processBlock(audio,empty);
+            if(QinSynthTestAccess::voiceCutoff(sweep,0)<17000.f
+               || !QinSynthTestAccess::stableFilters(sweep))
+                throw std::runtime_error("Full FLT Env Amount must open the minimum cutoff to the maximum safely");
+        }
+        {
             auto voicesOwner=std::make_unique<QinSynthProcessor>();
             auto& voices=*voicesOwner;
             auto masterOwner=std::make_unique<QinSynthProcessor>();
@@ -1925,10 +1942,10 @@ int main(int argc,char** argv)
                || QinSynthEditorTestAccess::fmVisible(editor,0)
                || !QinSynthEditorTestAccess::fineReadoutLayout(editor,2))
                 throw std::runtime_error("FM and Fine controls must switch with OSC tabs");
-            QinSynthEditorTestAccess::setFine(editor,2,-1200);
-            if(std::abs(preview.parameters.getRawParameterValue("osc3Fine")->load()+1200)>.1
-               || !QinSynthEditorTestAccess::fineShowsCents(editor,2,"FINE -1200.0c"))
-                throw std::runtime_error("The third oscillator Fine readout must retain its full cent range");
+            QinSynthEditorTestAccess::setFine(editor,2,-700);
+            if(std::abs(preview.parameters.getRawParameterValue("osc3Fine")->load()+700)>.1
+               || !QinSynthEditorTestAccess::fineShowsCents(editor,2,"FINE -700.0c"))
+                throw std::runtime_error("The third oscillator Fine readout must cap values at 700 cents");
             QinSynthEditorTestAccess::setFine(editor,2,0);
             QinSynthEditorTestAccess::oscillator(editor,0);
             QinSynthEditorTestAccess::setDetuneShape(editor,0,75.f);

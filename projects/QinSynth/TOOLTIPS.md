@@ -38,7 +38,7 @@
 | OSC Phase Start | Drag the phase line to choose where this oscillator starts when Retrig is enabled. |
 | Osc Level | Drag to set this oscillator's level from silence to 0 dB; double-click to reset. |
 | Osc Octave | Transposes the selected oscillator by whole octaves. |
-| Osc Fine | Drag to shift this oscillator by up to 1200 cents in either direction; double-click to reset. |
+| Osc Fine | Drag slowly to shift this oscillator by up to 700 cents in either direction; double-click to reset. |
 | Osc Unison | Sets the number of copies of the selected oscillator. |
 | Osc Detune | Offsets the selected oscillator's unison copies in cents. |
 | Osc Detune Shape | Moves inner unison pitches toward center at -100% or toward the outer voices at +100%. |
@@ -71,7 +71,7 @@
 | FLT Freq | Sets the filter's base cutoff on a logarithmic frequency scale. |
 | FLT Resonance | Emphasizes the cutoff while a red marker shows the MOD envelope’s effective resonance. |
 | FLT Key Follow | Raises the cutoff with MIDI note pitch. |
-| FLT Env Amount | Sets how far the filter envelope moves the cutoff. |
+| FLT Env Amount | Moves the filter cutoff by up to ten octaves in either direction. |
 | FLT Merge | Blends per-voice filters into one shared master filter at 100%. |
 | Key Pan | Sets pitch panning from high notes left at -100% to high notes right at +100%. |
 | Output | Sets the final synth level. |

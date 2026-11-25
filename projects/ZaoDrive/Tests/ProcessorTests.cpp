@@ -1485,6 +1485,18 @@ int main (int argc, char** argv)
     try
     {
         juce::ScopedJuceInitialiser_GUI gui;
+        if (argc > 2 && juce::String (argv[1]) == "--surface-preview")
+        {
+            ZaoDriveProcessor processor;
+            std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
+            editor->setVisible (true);
+            juce::MemoryOutputStream png;
+            const auto image = editor->createComponentSnapshot (editor->getLocalBounds());
+            if (! image.isValid() || ! juce::PNGImageFormat().writeImageToStream (image, png)
+                || ! juce::File (argv[2]).replaceWithData (png.getData(), png.getDataSize()))
+                throw std::runtime_error ("Zao software surface preview failed");
+            return 0;
+        }
         verifyParameterRetention<ZaoDriveProcessor>();
         circuitTests(); shapeTests(); processorTests(); smartTests(); clearTests(); greyNoiseTests(); optimizationTests(); inactiveCircuitTests(); autoCompensatorTests();
         if (argc > 2 && juce::String (argv[1]) == "--editor")

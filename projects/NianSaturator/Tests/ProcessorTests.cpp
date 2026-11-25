@@ -639,7 +639,9 @@ int main(int argc,char** argv)
             }
             p.processBlock(audio,midi);
         }
-        std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor()); editor->addToDesktop(0); editor->setVisible(true);
+        std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());
+        if(juce::SystemStats::getEnvironmentVariable("J_SONIC_SOFTWARE_UI","")!="1") editor->addToDesktop(0);
+        editor->setVisible(true);
         auto* nianEditor=dynamic_cast<NianSaturatorEditor*>(editor.get());
         if(nianEditor==nullptr) throw std::runtime_error("Nian editor type is incorrect");
         NianSaturatorEditorTestAccess::dragCrossover(*nianEditor,300.f);

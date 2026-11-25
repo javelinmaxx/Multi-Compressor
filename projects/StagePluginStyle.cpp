@@ -1,52 +1,12 @@
 #include "StagePluginStyle.h"
+#include "PanelSurface.h"
 #include <cmath>
 
 namespace stageStyle
 {
-const juce::Image& analogGrain()
-{
-    static const auto grain = []
-    {
-        juce::Image image (juce::Image::ARGB, 96, 96, true);
-        image.clear (image.getBounds(), juce::Colours::transparentBlack);
-        auto state = 0x6d2b79f5u;
-        for (int i = 0; i < 1500; ++i)
-        {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            const auto x = static_cast<int> (state % 96u);
-            state = state * 1664525u + 1013904223u;
-            const auto y = static_cast<int> ((state >> 8) % 96u);
-            const auto alpha = static_cast<juce::uint8> (3 + ((state >> 20) % 10u));
-            image.setPixelAt (x, y, juce::Colour::fromRGBA (220, 211, 190, alpha));
-        }
-        return image;
-    }();
-    return grain;
-}
-
 void drawPanel (juce::Graphics& g, juce::Rectangle<float> bounds, juce::Colour base)
 {
-    g.setColour (juce::Colours::black.withAlpha (0.24f));
-    g.fillRoundedRectangle (bounds.translated (0, 3), 10);
-    g.setGradientFill (juce::ColourGradient (base.brighter (0.1f), bounds.getTopLeft(),
-                                            base.darker (0.12f), bounds.getBottomLeft(), false));
-    g.fillRoundedRectangle (bounds, 10);
-    juce::Path clip;
-    clip.addRoundedRectangle (bounds, 10);
-    g.saveState();
-    g.reduceClipRegion (clip);
-    const auto& grain = analogGrain();
-    for (auto y = juce::roundToInt (bounds.getY()); y < juce::roundToInt (bounds.getBottom()); y += 96)
-        for (auto x = juce::roundToInt (bounds.getX()); x < juce::roundToInt (bounds.getRight()); x += 96)
-            g.drawImageAt (grain, x, y);
-    g.restoreState();
-    g.setColour (grid.withAlpha (0.72f));
-    g.drawRoundedRectangle (bounds, 10, 1.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.1f));
-    g.drawHorizontalLine (juce::roundToInt (bounds.getY() + 1), bounds.getX() + 10,
-                          bounds.getRight() - 10);
+    panelSurface::drawBeveledPanel (g, bounds, 10.0f, base, grid);
 }
 }
 
@@ -78,11 +38,7 @@ void StageLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int wi
     auto dial = juce::Rectangle<float> (radius * 2 - 10, radius * 2 - 10).withCentre (centre);
     g.setColour (juce::Colours::black.withAlpha (0.3f));
     g.fillEllipse (dial.translated (0, 2));
-    g.setGradientFill (juce::ColourGradient (dialTopColour, dial.getTopLeft(),
-                                            dialBottomColour, dial.getBottomRight(), false));
-    g.fillEllipse (dial);
-    g.setColour (markColour.withAlpha (0.25f));
-    g.drawEllipse (dial.reduced (2), 0.7f);
+    panelSurface::drawMetalKnobFace (g, dial, dialTopColour, dialBottomColour, markColour);
     g.setColour (accentColour);
     const auto inner = dial.getWidth() * 0.23f, outer = dial.getWidth() * 0.39f;
     g.drawLine (centre.x + std::sin (angle) * inner, centre.y - std::cos (angle) * inner,

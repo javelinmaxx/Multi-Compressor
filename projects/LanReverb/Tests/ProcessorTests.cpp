@@ -1254,7 +1254,9 @@ void spectrumDisplayTests()
 void editorTests (const juce::File& destination)
 {
     LanReverbProcessor p; p.prepareToPlay(48000,128);
-    std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor()); editor->addToDesktop(0); editor->setVisible(true);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());
+    if(juce::SystemStats::getEnvironmentVariable("J_SONIC_SOFTWARE_UI","")!="1") editor->addToDesktop(0);
+    editor->setVisible(true);
     check(editor->getWidth() == 740 && editor->getHeight() == 808,"editor includes the three-second tap display");
     int sliders = 0;
     constexpr std::array<const char*,13> ids {"time","decay","predelay","scatter","diffusion","width","tap","phase","tame","shimmer","wetTame","mix","output"};
