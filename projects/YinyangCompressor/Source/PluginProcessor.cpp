@@ -4,8 +4,8 @@
 
 namespace
 {
-constexpr std::array<const char*, 20> ids { "model", "input", "threshold", "ratio", "attack",
-    "release", "knee", "output", "mix", "sidechain", "drive", "transformer", "bypass", "highTilt", "upward", "stereoLink", "midSide", "evenHarmonics", "variTransient", "scHighTilt" };
+constexpr std::array<const char*, 21> ids { "model", "input", "threshold", "ratio", "attack",
+    "release", "knee", "output", "mix", "sidechain", "drive", "transformer", "bypass", "highTilt", "upward", "stereoLink", "midSide", "evenHarmonics", "variTransient", "scHighTilt", "autoGain" };
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout YinyangCompressorProcessor::layout()
@@ -56,6 +56,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout YinyangCompressorProcessor::
     result.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "scHighTilt", 6 },
         "SC High Tilt", juce::NormalisableRange<float> (0, 12, 0.1f), 0,
         juce::AudioParameterFloatAttributes().withLabel ("dB")));
+    result.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "autoGain", 7 },
+        "Auto Gain", false));
     return result;
 }
 
@@ -91,6 +93,7 @@ character::Parameters YinyangCompressorProcessor::readParameters() const noexcep
     p.midSide = value (16) >= 0.5f;
     p.evenHarmonics = value (17);
     p.variTransient = value (18);
+    p.autoGain = value (20) >= 0.5f;
     return p;
 }
 
@@ -145,7 +148,7 @@ void YinyangCompressorProcessor::process (juce::AudioBuffer<float>& buffer, bool
     engine.setParameters (p);
     waveform.beginBlock (juce::Time::getMillisecondCounterHiRes()*.001,buffer.getNumSamples());
     engine.process (main.getArrayOfWritePointers(), channels, buffer.getNumSamples(),
-        [this] (const auto& dry, const auto& wet, int count) noexcept { waveform.push (dry,wet,count); },
+        [this] (const auto& dry, const auto& wet, int count) noexcept { waveform.push (dry, wet, count); },
         sideChannels > 0 ? side.getArrayOfReadPointers() : nullptr, sideChannels);
     for (int ch = 0; ch < channels; ++ch)
         out = std::max (out, main.getMagnitude (ch, 0, buffer.getNumSamples()));
@@ -220,6 +223,13 @@ void YinyangCompressorProcessor::setStateInformation (const void* data, int size
                 transient.setProperty ("id", "variTransient", nullptr);
                 transient.setProperty ("value", 0.0f, nullptr);
                 state.appendChild (transient, nullptr);
+            }
+            if (! state.getChildWithProperty ("id", "autoGain").isValid())
+            {
+                juce::ValueTree makeup { "PARAM" };
+                makeup.setProperty ("id", "autoGain", nullptr);
+                makeup.setProperty ("value", 0.0f, nullptr);
+                state.appendChild (makeup, nullptr);
             }
             parameters.replaceState (state);
         }

@@ -49,6 +49,7 @@ quieter material toward it.
   linking and Mid/Side operation to control the stereo response.
 - Add optional oversampled transformer coloration with Core Drive and DC Bias,
   while monitoring the gain meter and scrolling history.
+- Match the expected level at a −12 dBFS input with the Output section's Auto Gain button.
 - Process the complete signal path at 4× with one shared converter and a fixed
   64-sample host latency.
 

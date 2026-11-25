@@ -39,7 +39,7 @@ analog hardware.
 
 ## Controls and signal path
 
-4× upsampling → input gain / stereo-linked compressor → wet/dry mix → output
+4× upsampling → input gain / stereo-linked compressor → optional Auto Gain on the processed branch → wet/dry mix → output
 gain → optional transformer → downsampling → output. Bypass returns the original input delayed by the same 64 samples as the
 processing path, with a short transition to avoid switching clicks. The mix's dry branch is the original input before
 input gain. Output gain and transformer affect both branches of the mix.
@@ -66,6 +66,11 @@ four models through this branch; it does not EQ the audio output.
   3 dB knee to full effect at 6 dB GR. At 400%, attack can reach 4× its set
   time while release can fall to ¼; 0% leaves both times unchanged. It is
   inactive in Upward mode and defaults to 0%.
+- **Auto Gain:** estimates the static gain change at a −12 dBFS input from
+  Threshold, Ratio, and Knee, then applies the opposite makeup to the processed
+  branch. Yin uses negative makeup for its predicted boost. This calculation
+  changes only with the controls, not the incoming audio; Mix at 0% remains
+  unaltered, and Output remains a manual trim. The gain transition is smoothed.
 - **Detector HPF:** filters only the compression detector. Set to 0 Hz to disable.
 - **Transformer drive:** increases saturation without increasing small-signal
   gain. Generated distortion rolls off above 500 Hz. The existing 0–18 dB
@@ -96,12 +101,11 @@ bypass returns an exact latency-aligned original input while keeping the full
 wet path hot. Attack, release and control smoothing retain their times in
 milliseconds at the higher internal rate. Inactive models and the disabled
 transformer core still stop processing, but the shared converter remains active.
-Host automation and session state recall cover all 20 parameters. Existing
+Host automation and session state recall cover all 21 parameters. Existing
 parameter IDs/order are retained; High Tilt, Upward, Stereo Link, Mid/Side,
-Even harmonics, VariTransient, and SC High Tilt are appended. AU version hints
-2, 3, 4, 5, and 6 mark the compatible additions. There is no external
-sidechain, oversampling selector,
-automatic makeup gain, or preset browser yet.
+Even harmonics, VariTransient, SC High Tilt, and Auto Gain are appended. AU version hints
+2, 3, 4, 5, 6, and 7 mark the compatible additions. There is no oversampling
+selector or preset browser yet.
 
 The 548 × 726 editor places Threshold, Knee, and Ratio in that order, with
 Upward in the Compressor section and VariTransient between Attack and Release.
@@ -119,6 +123,7 @@ gain reduction in Yang, alongside a scrolling three-second history. Output,
 Mix, and Stereo Link sit directly below it. Bypass is a button beside the
 plug-in name. Sidechain combines Detector HPF, SC High Tilt, and Mid/Side.
 Transformer enable, Core Drive, and DC Bias share a Transformer Stage section.
+The Auto Gain button sits beside the Output section title.
 The compact analog switches show ON/OFF or M/S/L/R at either end of the lever.
 The history line runs oldest at left to current at right. **Click the trace to
 show the waveform overlay**, then click again to hide it. The

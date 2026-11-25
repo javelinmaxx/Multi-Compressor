@@ -108,6 +108,7 @@ private:
     editorTooltips::TitleHint titleHint { JucePlugin_VersionString };
     juce::ComboBox model;
     AnimatedSwitch transformer { "OUTPUT TRANSFORMER" }, bypass { "BYPASS", true, false, true };
+    AnimatedSwitch autoGain { "AUTO", true, false, true };
     AnimatedSwitch upward { "YIN/YANG MODE", true, false, true };
     AnimatedSwitch midSide { "MID / SIDE MODE" };
     std::array<juce::Slider, 14> sliders;
@@ -115,7 +116,7 @@ private:
     using State = juce::AudioProcessorValueTreeState;
     std::unique_ptr<State::ComboBoxAttachment> modelAttachment;
     std::array<std::unique_ptr<State::SliderAttachment>, 14> attachments;
-    std::unique_ptr<State::ButtonAttachment> transformerAttachment, bypassAttachment, upwardAttachment, midSideAttachment;
+    std::unique_ptr<State::ButtonAttachment> transformerAttachment, bypassAttachment, upwardAttachment, midSideAttachment, autoGainAttachment;
     GainReductionHistory history;
     HistoryDisplayToggle historyToggle;
     juce::Rectangle<int> meterBounds { 344, 140, 180, 470 };

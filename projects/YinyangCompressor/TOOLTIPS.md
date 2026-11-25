@@ -17,6 +17,7 @@
 | Release | Sets release timing in Yang and attack timing in Yin. |
 | Knee | Softens the transition around the compression threshold. |
 | Output | Adjusts output gain after the wet and dry mix. |
+| Auto Gain | Matches the expected level at minus twelve dBFS from Threshold and Ratio while leaving Output as a manual trim. |
 | Mix | Blends the processed signal with the original input. |
 | Detector HPF | Removes low frequencies from the detector, with 0 Hz disabling the filter. |
 | Core drive | Increases saturation in the enabled output transformer. |

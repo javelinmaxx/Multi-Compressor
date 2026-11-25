@@ -20,7 +20,7 @@ struct Parameters
     float releaseMs = 150, kneeDb = 6, outputDb = 0, mix = 1;
     float sidechainHz = 80, driveDb = 6, stereoLink = 100, evenHarmonics = 0, highTiltDb = 0;
     float variTransient = 0;
-    bool transformer = false, bypass = false, upward = false, midSide = false;
+    bool transformer = false, bypass = false, upward = false, midSide = false, autoGain = false;
 };
 
 // Reuse parameter-independent curves at the 4x processing rate. Timing bases
@@ -72,6 +72,19 @@ public:
     static float db (float level) noexcept
     {
         return 20.0f * std::log10 (std::max (level, 1.0e-10f));
+    }
+
+    // The fixed -12 dBFS reference is passed through the static transfer
+    // curve. Feedback and program-dependent models use the same nominal ratio.
+    static float autoMakeupDb (const Parameters& p) noexcept
+    {
+        if (! p.autoGain) return 0.0f;
+        const auto ratio = std::clamp (p.ratio, 1.0f, p.upward ? 2.0f : 20.0f);
+        const auto slope = 1.0f - 1.0f / ratio;
+        const auto over = -12.0f - p.thresholdDb;
+        const auto knee = std::clamp (p.kneeDb, 0.0f, 24.0f);
+        return p.upward ? -std::min (12.0f, slope * softKnee (-over, knee))
+                        : slope * softKnee (over, knee);
     }
 
     void prepare (double newSampleRate) noexcept
@@ -149,7 +162,8 @@ public:
                     p.transformer ? 1.0f : 0.0f, p.bypass ? 1.0f : 0.0f,
                     p.highTiltDb, p.upward ? 1.0f : 0.0f,
                     p.stereoLink * 0.01f, p.midSide ? 1.0f : 0.0f,
-                    p.evenHarmonics * 0.01f, p.variTransient * 0.0025f };
+                    p.evenHarmonics * 0.01f, p.variTransient * 0.0025f,
+                    gain (autoMakeupDb (p)) };
         // This one-pole HPF affects only the detector. High Tilt is a separate
         // shelf applied to the signed sidechain after this HPF.
         hpEnabled = p.sidechainHz > 0;
@@ -411,7 +425,7 @@ private:
                 const auto c = static_cast<size_t> (ch);
                 // Mix the compressed/input-gained path with the original input,
                 // then apply output gain. Transformer coloration follows both.
-                const auto mixed = (dry[c] + values[mix] * (driven[c] * combinedGain[c] - dry[c]))
+                const auto mixed = (dry[c] + values[mix] * (driven[c] * combinedGain[c] * values[autoMakeup] - dry[c]))
                                  * values[output];
                 // The transformer core already receives 4x samples. Off skips
                 // its nonlinear equations; the shared converter stays active.
@@ -441,7 +455,7 @@ private:
     friend struct CompressorTestAccess;
     static constexpr float pi = 3.14159265358979323846f;
     // Indexes into the smoothed value/target arrays above.
-    enum Control { input, threshold, ratio, knee, output, mix, drive, transformer, bypass, highTilt, upward, stereoLink, midSide, evenHarmonics, variTransient };
+    enum Control { input, threshold, ratio, knee, output, mix, drive, transformer, bypass, highTilt, upward, stereoLink, midSide, evenHarmonics, variTransient, autoMakeup };
 
     struct Detector
     {
@@ -475,7 +489,7 @@ private:
     float smoothing = 0, hpCoefficient = 0, slowRelease = 0, rmsCoefficient = 0;
     float slowReleaseLog = 0;
     float meterReduction = 0;
-    std::array<float, 15> values {}, targets {};
+    std::array<float, 16> values {}, targets {};
     std::array<float, 4> weights {}, attacks {}, releases {};
     std::array<float, 4> attackLogs {}, releaseLogs {};
     std::array<std::array<Detector, 4>, 2> states {};

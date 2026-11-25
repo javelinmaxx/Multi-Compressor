@@ -130,14 +130,94 @@ void externalSidechainTests()
     check (std::abs (unityQuiet-unityLoud) < unityQuiet*.001,"external sidechain is not mixed into audible output");
 }
 
+void autoGainTests()
+{
+    character::Parameters settings;
+    settings.autoGain = true;
+    settings.thresholdDb = -18.0f;
+    settings.ratio = 4.0f;
+    settings.kneeDb = 0.0f;
+    check (std::abs (character::Compressor::autoMakeupDb (settings) - 4.5f) < 1.0e-5f,
+           "Yang Auto Gain restores the predicted reduction at minus twelve dBFS");
+    settings.upward = true;
+    settings.thresholdDb = -6.0f;
+    settings.ratio = 2.0f;
+    check (std::abs (character::Compressor::autoMakeupDb (settings) + 3.0f) < 1.0e-5f,
+           "Yin Auto Gain offsets the predicted boost at minus twelve dBFS");
+    settings.autoGain = false;
+    check (exact (character::Compressor::autoMakeupDb (settings), 0.0f),
+           "disabled Auto Gain adds no makeup");
+
+    YinyangCompressorProcessor processor;
+    set (processor, "threshold", -18.0f);
+    set (processor, "ratio", 4.0f);
+    set (processor, "knee", 0.0f);
+    set (processor, "sidechain", 0.0f);
+    set (processor, "attack", 1.0f);
+    set (processor, "release", 10.0f);
+    processor.prepareToPlay (48000, 256);
+    juce::AudioBuffer<float> buffer (2, 256);
+    juce::MidiBuffer midi;
+    constexpr auto reference = 0.25118864f; // -12 dBFS constant test signal.
+    auto testLevel = reference;
+    const auto render = [&] (float enabled, float mix, float outputDb, float bypass)
+    {
+        set (processor, "autoGain", enabled);
+        set (processor, "mix", mix);
+        set (processor, "output", outputDb);
+        set (processor, "bypass", bypass);
+        double average = 0.0;
+        for (int block = 0; block < 120; ++block)
+        {
+            for (int channel = 0; channel < 2; ++channel)
+                for (int sample = 0; sample < 256; ++sample)
+                    buffer.setSample (channel, sample, testLevel);
+            processor.processBlock (buffer, midi);
+            if (block == 119)
+                for (int sample = 0; sample < 256; ++sample)
+                {
+                    const auto value = buffer.getSample (0, sample);
+                    check (std::isfinite (value), "Auto Gain output remains finite");
+                    average += value / 256.0;
+                }
+        }
+        return average;
+    };
+    const auto without = render (0.0f, 100.0f, 0.0f, 0.0f);
+    const auto with = render (1.0f, 100.0f, 0.0f, 0.0f);
+    check (without < reference * 0.7 && std::abs (with / reference - 1.0) < 0.04,
+           "Auto Gain matches the minus twelve dBFS anchor after compression");
+    const auto trimmed = render (1.0f, 100.0f, 6.0f, 0.0f);
+    check (std::abs (trimmed / with - std::pow (10.0, 6.0 / 20.0)) < 0.08,
+           "Output knob remains a manual trim above Auto Gain");
+    const auto dry = render (1.0f, 0.0f, 0.0f, 0.0f);
+    check (std::abs (dry / reference - 1.0) < 0.04,
+           "Auto Gain leaves a zero Mix dry signal unchanged");
+    const auto bypassed = render (1.0f, 100.0f, 0.0f, 1.0f);
+    check (std::abs (bypassed / reference - 1.0) < 0.04,
+           "Auto Gain leaves host bypass at the original level");
+    testLevel = 0.031622777f; // -30 dBFS; makeup must remain fixed.
+    const auto quietWithout = render (0.0f, 100.0f, 0.0f, 0.0f);
+    const auto quietWith = render (1.0f, 100.0f, 0.0f, 0.0f);
+    check (std::abs (quietWith / quietWithout - with / without) < 0.04,
+           "Auto Gain uses fixed control-derived makeup instead of following input level");
+    juce::MemoryBlock saved;
+    processor.getStateInformation (saved);
+    YinyangCompressorProcessor restored;
+    restored.setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
+    check (exact (restored.parameters.getRawParameterValue ("autoGain")->load(), 1.0f),
+           "Auto Gain survives host state save and restore");
+}
+
 int runTests (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juce;
     verifyParameterRetention<YinyangCompressorProcessor>();
     waveformTests();
     externalSidechainTests();
+    autoGainTests();
     YinyangCompressorProcessor p;
-    check (p.getParameters().size() == 20, "all host parameters registered");
+    check (p.getParameters().size() == 21, "all host parameters registered");
     check (std::abs (p.parameters.getParameter ("ratio")->getNormalisableRange().interval - 0.01f) < 1.0e-7f,
            "ratio parameter supports 0.01 increments");
     auto buses = p.getBusesLayout();
@@ -294,12 +374,12 @@ int runTests (int argc, char** argv)
                     if (auto* readout = dynamic_cast<juce::Label*> (nested))
                         check (readout->getTooltip() == hint, "Yinyang readout shares its control hint");
         }
-        check (tooltipWindows == 1 && hintedControls == 34,
+        check (tooltipWindows == 1 && hintedControls == 35,
                "Yinyang has one tooltip window and hints for every control and caption");
         juce::Slider *threshold = nullptr, *knee = nullptr, *ratio = nullptr;
         juce::Slider *attack = nullptr, *release = nullptr, *output = nullptr, *mix = nullptr;
         AnimatedSwitch *transformer = nullptr, *upward = nullptr;
-        AnimatedSwitch *bypass = nullptr, *midSide = nullptr;
+        AnimatedSwitch *bypass = nullptr, *midSide = nullptr, *autoGain = nullptr;
         juce::Slider *stereoLink = nullptr, *evenHarmonics = nullptr, *variTransient = nullptr;
         juce::Slider *detectorHpf = nullptr, *scHighTilt = nullptr, *input = nullptr;
         juce::Slider *transformerDrive = nullptr;
@@ -336,10 +416,11 @@ int runTests (int argc, char** argv)
                 if (button->getButtonText() == "YIN/YANG MODE") upward = button;
                 if (button->getButtonText() == "BYPASS") bypass = button;
                 if (button->getButtonText() == "MID / SIDE MODE") midSide = button;
+                if (button->getButtonText() == "AUTO") autoGain = button;
             }
         }
         check (threshold && knee && ratio && attack && release && output && mix && transformer
-               && upward && bypass && midSide && stereoLink && evenHarmonics && variTransient
+               && upward && bypass && midSide && autoGain && stereoLink && evenHarmonics && variTransient
                && input && detectorHpf && scHighTilt && transformerDrive,
                "editor includes the complete knob and switch set");
         check (std::abs (restored.parameters.getRawParameterValue ("ratio")->load() - 10.5f) < 0.01f
@@ -368,6 +449,8 @@ int runTests (int argc, char** argv)
         check (output->getY() == mix->getY() && mix->getY() == stereoLink->getY()
                && output->getY() > 140 + 470,
                "output, mix, and stereo link sit below the shortened GR section");
+        check (autoGain->getX() > output->getX() && autoGain->getY() < output->getY(),
+               "Auto Gain button sits beside the Output section title");
         check (transformer->getHeight() > transformer->getWidth()
                && upward->getWidth() > upward->getHeight()
                && upward->getWidth() >= bypass->getWidth()
@@ -439,6 +522,7 @@ int runTests (int argc, char** argv)
         } capture;
         int frame = 0;
         bool clickUpdatedParameter = false, automationUpdatedSwitch = false, upwardUpdatedParameter = false;
+        bool autoGainClickUpdatedParameter = false, autoGainAutomationUpdatedSwitch = false;
         bool yinRatioMapped = false, yangRatioMapped = false, automatedRatioRetained = false;
         capture.tick = [&]
         {
@@ -483,6 +567,14 @@ int runTests (int argc, char** argv)
                 automatedRatioRetained = upward->getToggleState()
                     && std::abs (restored.parameters.getRawParameterValue ("ratio")->load() - 7.27f) < 0.01f
                     && ratio->getTextFromValue (ratio->getValue()) == "1.33:1";
+            if (frame == 110) autoGain->triggerClick();
+            if (frame == 120)
+            {
+                autoGainClickUpdatedParameter = autoGain->getToggleState()
+                    && exact (restored.parameters.getRawParameterValue ("autoGain")->load(), 1.0f);
+                set (restored, "autoGain", 0.0f);
+            }
+            if (frame == 130) autoGainAutomationUpdatedSwitch = ! autoGain->getToggleState();
             if (frame == 180) juce::MessageManager::getInstance()->stopDispatchLoop();
         };
         transformer->triggerClick();
@@ -495,6 +587,8 @@ int runTests (int argc, char** argv)
         check (yinRatioMapped && yangRatioMapped,
                "Yin and Yang display mapped ratios without rewriting the host position");
         check (automatedRatioRetained, "host ratio automation is retained across a Yin mode change");
+        check (autoGainClickUpdatedParameter && autoGainAutomationUpdatedSwitch,
+               "Output title Auto Gain click and host automation stay in sync");
         juce::MemoryBlock flStudioState;
         restored.getStateInformation (flStudioState);
         YinyangCompressorProcessor reopened;
@@ -625,7 +719,7 @@ int runOutputStageTests (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juce;
     YinyangCompressorProcessor p;
-    check (p.getParameters().size() == 20, "all compressor parameters registered");
+    check (p.getParameters().size() == 21, "all compressor parameters registered");
     auto* tilt = p.parameters.getParameter ("highTilt");
     check (tilt && tilt == p.getParameters()[13]
            && p.parameters.getParameter ("upward") == p.getParameters()[14],
@@ -646,6 +740,9 @@ int runOutputStageTests (int argc, char** argv)
            && std::abs (tiltAmount->getNormalisableRange().end - 12.0f) < 0.001f,
            "SC High Tilt is appended and spans 0 to 12 dB");
     check (exact (tilt->getValue(), 0.0f), "high tilt defaults off");
+    check (p.parameters.getParameter ("autoGain") == p.getParameters()[20]
+           && exact (p.parameters.getRawParameterValue ("autoGain")->load(), 0.0f),
+           "Auto Gain appends after existing parameters and defaults off");
     set (p, "ratio", 1); set (p, "highTilt", 1);
     juce::MemoryBlock saved;
     p.getStateInformation (saved);
@@ -656,6 +753,7 @@ int runOutputStageTests (int argc, char** argv)
 
     auto oldState = p.parameters.copyState();
     oldState.removeChild (oldState.getChildWithProperty ("id", "scHighTilt"), nullptr);
+    oldState.removeChild (oldState.getChildWithProperty ("id", "autoGain"), nullptr);
     juce::MemoryBlock legacyEnabled;
     juce::AudioProcessor::copyXmlToBinary (*oldState.createXml(), legacyEnabled);
     restored.setStateInformation (legacyEnabled.getData(), static_cast<int> (legacyEnabled.getSize()));
@@ -680,6 +778,8 @@ int runOutputStageTests (int argc, char** argv)
            "legacy state defaults VariTransient to no envelope change");
     check (exact (restored.parameters.getRawParameterValue ("scHighTilt")->load(), 0.0f),
            "legacy disabled tilt migrates to 0 dB");
+    check (exact (restored.parameters.getRawParameterValue ("autoGain")->load(), 0.0f),
+           "legacy state defaults Auto Gain off");
 
     // A real processBlock render verifies that host automation reaches the DSP.
     restored.prepareToPlay (48000, 256);

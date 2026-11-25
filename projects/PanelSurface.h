@@ -5,42 +5,6 @@
 
 namespace panelSurface
 {
-// A fixed tile keeps the brushed aluminium texture stable between repaints.
-inline const juce::Image& aluminiumGrain()
-{
-    static const auto grain = []
-    {
-        juce::Image image (juce::Image::ARGB, 96, 96, true);
-        auto state = 0x6d2b79f5u;
-        for (int i = 0; i < 1500; ++i)
-        {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            const auto x = static_cast<int> (state % 96u);
-            state = state * 1664525u + 1013904223u;
-            const auto y = static_cast<int> ((state >> 8) % 96u);
-            const auto alpha = static_cast<juce::uint8> (3 + ((state >> 20) % 10u));
-            image.setPixelAt (x, y, juce::Colour::fromRGBA (220, 221, 223, alpha));
-        }
-        juce::Graphics texture (image);
-        for (int streak = 0; streak < 36; ++streak)
-        {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            const auto y = static_cast<int> (state % 96u);
-            const auto x = static_cast<int> ((state >> 8) % 96u);
-            const auto length = 12 + static_cast<int> ((state >> 17) % 67u);
-            texture.setColour ((streak & 1 ? juce::Colours::black : juce::Colours::white)
-                                   .withAlpha (0.008f + float (state % 9u) * 0.001f));
-            texture.drawHorizontalLine (y, float (x), float (std::min (96, x + length)));
-        }
-        return image;
-    }();
-    return grain;
-}
-
 inline void drawBeveledPanel (juce::Graphics& g, juce::Rectangle<float> bounds,
                              float radius, juce::Colour material, juce::Colour edge)
 {
@@ -49,16 +13,6 @@ inline void drawBeveledPanel (juce::Graphics& g, juce::Rectangle<float> bounds,
     g.setGradientFill (juce::ColourGradient (material.brighter (0.025f), bounds.getTopLeft(),
                                             material.darker (0.03f), bounds.getBottomLeft(), false));
     g.fillRoundedRectangle (bounds, radius);
-
-    juce::Path clip;
-    clip.addRoundedRectangle (bounds, radius);
-    g.saveState();
-    g.reduceClipRegion (clip);
-    const auto& grain = aluminiumGrain();
-    for (auto y = juce::roundToInt (bounds.getY()); y < juce::roundToInt (bounds.getBottom()); y += grain.getHeight())
-        for (auto x = juce::roundToInt (bounds.getX()); x < juce::roundToInt (bounds.getRight()); x += grain.getWidth())
-            g.drawImageAt (grain, x, y);
-    g.restoreState();
 
     g.setColour (edge.withAlpha (0.72f));
     g.drawRoundedRectangle (bounds, radius, 1.0f);

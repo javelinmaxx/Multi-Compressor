@@ -27,15 +27,19 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
     addAndMakeVisible (model);
     addAndMakeVisible (transformer);
     addAndMakeVisible (bypass);
+    addAndMakeVisible (autoGain);
     addAndMakeVisible (upward);
     addAndMakeVisible (midSide);
     modelAttachment = std::make_unique<State::ComboBoxAttachment> (p.parameters, "model", model);
     transformerAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "transformer", transformer);
     bypassAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "bypass", bypass);
+    autoGainAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "autoGain", autoGain);
     upwardAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "upward", upward);
     midSideAttachment = std::make_unique<State::ButtonAttachment> (p.parameters, "midSide", midSide);
     transformer.setTooltip ("Saves CPU when Off; adds transformer color when On.");
     bypass.setTooltip ("Bypasses compression and coloration for a direct comparison.");
+    autoGain.setTooltip ("Matches the expected level at minus twelve dBFS from Threshold and Ratio while leaving Output as a manual trim.");
+    autoGain.setStateCaptions ("AUTO", "AUTO");
     upward.setTooltip ("Switches between Yang compression above threshold and Yin boosting below threshold.");
     midSide.setTooltip ("Processes stereo as mid and side before decoding it back to left and right.");
     upward.setStateCaptions ("YIN", "YANG");
@@ -108,6 +112,7 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
     transformer.setFunctionLabelVisible (false);
     transformer.snapToState();
     bypass.snapToState();
+    autoGain.snapToState();
     upward.snapToState();
     midSide.snapToState();
     lastTick = juce::Time::getMillisecondCounterHiRes() * 0.001;
@@ -128,21 +133,10 @@ YinyangCompressorEditor::YinyangCompressorEditor (YinyangCompressorProcessor& p)
 
 namespace
 {
-const juce::Image& analogGrain()
-{
-    return panelSurface::aluminiumGrain();
-}
-
 void drawAnalogPanel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius,
                       juce::Colour material, juce::Colour edge)
 {
     panelSurface::drawBeveledPanel (g, bounds, radius, material, edge);
-}
-
-void drawBrushedMetalPanel (juce::Graphics& g, juce::Rectangle<float> bounds, float radius,
-                            juce::Colour material, juce::Colour edge)
-{
-    drawAnalogPanel (g, bounds, radius, material, edge);
 }
 
 CompressorTheme themeFor (int model, bool upward)
@@ -381,10 +375,6 @@ void YinyangCompressorEditor::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (theme.background.brighter (0.015f), 0, 0,
         theme.background.darker (0.06f), 0, static_cast<float> (designHeight), false));
     g.fillRect (0, 0, designWidth, designHeight);
-    const auto& grain = analogGrain();
-    for (int y = 0; y < designHeight; y += grain.getHeight())
-        for (int x = 0; x < designWidth; x += grain.getWidth())
-            g.drawImageAt (grain, x, y);
     g.setGradientFill (juce::ColourGradient (theme.control.withAlpha (0.05f), 18, 18,
         juce::Colours::transparentBlack, 470, 565, true));
     g.fillAll();
@@ -400,7 +390,7 @@ void YinyangCompressorEditor::paint (juce::Graphics& g)
     g.setColour (theme.text);
     g.setFont (juce::FontOptions (29.0f));
     g.drawText ("YINYANG COMPRESSOR", 24, 60, 420, 38, juce::Justification::centredLeft);
-    drawBrushedMetalPanel (g, { 24, 140, 300, 342 }, 10, theme.card, theme.grid);
+    drawAnalogPanel (g, { 24, 140, 300, 342 }, 10, theme.card, theme.grid);
     drawAnalogPanel (g, { 24, 494, 300, 116 }, 10, theme.card, theme.grid);
     drawAnalogPanel (g, { 24, 622, 300, 116 }, 10, theme.card, theme.grid);
     g.setColour (theme.text);
@@ -565,6 +555,7 @@ void YinyangCompressorEditor::resized()
     const auto up = [] (int y) { return y - 30; };
     model.setBounds (24, up (98), 500, 32);
     bypass.setBounds (450, up (63), 74, 28);
+    autoGain.setBounds (452, up (630), 60, 22);
     const auto place = [this, &up] (size_t index, int x, int y, int width, int height)
     {
         labels[index].setBounds (x, up (y + 3), width, 20);
@@ -619,7 +610,7 @@ void YinyangCompressorEditor::resized()
     model.setTransform (scale);
     for (auto& slider : sliders) slider.setTransform (scale);
     for (auto& label : labels) label.setTransform (scale);
-    for (auto* control : { &transformer, &upward, &bypass, &midSide })
+    for (auto* control : { &transformer, &upward, &bypass, &midSide, &autoGain })
         control->setTransform (scale);
 }
 
@@ -649,6 +640,7 @@ void YinyangCompressorEditor::timerCallback()
     upward.advance (elapsed);
     midSide.advance (elapsed);
     bypass.advance (elapsed);
+    autoGain.advance (elapsed);
     const auto upwardMode = upward.getToggleState();
     const auto modelIndex = std::clamp (model.getSelectedItemIndex(), 0, 3);
     if (upwardMode != lastUpwardMode || modelIndex != lastModelIndex)
@@ -694,6 +686,6 @@ void YinyangCompressorEditor::applyTheme()
         slider.repaint();
     }
     for (auto& label : labels) label.setColour (juce::Label::textColourId, theme.text);
-    for (auto* control : { &transformer, &upward, &bypass, &midSide })
+    for (auto* control : { &transformer, &upward, &bypass, &midSide, &autoGain })
         control->setTheme (theme);
 }
