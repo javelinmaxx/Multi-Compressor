@@ -116,14 +116,20 @@ struct QinSynthTestAccess
 };
 struct QinSynthEditorTestAccess
 {
-    static bool brighterSelectedButtons(const QinSynthEditor& editor)
+    static bool compactButtonsUseKnobPalette(const QinSynthEditor& editor)
     {
         for(const juce::TextButton* button:{&editor.oscillatorTabs[0],&editor.envelopeTabs[0],
                                              &editor.fxTabs[0],&editor.noiseButton,
-                                             &editor.tuneButton,&editor.syncButton,&editor.retrig[0]})
-            if(button->findColour(juce::TextButton::buttonOnColourId).getBrightness()
-               <=button->findColour(juce::TextButton::buttonColourId).getBrightness()) return false;
-        return true;
+                                             &editor.tuneButton,&editor.syncButton,
+                                             static_cast<const juce::TextButton*>(&editor.retrig[0])})
+            if(button->findColour(juce::TextButton::buttonColourId)!=juce::Colour(0xffe8edf0)
+               || button->findColour(juce::TextButton::buttonOnColourId)!=juce::Colour(0xffe8a4af))
+                return false;
+        return editor.retrig[0].getClickingTogglesState()
+            && editor.retrig[0].getWidth()==68
+            && editor.oscillatorTabs[0].getWidth()==82
+            && editor.presetMenuButton.getWidth()==40
+            && editor.transformerButton.getWidth()==72;
     }
     static void oscillator(QinSynthEditor& editor,int index) { editor.showOscillator(index); }
     static void envelope(QinSynthEditor& editor,int index) { editor.showEnvelope(index); }
@@ -1782,8 +1788,8 @@ int main(int argc,char** argv)
             auto previewOwner=std::make_unique<QinSynthProcessor>();
             auto& preview=*previewOwner;
             QinSynthEditor editor(preview);
-            if(!QinSynthEditorTestAccess::brighterSelectedButtons(editor))
-                throw std::runtime_error("Selected Qin buttons must be brighter than unselected buttons");
+            if(!QinSynthEditorTestAccess::compactButtonsUseKnobPalette(editor))
+                throw std::runtime_error("Qin buttons must be compact and use the white/red knob palette");
             if(editor.getWidth()!=920 || editor.getHeight()!=640
                || QinSynthEditorTestAccess::previewCycle()!=std::array<float,3>{0.f,.5f,0.f}
                || QinSynthEditorTestAccess::modDestinationCount(editor)

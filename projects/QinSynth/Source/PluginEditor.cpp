@@ -19,8 +19,9 @@ const auto curveBlue=juce::Colour(0xff87c9ed);
 const auto accent=juce::Colour(0xffbd4e60);
 const auto postFilterAccent=juce::Colour(0xffdc7180);
 const auto highlightRed=plotRed;
-const auto buttonIdle=juce::Colour(0xff36414c);
-const auto buttonActive=juce::Colour(0xff84c8e8);
+const auto knobWhite=juce::Colour(0xffe8edf0);
+const auto buttonIdle=knobWhite;
+const auto buttonActive=juce::Colour(0xffe8a4af);
 struct Control { const char* id; const char* name; const char* hint; };
 constexpr std::array<Control,44> controls {{
     {"osc1Level","LEVEL","Sets oscillator one's contribution to the mix."},
@@ -83,8 +84,15 @@ void styleTab(juce::TextButton& button,const juce::String& title,int group)
     button.setButtonText(title); button.setClickingTogglesState(true); button.setRadioGroupId(group);
     button.setColour(juce::TextButton::buttonColourId,buttonIdle);
     button.setColour(juce::TextButton::buttonOnColourId,buttonActive);
-    button.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
+    button.setColour(juce::TextButton::textColourOffId,buttonInk);
     button.setColour(juce::TextButton::textColourOnId,buttonInk);
+}
+void setCompactButtonBounds(juce::Button& button,int x,int y,int width,int height)
+{
+    const auto compactWidth=juce::roundToInt(width*.8f);
+    const auto compactHeight=juce::roundToInt(height*.8f);
+    button.setBounds(x+(width-compactWidth)/2,y+(height-compactHeight)/2,
+                     compactWidth,compactHeight);
 }
 float filterMagnitude(int type,float frequency,float cutoff,float resonance)
 {
@@ -250,6 +258,18 @@ void QinVoiceSlider::paint(juce::Graphics& g)
     g.setFont(juce::FontOptions(prefix.isEmpty() ? 12.f : prefix=="LEVEL" ? 11.f : 10.f).withStyle("bold"));
     g.drawText(getReadoutText(),getLocalBounds(),juce::Justification::centred);
 }
+void QinRetrigButton::paintButton(juce::Graphics& g,bool highlighted,bool down)
+{
+    const auto area=getLocalBounds().toFloat().reduced(1);
+    g.setColour(stageStyle::inset);
+    g.fillRoundedRectangle(area,4);
+    g.setColour(stageStyle::grid);
+    g.drawRoundedRectangle(area,4,1);
+    const auto textColour=getToggleState() ? buttonActive : buttonIdle;
+    g.setColour(highlighted || down ? textColour.brighter(.12f) : textColour);
+    g.setFont(juce::FontOptions(10.f).withStyle("bold"));
+    g.drawText(getButtonText(),getLocalBounds(),juce::Justification::centred);
+}
 QinWavePad::QinWavePad()
 {
     setName("WAVE PAD"); setTitle("Waveform blend");
@@ -372,16 +392,16 @@ void QinAnalogSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
     const auto pivotY=titleHeight+(float(getHeight())-titleHeight)*.5f;
     const auto nutRadius=compact ? 11.f : 14.f;
     const auto flangeRadius=compact ? 8.5f : 11.f;
-    g.setColour(getToggleState() ? panelInk : secondaryRed);
+    g.setColour(getToggleState() ? buttonActive : buttonIdle);
     g.setFont(juce::FontOptions(compact ? 8.f : 9.f).withStyle("bold"));
     if(!headerless)
         g.drawFittedText(getButtonText(),1,0,getWidth()-2,int(titleHeight),juce::Justification::centred,1);
     const auto onCaption=getButtonText()=="*5" ? "5X" : "ON";
     const auto offCaption=getButtonText()=="*5" ? "1X" : "OFF";
     g.setFont(juce::FontOptions(7.f).withStyle("bold"));
-    g.setColour(getToggleState() ? buttonActive : secondaryRed.withAlpha(.6f));
+    g.setColour(getToggleState() ? buttonActive : buttonIdle.withAlpha(.6f));
     g.drawText(onCaption,0,int(titleHeight)+1,getWidth(),9,juce::Justification::centred);
-    g.setColour(getToggleState() ? secondaryRed.withAlpha(.55f) : panelInk);
+    g.setColour(getToggleState() ? buttonActive.withAlpha(.55f) : buttonIdle);
     g.drawText(offCaption,0,getHeight()-10,getWidth(),9,juce::Justification::centred);
     juce::Path nut;
     for(int corner=0;corner<6;++corner)
@@ -398,7 +418,7 @@ void QinAnalogSwitch::paintButton(juce::Graphics& g,bool highlighted,bool down)
     g.setColour(secondaryRed.darker(.3f)); g.strokePath(nut,juce::PathStrokeType(.8f));
     const auto flange=juce::Rectangle<float>(cx-flangeRadius,pivotY-flangeRadius,2.f*flangeRadius,2.f*flangeRadius);
     g.setColour(stageStyle::inset); g.fillEllipse(flange.expanded(1.f));
-    g.setColour(getToggleState() ? buttonActive : juce::Colour(0xff6f7d8b));
+    g.setColour(getToggleState() ? buttonActive : buttonIdle);
     g.drawEllipse(flange.expanded(2.f),getToggleState() ? 2.f : 1.f);
     g.setGradientFill(juce::ColourGradient(juce::Colour(0xffc8cdd0),flange.getTopLeft(),
                                           juce::Colour(0xff717980),flange.getBottomRight(),false));
@@ -500,13 +520,13 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
 {
     setOpaque(true); look.accentColour=accent; look.markColour=panelInk;
     look.trackColour=juce::Colour(0xff6f7c89);
-    look.dialTopColour=juce::Colour(0xffe8edf0);
+    look.dialTopColour=knobWhite;
     look.dialBottomColour=juce::Colour(0xff8d9aa7); setLookAndFeel(&look);
     addAndMakeVisible(titleHint);
     for(auto* button:{&presetMenuButton,&presetPreviousButton,&presetNextButton})
     {
         button->setColour(juce::TextButton::buttonColourId,buttonIdle);
-        button->setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
+        button->setColour(juce::TextButton::textColourOffId,buttonInk);
         addAndMakeVisible(*button);
     }
     presetMenuButton.setTooltip("Opens factory and saved presets, with commands to save or delete your own presets.");
@@ -560,6 +580,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     tuneButton.setClickingTogglesState(true);
     tuneButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
     tuneButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
+    tuneButton.setColour(juce::TextButton::textColourOffId,buttonInk);
     tuneButton.setColour(juce::TextButton::textColourOnId,buttonInk);
     tuneButton.setTooltip("Opens the custom tuning table and A4 reference controls.");
     addAndMakeVisible(tuneButton);
@@ -643,6 +664,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     noiseButton.setTooltip("Enables the noise oscillator and opens its tuning, filter, and style controls.");
     noiseButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
     noiseButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
+    noiseButton.setColour(juce::TextButton::textColourOffId,buttonInk);
     noiseButton.setColour(juce::TextButton::textColourOnId,buttonInk);
     addAndMakeVisible(noiseButton);
     noiseAttachment=std::make_unique<State::ButtonAttachment>(synth.parameters,"noise",noiseButton);
@@ -811,6 +833,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
     syncButton.setClickingTogglesState(true);
     syncButton.setColour(juce::TextButton::buttonColourId,buttonIdle);
     syncButton.setColour(juce::TextButton::buttonOnColourId,buttonActive);
+    syncButton.setColour(juce::TextButton::textColourOffId,buttonInk);
     syncButton.setColour(juce::TextButton::textColourOnId,buttonInk);
     syncButton.setTooltip("Synchronizes Delay Time to the host tempo using straight, dotted, or triplet notes.");
     addAndMakeVisible(syncButton);
@@ -1038,7 +1061,7 @@ QinSynthEditor::QinSynthEditor(QinSynthProcessor& synth)
         retrigger.setClickingTogglesState(true);
         retrigger.setColour(juce::TextButton::buttonColourId,buttonIdle);
         retrigger.setColour(juce::TextButton::buttonOnColourId,buttonActive);
-        retrigger.setColour(juce::TextButton::textColourOffId,stageStyle::foreground);
+        retrigger.setColour(juce::TextButton::textColourOffId,buttonInk);
         retrigger.setColour(juce::TextButton::textColourOnId,buttonInk);
         retrigger.setTooltip("Restarts this oscillator's waveform phase at each note onset when enabled.");
         addAndMakeVisible(wave); addAndMakeVisible(label); addAndMakeVisible(retrigger);
@@ -1476,30 +1499,30 @@ void QinSynthEditor::updateVisibility()
 void QinSynthEditor::resized()
 {
     titleHint.setBounds(18,29,195,38);
-    presetMenuButton.setBounds(226,34,50,27);
+    setCompactButtonBounds(presetMenuButton,226,34,50,27);
     presetNameLabel.setBounds(281,34,204,27);
-    presetPreviousButton.setBounds(490,34,31,27);
-    presetNextButton.setBounds(527,34,31,27);
-    tuneButton.setBounds(574,34,74,27);
+    setCompactButtonBounds(presetPreviousButton,490,34,31,27);
+    setCompactButtonBounds(presetNextButton,527,34,31,27);
+    setCompactButtonBounds(tuneButton,574,34,74,27);
     tuningPanel.setBounds(430,78,472,416);
     updateTuningLabels();
     tuningRootLabel.setBounds(50,316,86,15); tuningRoot.setBounds(50,331,86,75);
     tuningA4Label.setBounds(154,316,86,15); tuningA4.setBounds(154,331,86,75);
     voiceCount.setBounds(660,34,94,27);
     activeVoicesLabel.setBounds(761,35,130,25);
-    polyLegatoButton.setBounds(351,526,79,72);
+    setCompactButtonBounds(polyLegatoButton,351,526,79,72);
     legatoRuleLabel.setBounds(30,522,83,13); legatoRule.setBounds(30,535,83,70);
     slideTimeLabel.setBounds(119,522,83,13); slideTime.setBounds(119,535,83,70);
     slideShapeLabel.setBounds(208,522,83,13); slideShape.setBounds(208,535,83,70);
     for(int i=0;i<3;++i)
     {
-        oscillatorTabs[size_t(i)].setBounds(31+i*109,101,103,27);
-        envelopeTabs[size_t(i)].setBounds(455+i*55,413,52,27);
+        setCompactButtonBounds(oscillatorTabs[size_t(i)],31+i*109,101,103,27);
+        setCompactButtonBounds(envelopeTabs[size_t(i)],455+i*55,413,52,27);
         waveLabels[size_t(i)].setBounds(318,164,96,11); waves[size_t(i)].setBounds(318,175,96,96);
         dutyLabels[size_t(i)].setBounds(218,185,86,15);
         dutySliders[size_t(i)].setBounds(218,200,86,65);
         phaseStartLines[size_t(i)].setBounds(oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight);
-        retrig[size_t(i)].setBounds(333,139,85,26);
+        setCompactButtonBounds(retrig[size_t(i)],333,139,85,26);
         levelDisplays[size_t(i)].setBounds(34,139,105,26);
         fineDisplays[size_t(i)].setBounds(143,139,102,26);
         octaveDisplays[size_t(i)].setBounds(249,139,78,26);
@@ -1518,14 +1541,14 @@ void QinSynthEditor::resized()
         fmAmountLabels[size_t(i)].setBounds(327,376,86,15);
         fmAmountSliders[size_t(i)].setBounds(327,391,86,65);
     }
-    noiseButton.setBounds(363,101,55,27);
+    setCompactButtonBounds(noiseButton,363,101,55,27);
     noiseStyleLabel.setBounds(34,146,118,15); noiseStyle.setBounds(34,162,154,27);
     for(size_t i=0;i<noiseSliders.size();++i)
     {
         const auto x=43+int(i%3)*132, y=296+int(i/3)*80;
         noiseLabels[i].setBounds(x,y,103,15); noiseSliders[i].setBounds(x,y+15,103,65);
     }
-    for(auto& button:timesFiveButtons) button.setBounds(622,414,50,49);
+    for(auto& button:timesFiveButtons) setCompactButtonBounds(button,622,414,50,49);
     labels[35].setBounds(231,376,86,15); sliders[35].setBounds(231,391,86,65);
     for(int env=0;env<3;++env)
         for(int control=0;control<4;++control)
@@ -1551,8 +1574,8 @@ void QinSynthEditor::resized()
     filterMergeSlider.setBounds(455,369,218,20);
     resonanceIndicator.setBounds(sliders[32].getBounds());
     resonanceIndicator.toFront(false);
-    for(int i=0;i<2;++i) fxTabs[size_t(i)].setBounds(703+i*97,103,92,27);
-    syncButton.setBounds(752,137,44,18);
+    for(int i=0;i<2;++i) setCompactButtonBounds(fxTabs[size_t(i)],703+i*97,103,92,27);
+    setCompactButtonBounds(syncButton,752,137,44,18);
     verbNoteSlider.setBounds(714,158,74,75);
     driveModeLabel.setBounds(706,145,90,14); driveMode.setBounds(706,159,90,79);
     labels[37].setBounds(802,145,90,14); sliders[37].setBounds(802,159,90,79);
@@ -1563,7 +1586,7 @@ void QinSynthEditor::resized()
         driveCutLabels[i].setBounds(x,350,90,14);
         driveCutSliders[i].setBounds(x,364,90,80);
     }
-    transformerButton.setBounds(805,524,90,78);
+    setCompactButtonBounds(transformerButton,805,524,90,78);
     labels[36].setBounds(712,522,82,13); sliders[36].setBounds(712,535,82,73);
     for(int i=38;i<44;++i)
     {
