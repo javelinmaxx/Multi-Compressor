@@ -59,14 +59,18 @@ Upward disabled, and overlays the default 0% setting with the maximum 400%
 setting. The change starts above 3 dB detector overshoot beyond Threshold and
 eases to full strength at 6 dB overshoot.
 Attack is measured to 90% of the final step reduction; recovery is measured to
-10% of the reduction at the downward step.
+10% of the pre-step steady reduction after skipping the first 5 ms converter transition.
 
 | Model | Attack 0% | Attack 400% | Recovery 0% | Recovery 400% |
 | --- | ---: | ---: | ---: | ---: |
-| FET feed-forward | 5.75 ms | 17.71 ms | 241.81 ms | 176.85 ms |
-| VCA feedback | 5.75 ms | 17.71 ms | 345.40 ms | 252.54 ms |
-| Variable-mu | 13.04 ms | 22.65 ms | 639.77 ms | 528.27 ms |
-| Optical | 53.65 ms | 148.90 ms | 1145.81 ms | 1050.71 ms |
+| FET feed-forward | 5.75 ms | 23.08 ms | 241.92 ms | 241.83 ms |
+| VCA feedback | 5.75 ms | 23.21 ms | 345.25 ms | 345.10 ms |
+| Variable-mu | 13.04 ms | 35.75 ms | 682.10 ms | 682.04 ms |
+| Optical | 53.63 ms | 194.71 ms | 1145.77 ms | 1145.77 ms |
+
+The −36 dBFS recovery step is below Threshold, so VariTransient disengages and
+the 0% and 400% release times converge. It still accelerates release when the
+detector remains 3–6 dB above Threshold, as the DSP test verifies.
 
 Transformer measurements disable compression with a 1:1 ratio. The waveform
 and saturation-harmonic plots use a 100 Hz tone at −6 dBFS peak, with

@@ -10,56 +10,60 @@
     400
   ],
   "detector_hpf_hz": 0,
+  "vari_transient_overshoot_transition_db": [
+    3,
+    6
+  ],
   "oversampling_factor": 4,
   "latency_samples_removed": 64,
   "stimulus": "DC step -36 dBFS to -6 dBFS at 0.1 s, back to -36 dBFS at 1.1 s",
   "dsp_sha256": {
-    "CompressorDSP.h": "67effc97cd104b512344ed5abd21e3893e89f20b7a3c0f2d50fdb8d4781dfa63",
-    "OversampledTransformer.h": "fde3175976d53788e30550ed75a323cc78357438c31f03d658d666aeab9bf678",
+    "CompressorDSP.h": "92491b332cc0f96360fb8196ec094b0b948af0f117c067f9b4081c4b4a4c6673",
+    "OversampledTransformer.h": "31d91a6ed2eca2dcafcce1ee4bd87b0243706ea0139200c73b4d19d5920efc3a",
     "TransformerResponse.h": "b8ab069e598442b7c5146849f62bcfb0ba777ed28f2b962c87b3b38800ce23c8",
-    "HighTilt.h": "08bb893fc879f5f95990aae0529f83281e7310f8e7795f8bc8be091d3f85bbf6"
+    "HighTilt.h": "10641c8d8b732fd63c9096eae60d9d1e758ee20af1648ecf57cdf4bcdc0045a8"
   },
-  "source_commit": "d84f227d0ba26f81747b93088431b789eb0ac0a1",
+  "source_commit": "649d07f2e92503adfac03d1d3c4ab1c39190f1e2",
   "metrics": {
     "FET (feed-forward) / 0%": {
-      "steady_gr_db": 8.9999418258667,
+      "steady_gr_db": 8.999809265136719,
       "attack_to_90_percent_ms": 5.75,
-      "release_to_10_percent_ms": 241.8125
+      "release_to_10_percent_ms": 241.91666666666666
     },
     "FET (feed-forward) / 400%": {
-      "steady_gr_db": 8.999770164489746,
-      "attack_to_90_percent_ms": 17.708333333333332,
-      "release_to_10_percent_ms": 176.85416666666669
+      "steady_gr_db": 8.999117851257324,
+      "attack_to_90_percent_ms": 23.083333333333336,
+      "release_to_10_percent_ms": 241.83333333333334
     },
     "VCA (feedback) / 0%": {
-      "steady_gr_db": 8.9999418258667,
+      "steady_gr_db": 8.999817848205566,
       "attack_to_90_percent_ms": 5.75,
-      "release_to_10_percent_ms": 345.39583333333337
+      "release_to_10_percent_ms": 345.25
     },
     "VCA (feedback) / 400%": {
-      "steady_gr_db": 8.999770164489746,
-      "attack_to_90_percent_ms": 17.708333333333332,
-      "release_to_10_percent_ms": 252.54166666666666
+      "steady_gr_db": 8.999115943908691,
+      "attack_to_90_percent_ms": 23.208333333333336,
+      "release_to_10_percent_ms": 345.10416666666663
     },
     "Variable-mu / 0%": {
-      "steady_gr_db": 6.356102466583252,
+      "steady_gr_db": 6.360010147094727,
       "attack_to_90_percent_ms": 13.041666666666666,
-      "release_to_10_percent_ms": 639.7708333333333
+      "release_to_10_percent_ms": 682.1041666666666
     },
     "Variable-mu / 400%": {
-      "steady_gr_db": 6.355035781860352,
-      "attack_to_90_percent_ms": 22.645833333333332,
-      "release_to_10_percent_ms": 528.2708333333334
+      "steady_gr_db": 6.35538387298584,
+      "attack_to_90_percent_ms": 35.75,
+      "release_to_10_percent_ms": 682.0416666666666
     },
     "Optical / 0%": {
-      "steady_gr_db": 8.9994478225708,
-      "attack_to_90_percent_ms": 53.64583333333333,
-      "release_to_10_percent_ms": 1145.8125
+      "steady_gr_db": 8.99799633026123,
+      "attack_to_90_percent_ms": 53.625,
+      "release_to_10_percent_ms": 1145.7708333333335
     },
     "Optical / 400%": {
-      "steady_gr_db": 8.998074531555176,
-      "attack_to_90_percent_ms": 148.89583333333334,
-      "release_to_10_percent_ms": 1050.7083333333333
+      "steady_gr_db": 8.992300987243652,
+      "attack_to_90_percent_ms": 194.70833333333334,
+      "release_to_10_percent_ms": 1145.7708333333335
     }
   }
 }

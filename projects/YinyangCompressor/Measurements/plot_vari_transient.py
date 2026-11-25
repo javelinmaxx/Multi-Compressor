@@ -58,12 +58,15 @@ with tempfile.TemporaryDirectory(prefix='character-vari-transient-') as temp:
             recovery = gr[time >= 1.1]
             steady = float(np.mean(attack[-FS // 10:]))
             attack_crossing = np.flatnonzero(attack >= steady * 0.9)
-            release_crossing = np.flatnonzero(recovery <= recovery[0] * 0.1)
+            # Ignore the converter transition and measure against the actual
+            # pre-step reduction, not the first possibly misaligned sample.
+            release_start = int(0.005 * FS)
+            release_crossing = np.flatnonzero(recovery[release_start:] <= steady * 0.1)
             metrics[f'{name} / {amount}%'] = {
                 'steady_gr_db': steady,
                 'attack_to_90_percent_ms': float(attack_crossing[0] / FS * 1000)
                     if attack_crossing.size else None,
-                'release_to_10_percent_ms': float(release_crossing[0] / FS * 1000)
+                'release_to_10_percent_ms': float((release_start + release_crossing[0]) / FS * 1000)
                     if release_crossing.size else None,
             }
 
@@ -112,7 +115,7 @@ plt.close(fig)
 np.savez_compressed(OUT / 'vari_transient.npz', time_s=time, gain_reduction_db=trace)
 import csv
 with (OUT / 'vari_transient.csv').open('w', newline='') as f:
-    writer = csv.writer(f)
+    writer = csv.writer(f, lineterminator='\n')
     writer.writerow(['model', 'vari_transient_percent', 'time_seconds', 'gain_reduction_db'])
     for model, name in enumerate(MODELS):
         for setting, (amount, _) in enumerate(SETTINGS):
