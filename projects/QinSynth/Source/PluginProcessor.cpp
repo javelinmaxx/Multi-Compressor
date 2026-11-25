@@ -1091,6 +1091,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                                          30.f,float(sampleRate*.44));
             voice.cutoff+=cutoffSmoothing*(target-voice.cutoff);
             const auto hz=std::clamp(voice.cutoff,25.f,float(sampleRate*.44));
+            const auto openCutoff=std::min(18000.f,float(sampleRate*.44));
+            const auto openBlend=std::clamp((hz-openCutoff*.75f)/(openCutoff*.25f),0.f,1.f);
             const auto coefficient=settings.filterType==1
                 ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)
                 : filterCoefficient(hz);
@@ -1099,8 +1101,14 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             const auto gain=.16*voice.velocity*amp;
             out.masterLeft=gain*voiceLeft; out.masterRight=gain*voiceRight;
             out.cutoffSum=gain*hz; out.cutoffWeight=gain;
+            const auto dryLeft=voiceLeft,dryRight=voiceRight;
             voiceLeft=filterSample(voice.filter[0],float(voiceLeft),coefficient,onePole,settings.resonance,settings.filterType);
             voiceRight=filterSample(voice.filter[1],float(voiceRight),coefficient,onePole,settings.resonance,settings.filterType);
+            // The filter models retain high-frequency rolloff at their numeric
+            // ceiling. Fade to the unfiltered voice over the final cutoff range
+            // so full positive envelope depth really opens every filter type.
+            voiceLeft+=openBlend*(dryLeft-voiceLeft);
+            voiceRight+=openBlend*(dryRight-voiceRight);
         }
         const auto gain=.16*voice.velocity*amp;
         out.left=gain*voiceLeft; out.right=gain*voiceRight;
@@ -1122,15 +1130,19 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
             if(masterCutoff<=0.f) masterCutoff=target;
             else masterCutoff+=cutoffSmoothing*(target-masterCutoff);
             const auto hz=std::clamp(masterCutoff,25.f,float(sampleRate*.44));
+            const auto openCutoff=std::min(18000.f,float(sampleRate*.44));
+            const auto openBlend=std::clamp((hz-openCutoff*.75f)/(openCutoff*.25f),0.f,1.f);
             const auto coefficient=settings.filterType==1
                 ? std::clamp(float(2*juce::MathConstants<double>::pi*hz/sampleRate),.001f,.9f)
                 : filterCoefficient(hz);
             const auto onePole=settings.filterType==2
                 ? coefficient/(1.f+coefficient) : 0.f;
-            const auto masterLeft=filterSample(masterFilter[0],float(masterInputLeft),coefficient,onePole,
+            const auto filteredMasterLeft=filterSample(masterFilter[0],float(masterInputLeft),coefficient,onePole,
                                                settings.resonance,settings.filterType);
-            const auto masterRight=filterSample(masterFilter[1],float(masterInputRight),coefficient,onePole,
+            const auto filteredMasterRight=filterSample(masterFilter[1],float(masterInputRight),coefficient,onePole,
                                                 settings.resonance,settings.filterType);
+            const auto masterLeft=filteredMasterLeft+openBlend*(masterInputLeft-filteredMasterLeft);
+            const auto masterRight=filteredMasterRight+openBlend*(masterInputRight-filteredMasterRight);
             smoothedFilterMerge+=cutoffSmoothing*(settings.filterMerge-smoothedFilterMerge);
             left=left+(masterLeft-left)*smoothedFilterMerge;
             right=right+(masterRight-right)*smoothedFilterMerge;
