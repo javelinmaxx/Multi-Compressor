@@ -82,18 +82,15 @@ inline const juce::Image& knobNoise()
     {
         juce::Image image (juce::Image::ARGB, 128, 128, true);
         auto state = 0x873b5e29u;
-        for (int y = 0; y < 128; y += 2)
-            for (int x = 0; x < 128; x += 2)
+        for (int y = 0; y < 128; ++y)
+            for (int x = 0; x < 128; ++x)
         {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
             const auto value = state & 255u;
-            const auto colour = (value & 1u) == 0u ? juce::Colours::white : juce::Colours::black;
-            const auto opacity = static_cast<juce::uint8> (10u + (value >> 3) % 20u);
-            for (int dy = 0; dy < 2; ++dy)
-                for (int dx = 0; dx < 2; ++dx)
-                    image.setPixelAt (x + dx, y + dy, colour.withAlpha (opacity));
+            const auto colour = (value & 1u) == 0u ? juce::Colours::white : juce::Colour (0xff8c8c8c);
+            image.setPixelAt (x, y, colour.withAlpha (0.1f));
         }
         return image;
     }();
