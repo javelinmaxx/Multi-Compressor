@@ -1400,6 +1400,21 @@ int main(int argc,char** argv)
                 throw std::runtime_error("An overlapping note must not pull the shared filter away from a fixed cutoff");
         }
         {
+            auto glideOwner=std::make_unique<QinSynthProcessor>();
+            auto& glide=*glideOwner;
+            set(glide,"verbMix",0); set(glide,"filterType",3);
+            set(glide,"filterCutoff",30); set(glide,"filterEnvAmount",0);
+            glide.prepareToPlay(48000,48);
+            QinSynthTestAccess::noteOn(glide,60);
+            set(glide,"filterCutoff",18000);
+            juce::AudioBuffer<float> audio(2,48); juce::MidiBuffer empty;
+            glide.processBlock(audio,empty);
+            const auto expected=30.f+(18000.f-30.f)*float(1-std::exp(-1.0));
+            if(std::abs(QinSynthTestAccess::voiceCutoff(glide,0)-expected)>75.f
+               || !QinSynthTestAccess::stableFilters(glide))
+                throw std::runtime_error("Filter cutoff glide must have a stable 1 ms time constant");
+        }
+        {
             // Tripled depth opens a minimum cutoff even when the filter
             // envelope has already decayed well below its peak.
             for(const auto rate:{44100.,48000.,96000.})

@@ -759,7 +759,8 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
         for(size_t stage=0;stage<3;++stage)
             coefficients[env][stage]=float(1.0/(sampleRate*std::max(.001f,times[stage])));
     }
-    const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
+    const auto cutoffSmoothing=float(1-std::exp(-1.0/(sampleRate*.001)));
+    const auto filterMixSmoothing=float(1-std::exp(-1.0/(sampleRate*.005)));
     const auto mergeSmoothing=float(1-std::exp(-1.0/(sampleRate*.01)));
     const auto onsetStep=float(1.0/(sampleRate*.002));
     const auto modDepthIncrement=(settings.modDepth-smoothedModDepth)/count;
@@ -1143,7 +1144,7 @@ void QinSynthProcessor::renderSegment(juce::AudioBuffer<float>& buffer,int start
                                                 settings.resonance,settings.filterType);
             const auto masterLeft=filteredMasterLeft+openBlend*(masterInputLeft-filteredMasterLeft);
             const auto masterRight=filteredMasterRight+openBlend*(masterInputRight-filteredMasterRight);
-            smoothedFilterMerge+=cutoffSmoothing*(settings.filterMerge-smoothedFilterMerge);
+            smoothedFilterMerge+=filterMixSmoothing*(settings.filterMerge-smoothedFilterMerge);
             left=left+(masterLeft-left)*smoothedFilterMerge;
             right=right+(masterRight-right)*smoothedFilterMerge;
         }
