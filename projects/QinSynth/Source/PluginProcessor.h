@@ -20,7 +20,7 @@ class QinSynthProcessor final : public juce::AudioProcessor
 {
 public:
     static constexpr int maxVoices=16, oscillatorCount=3, maxUnison=8;
-    static constexpr float filterEnvOctaves=10.f;
+    static constexpr float filterEnvOctaves=30.f;
     static constexpr size_t driveScopePoints=128, driveScopeCapturePoints=1024;
     struct DriveScope
     {

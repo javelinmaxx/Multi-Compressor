@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "LegatoCurve.h"
 #include "WaveformSync.h"
+#include "UnisonDetune.h"
 #include "../../EditorScaling.h"
 #include "../../PanelSurface.h"
 #include "../../AnalogToggleHardware.h"
@@ -60,7 +61,7 @@ constexpr std::array<Control,44> controls {{
     {"filterCutoff","FREQ","Sets the filter's base cutoff on a logarithmic frequency scale."},
     {"filterResonance","RESONANCE","Emphasizes the cutoff while a blue marker shows the MOD envelope's effective resonance."},
     {"filterKeyFollow","KEY FOLLOW","Raises the cutoff with MIDI note pitch."},
-    {"filterEnvAmount","ENV AMOUNT","Moves the filter cutoff by up to ten octaves in either direction."},
+    {"filterEnvAmount","ENV AMOUNT","Moves the filter cutoff by up to thirty octaves in either direction."},
     {"keyPan","KEY PAN","Sets pitch panning from high notes left at -100% to high notes right at +100%."},
     {"output","OUTPUT","Sets the final synth level."},
     {"drive","DRIVE","Sets how hard the oscillator signal drives the selected circuit."},
@@ -1247,6 +1248,35 @@ void QinSynthEditor::timerCallback()
         && liveMod.target<qin::legacyModTargetCount+qin::continuousModTargetCount;
     const auto routeId=direct ? juce::String(qin::continuousModTargets[liveMod.target-qin::legacyModTargetCount].id)
         : juce::String();
+    const auto previewPrefix=currentOscillator==3 ? juce::String("noise")
+        : "osc"+juce::String(currentOscillator+1);
+    const auto previewModTarget=routeId.startsWith(previewPrefix) ? liveMod.target : -1;
+    std::array<float,13> previewValues {};
+    if(currentOscillator==3)
+    {
+        constexpr std::array<const char*,4> names {"Level","Tune","Hpf","Pan"};
+        for(size_t i=0;i<names.size();++i)
+            previewValues[i]=processor.parameters.getRawParameterValue(previewPrefix+names[i])->load();
+        previewValues[4]=float(noiseStyle.getSelectedId());
+    }
+    else
+    {
+        constexpr std::array<const char*,13> names {"WaveX","WaveY","Duty","Level","Fine",
+            "Unison","Detune","DetuneShape","Spread","Pan","FmAmount","FmSource","Octave"};
+        for(size_t i=0;i<names.size();++i)
+            previewValues[i]=processor.parameters.getRawParameterValue(previewPrefix+names[i])->load();
+    }
+    if(lastOscPreviewIndex!=currentOscillator || lastOscPreviewModTarget!=previewModTarget
+       || (previewModTarget>=0 && std::abs(lastOscPreviewModValue-liveMod.normalized)>.001f)
+       || previewValues!=lastOscPreviewValues)
+    {
+        lastOscPreviewIndex=currentOscillator;
+        lastOscPreviewModTarget=previewModTarget;
+        lastOscPreviewModValue=previewModTarget>=0 ? liveMod.normalized : 0.f;
+        lastOscPreviewValues=previewValues;
+        repaint(editorScaling::repaintArea(*this,designWidth,designHeight,
+            {oscPlotX,oscPlotY,oscPlotWidth,oscPlotHeight}));
+    }
     if(direct)
     {
         const auto searchId=routeId.endsWith("WaveY") ? routeId.dropLastCharacters(1)+"X" : routeId;
@@ -1769,16 +1799,80 @@ void QinSynthEditor::paint(juce::Graphics& g)
     g.setColour(stageStyle::inset); g.fillRoundedRectangle(oscPlot,6);
     for(int line=1;line<4;++line)
     { g.setColour(stageStyle::grid); g.drawHorizontalLine(juce::roundToInt(oscPlotY+line*oscPlotHeight*.25f),oscPlotX,oscPlotX+oscPlotWidth); }
-    const auto waveMix=currentOscillator==3 ? std::array<float,4>{1.f,0.f,0.f,0.f}
-        : qin::waveWeights(waves[size_t(currentOscillator)].getPosition());
-    const auto duty=currentOscillator==3 ? .5 : dutySliders[size_t(currentOscillator)].getValue()*.01;
-    const auto dutyShape=qin::makeDutyShape(duty);
+    const auto previewPrefix=currentOscillator==3 ? juce::String("noise")
+        : "osc"+juce::String(currentOscillator+1);
+    const auto liveOscMod=processor.getLiveModulation();
+    const auto liveOscRoute=liveOscMod.target>=qin::legacyModTargetCount
+        && liveOscMod.target<qin::legacyModTargetCount+qin::continuousModTargetCount
+        ? juce::String(qin::continuousModTargets[liveOscMod.target-qin::legacyModTargetCount].id)
+        : juce::String();
+    const auto effective=[&](const juce::String& id)
+    {
+        const auto* raw=processor.parameters.getRawParameterValue(id);
+        const auto base=raw!=nullptr ? raw->load(std::memory_order_relaxed) : 0.f;
+        if(id!=liveOscRoute) return base;
+        const auto* parameter=processor.parameters.getParameter(id);
+        return parameter!=nullptr ? parameter->convertFrom0to1(liveOscMod.normalized) : base;
+    };
+    const auto oscillator=currentOscillator<3;
+    const auto level=std::clamp(effective(previewPrefix+"Level")*.01f,0.f,1.f);
+    const auto wavePosition=oscillator ? qin::clampWavePosition(
+        effective(previewPrefix+"WaveX")*.01f,effective(previewPrefix+"WaveY")*.01f)
+        : qin::WavePosition {};
+    const auto waveMix=oscillator ? qin::waveWeights(wavePosition)
+        : std::array<float,4>{1.f,0.f,0.f,0.f};
+    const auto dutyShape=qin::makeDutyShape(oscillator
+        ? effective(previewPrefix+"Duty")*.01f : .5f);
+    const auto unison=oscillator ? std::clamp(juce::roundToInt(effective(previewPrefix+"Unison")),1,8) : 1;
+    const auto detune=oscillator ? effective(previewPrefix+"Detune") : 0.f;
+    const auto detuneShape=oscillator ? effective(previewPrefix+"DetuneShape")*.01f : 0.f;
+    const auto spread=oscillator ? effective(previewPrefix+"Spread")*.01f : 0.f;
+    const auto pan=effective(previewPrefix+"Pan")*.01f;
+    const auto fmSource=oscillator ? juce::roundToInt(effective(previewPrefix+"FmSource")) : 0;
+    const auto fmAmount=oscillator ? effective(previewPrefix+"FmAmount")*.01f : 0.f;
+    const auto sampleWave=[](float phase,const std::array<float,4>& weights,const qin::DutyShape& shape)
+    {
+        phase-=std::floor(phase);
+        const auto sine=weights[3]==0.f ? 0.f
+            : weights[3]*std::sin(2.f*juce::MathConstants<float>::pi*phase);
+        return float(weights[0]*qin::dutySaw(phase,shape)
+            +weights[1]*qin::dutyPulse(phase,shape)
+            +weights[2]*qin::dutyTriangle(phase,shape)
+            +sine);
+    };
+    std::array<float,4> sourceMix {};
+    qin::DutyShape sourceDuty {};
+    if(fmSource>=1 && fmSource<=3)
+    {
+        const auto sourcePrefix="osc"+juce::String(fmSource);
+        sourceMix=qin::waveWeights(qin::clampWavePosition(
+            effective(sourcePrefix+"WaveX")*.01f,effective(sourcePrefix+"WaveY")*.01f));
+        sourceDuty=qin::makeDutyShape(effective(sourcePrefix+"Duty")*.01f);
+    }
+    std::array<float,8> unisonRatios {}, unisonMidGains {};
+    for(int u=0;u<unison;++u)
+    {
+        const auto offset=unison==1 ? 0.f : 2.f*u/float(unison-1)-1.f;
+        unisonRatios[size_t(u)]=float(std::exp2(
+            qin::detunePosition(u,unison,detuneShape)*detune/1200.f));
+        const auto voicePan=std::clamp(pan+offset*.35f*spread,-.98f,.98f);
+        unisonMidGains[size_t(u)]=(std::sqrt((1.f-voicePan)*.5f)
+            +std::sqrt((1.f+voicePan)*.5f))*.70710678f;
+    }
     juce::Path waveform;
     uint32_t noisePreviewState=0x87a3d21fu;
     float pinkPreview=0;
+    float noiseBand=0,noiseLow=0,noiseHighPassLow=0;
+    const auto noiseTune=oscillator ? 0.f : effective("noiseTune");
+    const auto noiseHighPass=oscillator ? 20.f : effective("noiseHpf");
+    const auto noiseCenter=std::clamp(261.63f*std::exp2(noiseTune/12.f),30.f,12000.f);
+    const auto centerStep=1.f-std::exp(-2.f*juce::MathConstants<float>::pi*noiseCenter/48000.f);
+    const auto highPassStep=1.f-std::exp(-2.f*juce::MathConstants<float>::pi*noiseHighPass/48000.f);
+    float carrierPhase=0;
     for(int point=0;point<=266;++point)
     {
-        // Include the wrapped endpoint so the plot covers exactly one cycle.
+        // An unmodulated oscillator covers exactly one cycle. Modulated
+        // oscillators show their effective unison and FM over that period.
         const auto cycle=oscPreviewPhase(point);
         noisePreviewState^=noisePreviewState<<13;
         noisePreviewState^=noisePreviewState>>17;
@@ -1788,17 +1882,43 @@ void QinSynthEditor::paint(juce::Graphics& g)
         const auto style=noiseStyle.getSelectedId();
         const auto noiseShape=style==2 ? pinkPreview*2.5f
             : style==3 ? ((noisePreviewState&31u)==0 ? white*2.f : 0.f) : white;
-        const auto shape=currentOscillator==3 ? double(std::clamp(noiseShape,-1.f,1.f))
-            : waveMix[0]*qin::dutySaw(cycle,dutyShape)
-              +waveMix[1]*qin::dutyPulse(cycle,dutyShape)
-              +waveMix[2]*qin::dutyTriangle(cycle,dutyShape)
-              +waveMix[3]*std::sin(2.f*juce::MathConstants<float>::pi*cycle);
+        float shape=0;
+        if(!oscillator)
+        {
+            noiseBand+=centerStep*(noiseShape-noiseBand);
+            noiseLow+=centerStep*(noiseBand-noiseLow);
+            const auto band=noiseBand-noiseLow;
+            noiseHighPassLow+=highPassStep*(band-noiseHighPassLow);
+            const auto midGain=(std::sqrt((1.f-pan)*.5f)
+                +std::sqrt((1.f+pan)*.5f))*.70710678f;
+            shape=std::clamp((band-noiseHighPassLow)*15.f,-1.f,1.f)*level*midGain;
+        }
+        else
+        {
+            const auto source=fmSource==4 ? noiseShape
+                : fmSource>=1 && fmSource<=3 ? sampleWave(cycle,sourceMix,sourceDuty) : 0.f;
+            if(point>0) carrierPhase+=(1.f+fmAmount*std::clamp(source,-1.f,1.f))/266.f;
+            for(int u=0;u<unison;++u)
+            {
+                const auto ratio=unisonRatios[size_t(u)];
+                const auto phase=(fmSource>0 ? carrierPhase : cycle)*ratio+15.f*(ratio-1.f);
+                shape+=sampleWave(phase,waveMix,dutyShape)*unisonMidGains[size_t(u)]*level/unison;
+            }
+        }
         const auto x=oscPlotX+2.f+(oscPlotWidth-4.f)*float(point)/266.f;
         const auto y=oscPlot.getCentreY()-40.f*shape;
         if(point==0) waveform.startNewSubPath(x,y); else waveform.lineTo(x,y);
     }
     g.setColour(curveBlue.withAlpha(.22f)); g.strokePath(waveform,juce::PathStrokeType(4));
     g.setColour(curveBlue); g.strokePath(waveform,juce::PathStrokeType(1.5f));
+    if(liveOscRoute.startsWith(previewPrefix))
+    {
+        const auto parameterName=liveOscRoute.substring(previewPrefix.length()).toUpperCase();
+        g.setColour(curveBlue.withAlpha(.9f));
+        g.setFont(juce::FontOptions(8.f).withStyle("bold"));
+        g.drawText("MOD "+parameterName+" "+juce::String(effective(liveOscRoute),1),
+            oscPlotX+5,oscPlotY+3,oscPlotWidth-10,11,juce::Justification::centredRight);
+    }
     g.setColour(secondaryRed); g.setFont(juce::FontOptions(10.f));
     if(currentFxSection==0)
     {

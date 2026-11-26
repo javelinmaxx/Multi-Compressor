@@ -71,7 +71,7 @@
 | FLT Freq | Sets the filter's base cutoff on a logarithmic frequency scale. |
 | FLT Resonance | Emphasizes the cutoff while a red marker shows the MOD envelope’s effective resonance. |
 | FLT Key Follow | Raises the cutoff with MIDI note pitch. |
-| FLT Env Amount | Moves the filter cutoff by up to ten octaves in either direction. |
+| FLT Env Amount | Moves the filter cutoff by up to thirty octaves in either direction. |
 | FLT Merge | Blends per-voice filters into one shared master filter at 100%. |
 | Key Pan | Sets pitch panning from high notes left at -100% to high notes right at +100%. |
 | Output | Sets the final synth level. |

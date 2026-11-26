@@ -1400,6 +1400,25 @@ int main(int argc,char** argv)
                 throw std::runtime_error("An overlapping note must not pull the shared filter away from a fixed cutoff");
         }
         {
+            // Tripled depth opens a minimum cutoff even when the filter
+            // envelope has already decayed well below its peak.
+            for(const auto rate:{44100.,48000.,96000.})
+            {
+                auto sweepOwner=std::make_unique<QinSynthProcessor>();
+                auto& sweep=*sweepOwner;
+                set(sweep,"verbMix",0); set(sweep,"filterType",3);
+                set(sweep,"filterCutoff",30); set(sweep,"filterEnvAmount",100);
+                set(sweep,"fltAttack",1); set(sweep,"fltDecay",1); set(sweep,"fltSustain",40);
+                sweep.prepareToPlay(rate,256);
+                QinSynthTestAccess::noteOn(sweep,60);
+                juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer empty;
+                for(int blockIndex=0;blockIndex<24;++blockIndex) sweep.processBlock(audio,empty);
+                if(QinSynthTestAccess::voiceCutoff(sweep,0)<18000.f
+                   || !QinSynthTestAccess::stableFilters(sweep))
+                    throw std::runtime_error("Full FLT Env Amount must open 30 Hz to at least 18 kHz after decay");
+            }
+        }
+        {
             for(const auto filterMode:{1,2,3,4})
                 for(const auto merge:{0.f,100.f})
                 {
@@ -1863,6 +1882,78 @@ int main(int argc,char** argv)
                 *(64.+(outer-1.)*65./2.);
             if(std::abs(QinSynthTestAccess::oscillatorPhase(pitched,0,7)-phaseExpected)>1.e-5)
                 throw std::runtime_error("Unison phase increment must ramp within the audio block");
+        }
+        {
+            auto modOwner=std::make_unique<QinSynthProcessor>();
+            auto& instrument=*modOwner;
+            set(instrument,"verbMix",0); set(instrument,"noise",1);
+            set(instrument,"noiseLevel",50);
+            set(instrument,"modAttack",.001f); set(instrument,"modSustain",100);
+            for(int osc=1;osc<=3;++osc)
+            {
+                const auto prefix="osc"+juce::String(osc);
+                set(instrument,(prefix+"Level").toRawUTF8(),50);
+                set(instrument,(prefix+"WaveX").toRawUTF8(),0);
+                set(instrument,(prefix+"WaveY").toRawUTF8(),0);
+                set(instrument,(prefix+"Unison").toRawUTF8(),4);
+                set(instrument,(prefix+"FmSource").toRawUTF8(),1);
+            }
+            instrument.prepareToPlay(48000,256);
+            QinSynthEditor editor(instrument);
+            juce::AudioBuffer<float> audio(2,256); juce::MidiBuffer note;
+            note.addEvent(juce::MidiMessage::noteOn(1,60,1.f),0);
+            for(int blockIndex=0;blockIndex<12;++blockIndex)
+            { instrument.processBlock(audio,note); note.clear(); }
+            const auto changedPixels=[](const juce::Image& a,const juce::Image& b,int top)
+            {
+                int changed=0;
+                for(int y=top;y<a.getHeight();y+=2)
+                    for(int x=0;x<a.getWidth();x+=2)
+                        changed+=a.getPixelAt(x,y)!=b.getPixelAt(x,y);
+                return changed;
+            };
+            for(int osc=0;osc<4;++osc)
+            {
+                QinSynthEditorTestAccess::oscillator(editor,osc);
+                const auto prefix=osc==3 ? juce::String("noise") : "osc"+juce::String(osc+1);
+                constexpr std::array<const char*,10> oscTargets {"WaveX","WaveY","Level","Fine",
+                    "Detune","DetuneShape","Spread","Pan","FmAmount","Duty"};
+                constexpr std::array<const char*,4> noiseTargets {"Level","Tune","Hpf","Pan"};
+                const auto count=osc==3 ? noiseTargets.size() : oscTargets.size();
+                for(size_t index=0;index<count;++index)
+                {
+                    const auto suffix=osc==3 ? noiseTargets[index] : oscTargets[index];
+                    const auto id=prefix+suffix;
+                    const auto target=qin::modTargetIndex(id.toStdString());
+                    if(target<0) throw std::runtime_error("OSC preview target must be routable");
+                    set(instrument,"modTarget",float(target)); set(instrument,"modDepth",0);
+                    instrument.processBlock(audio,note); QinSynthEditorTestAccess::tick(editor);
+                    const auto baseline=editor.createComponentSnapshot({34,175,168,96});
+                    set(instrument,"modDepth",80);
+                    for(int blockIndex=0;blockIndex<3;++blockIndex) instrument.processBlock(audio,note);
+                    QinSynthEditorTestAccess::tick(editor);
+                    const auto active=editor.createComponentSnapshot({34,175,168,96});
+                    if(argc>7 && osc==0 && std::string_view(suffix)=="WaveX")
+                    {
+                        const juce::File file(argv[7]);
+                        file.deleteFile();
+                        juce::FileOutputStream stream{file};
+                        const auto image=editor.createComponentSnapshot({16,90,420,392});
+                        if(!stream.openedOk() || !juce::PNGImageFormat().writeImageToStream(image,stream))
+                            throw std::runtime_error("OSC modulation preview could not be saved");
+                    }
+                    if(instrument.getLiveModulation().target!=target
+                       || changedPixels(baseline,active,0)<10)
+                        throw std::runtime_error(("OSC waveform did not update for "+id
+                            +"; pixels="+juce::String(changedPixels(baseline,active,0))
+                            +"; normalized="+juce::String(instrument.getLiveModulation().normalized,3)
+                            +"; level="+juce::String(instrument.parameters.getRawParameterValue(prefix+"Level")->load(),1)).toStdString());
+                    if((std::string_view(suffix)=="WaveX" || std::string_view(suffix)=="WaveY"
+                        || std::string_view(suffix)=="Duty" || std::string_view(suffix)=="Level")
+                       && changedPixels(baseline,active,15)<10)
+                        throw std::runtime_error(("OSC waveform trace did not move for "+id).toStdString());
+                }
+            }
         }
         {
             auto previewOwner=std::make_unique<QinSynthProcessor>();

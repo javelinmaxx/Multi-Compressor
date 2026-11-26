@@ -176,6 +176,9 @@ private:
     bool lastTimesFive=false, lastPolyLegato=false, lastVerbSync=false;
     bool resonanceModulated=false;
     float liveCutoff=0, liveResonance=0;
+    int lastOscPreviewIndex=-1,lastOscPreviewModTarget=-1;
+    float lastOscPreviewModValue=0;
+    std::array<float,13> lastOscPreviewValues {};
     uint32_t lastScopeEpoch=0;
     bool liveScopeValid=false;
     QinSynthProcessor::DriveScope liveScope;
